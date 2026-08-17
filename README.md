@@ -28,7 +28,7 @@ every change.
 | `!inactivity [on\|off]` | viewing: anyone; changing: group admins only | Turns inactivity reminders (see "Reminding inactive members" below) on or off for *this* group. Off by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!stale` | group admins only | Lists who's currently been warned for inactivity, how long ago, and who's overdue for manual removal (see "Reminding inactive members" below) |
 | `!spamfilter [on\|off]` | viewing: anyone; changing: group admins only | Turns auto-deletion of stock/crypto spam (see "Spam filtering" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
-| `!ai [on\|off]` | viewing: anyone; changing: group admins only | Turns natural-language command interpretation (see "Natural-language commands" below) on or off for *this* group. OFF by default everywhere, and requires `GEMINI_API_KEY` to be configured. With no argument, shows the current on/off state without changing it |
+| `!ai [on\|off]` | viewing: anyone; changing: group admins only | Turns natural-language command interpretation (see "Natural-language commands" below) on or off for *this* group. ON by default everywhere once `GEMINI_API_KEY` is configured (off everywhere until then). With no argument, shows the current on/off state without changing it |
 | `!update <paste the list, edited>` | group admins only | Bulk-edits Attendance/Waitlist/Payment by re-reading a copy-pasted, hand-edited list (see "Bulk-editing the roster" below) |
 | `!undo` | group admins only | Reverses the single most recent change made in the group, whatever command caused it (see "Undoing the last change" below) |
 | `!help` | anyone | Shows help for the everyday commands (`!in`, `!out`, `!list`, `!paid`) |
@@ -801,7 +801,10 @@ non-functional state.
 
 **A per-group setting, turned on/off live in chat.** `!ai on` (group
 admins only) turns it on, `!ai off` turns it off, and bare `!ai` shows the
-current state. Every group starts off - each one opts in individually.
+current state. Every group starts **on** once `GEMINI_API_KEY` is
+configured - opt a particular group out with `!ai off` if it's not wanted
+there. Until a key is configured at all, every group defaults to off
+regardless (there's nothing for it to do without one).
 
 **Deliberately narrow in scope, for safety:**
 

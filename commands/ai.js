@@ -3,8 +3,9 @@
 // THIS group (see lib/geminiCommand.js for what that actually does, and
 // index.js for how a message gets routed there - only live messages that
 // @-mention the bot are ever considered). Modeled on commands/spamfilter.js
-// (same "always replies" on/off-toggle shape), but OFF by default rather
-// than on - see ai.js's file comment for why.
+// (same "always replies" on/off-toggle shape and, now, the same "on by
+// default" behavior) - except the default only actually takes effect when
+// GEMINI_API_KEY is configured at all; see ai.js's file comment for why.
 
 const ai = require('../ai');
 const { isGroupAdmin } = require('../lib/adminCheck');

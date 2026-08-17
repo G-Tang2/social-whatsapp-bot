@@ -1395,30 +1395,32 @@ test('handleSpamfilter: on by default, off/on toggle requires admin and always r
   assert.match(adminTurnOn.replies[0], /turned \*on\*/);
 });
 
-test('handleAi: off by default (unlike !spamfilter), off/on toggle requires admin and always replies', async () => {
+test('handleAi: on by default (same as !spamfilter) once GEMINI_API_KEY is configured, off/on toggle requires admin and always replies', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  // A fresh group - never touched !ai - is off, unlike !spamfilter.
+  // A fresh group - never touched !ai - is ON, since this test file has
+  // GEMINI_API_KEY configured (see the top of this file) - see
+  // test/ai.test.js for the "no key configured" off-by-default case.
   const status = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
   await handleAi(status.ctx);
-  assert.match(status.replies[0], /OFF/);
-  assert.equal(ai.isEnabled(groupId), false);
+  assert.match(status.replies[0], /ON/);
+  assert.equal(ai.isEnabled(groupId), true);
 
-  const nonAdminTry = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: 'on' });
+  const nonAdminTry = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: 'off' });
   await handleAi(nonAdminTry.ctx);
   assert.match(nonAdminTry.replies[0], /Only a group admin/);
-  assert.equal(ai.isEnabled(groupId), false);
-
-  const adminTurnOn = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'on' });
-  await handleAi(adminTurnOn.ctx);
   assert.equal(ai.isEnabled(groupId), true);
-  assert.match(adminTurnOn.replies[0], /turned \*on\*/);
 
   const adminTurnOff = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'off' });
   await handleAi(adminTurnOff.ctx);
   assert.equal(ai.isEnabled(groupId), false);
   assert.match(adminTurnOff.replies[0], /turned \*off\*/);
+
+  const adminTurnOn = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'on' });
+  await handleAi(adminTurnOn.ctx);
+  assert.equal(ai.isEnabled(groupId), true);
+  assert.match(adminTurnOn.replies[0], /turned \*on\*/);
 });
 
 test('adminCheck cache does not leak admin status across different groups', async () => {

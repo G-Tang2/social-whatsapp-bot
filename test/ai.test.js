@@ -2,9 +2,13 @@
 // Coverage for ai.js - the per-group on/off toggle for natural-language
 // command interpretation (see lib/geminiCommand.js for the actual Gemini
 // call, test/geminiCommand.test.js for its coverage, and
-// test/commands.test.js for the !ai chat command). Same shape/pattern as
-// spam.js's toggle (see test/activity-spam.test.js), except OFF by
-// default here instead of ON.
+// test/commands.test.js for the !ai chat command, including the
+// "on by default once a key IS configured" case this file can't exercise -
+// see the note by GEMINI_API_KEY below). Same shape/pattern as spam.js's
+// toggle (see test/activity-spam.test.js): on by default - except here
+// that default only actually kicks in once GEMINI_API_KEY is configured,
+// which this file deliberately never does (see below), so every default
+// observed in this file is the "no key configured" off case.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -40,7 +44,7 @@ function makeCtx({ sock, groupId, senderId, argText }) {
   };
 }
 
-test('ai: isEnabled defaults to false (unlike spam.js, which defaults true) and setEnabled persists', () => {
+test('ai: isEnabled defaults to false with no GEMINI_API_KEY configured (would default true otherwise, same as spam.js), and setEnabled persists', () => {
   const groupId = freshGroupId();
   assert.equal(ai.isEnabled(groupId), false);
   ai.setEnabled(groupId, true);

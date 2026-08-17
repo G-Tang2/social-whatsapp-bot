@@ -129,13 +129,13 @@
 //                    changing it.
 //   !ai [on|off]   - admins only to change: turn natural-language command
 //                    interpretation (see below) on or off for THIS group.
-//                    OFF by default everywhere - unlike !spamfilter, this
-//                    calls an external API (Gemini) and can misread
-//                    ordinary chat, so it's opt-in rather than a safety
-//                    default. Requires GEMINI_API_KEY to be set in .env -
-//                    !ai on refuses with an explanation if it isn't. Run
-//                    with no argument to see the current on/off state
-//                    without changing it.
+//                    ON by default, same as !spamfilter - but only once
+//                    GEMINI_API_KEY is set in .env (a fresh install with no
+//                    key configured still defaults every group to off,
+//                    since the feature can't do anything without one
+//                    anyway; !ai on also refuses with an explanation if a
+//                    key isn't configured). Run with no argument to see the
+//                    current on/off state without changing it.
 //   !help          - show command help
 //
 // General rule for admin-gated commands (!clear, !newlist, !date, !location,
@@ -245,12 +245,13 @@
 // interpretation is anything less than fully confident, the bot replies
 // with the exact !command it thinks was meant and asks the sender to
 // send that themselves rather than acting on a guess; if the message
-// doesn't look list-related at all, it stays completely silent. OFF by
-// default for every group (opt in per group with !ai on, admins only) -
-// unlike !spamfilter, this calls an external paid API and can misread
-// ordinary chat, so it's an explicit choice rather than a safety default.
-// Requires GEMINI_API_KEY in .env; see lib/config.js and the README's
-// "Natural-language commands" section.
+// doesn't look list-related at all, it stays completely silent. ON by
+// default for every group once GEMINI_API_KEY is configured in .env (same
+// as !spamfilter) - opt out per group with !ai off, admins only. A fresh
+// install with no key configured still defaults every group to off, since
+// the feature can't do anything without one anyway; see ai.js's file
+// comment, lib/config.js, and the README's "Natural-language commands"
+// section.
 //
 // "Last seen" status heartbeat: separate from all of the above, the bot
 // also keeps its own WhatsApp profile About text updated with the current
