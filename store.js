@@ -1,10 +1,16 @@
 // store.js
 // Simple JSON-file-backed persistence for the signup/attendance list.
 //
-// Each group's data is a "current" list (what !in/!out/!list operate on)
-// plus a "history" array of previously-archived lists. An admin starting a
-// new dated list (!newlist) archives whatever's currently active into
-// history and starts a fresh, empty current list.
+// Each group's data is a "current" list (what !in/!out/!list operate on).
+// An admin starting a new dated list (!newlist) discards whatever's
+// currently active and starts a fresh, empty current list - only the
+// current list is ever kept, nothing gets archived (see newList()'s own
+// doc comment for what's carried forward vs dropped, and how this still
+// stays undoable via the generic !undo mechanism below). `history` is a
+// vestigial sibling field, always reset to empty by newList() - see its
+// own doc comment - kept around only because getUndoableState()/
+// restoreUndoableState() snapshot/restore the group's state generically
+// without needing to know which fields are "live".
 //
 // `current.duePayments` tracks who still owes money: every time !newlist
 // runs, everyone on the outgoing entries list gets carried into the new
@@ -104,7 +110,7 @@
 //       "tournamentWinners": ["Irfan", "Tu"] | null,
 //       "tournamentRules": "Best of 3, single elimination..." | null
 //     },
-//     "history": [ { "date": ..., "location": ..., "entries": [...], "archivedAt": ... }, ... ]
+//     "history": [] // vestigial - always reset empty by newList(), see the file-level comment above
 //   },
 //   ...
 // }
@@ -485,12 +491,6 @@ function getList(groupId) {
   return getCurrentEvent(groupId).entries;
 }
 
-function getHistory(groupId, limit = 5) {
-  const all = readAll();
-  const history = (all[groupId] || emptyGroupState()).history;
-  return history.slice(-limit).reverse(); // most recent first
-}
-
 function getDuePayments(groupId) {
   return getCurrentEvent(groupId).duePayments || [];
 }
@@ -686,28 +686,27 @@ function setTournamentWinners(groupId, names) {
 // right alongside setTournamentWinners above (see commands/admin.js's
 // handleTournamentWinners) when an admin announces a result via
 // !tournamentwinners. Per the README's "Announcing last week's winners",
-// that command names the winners of the week that just ended - i.e. the
-// list newList() most recently archived into `history` - by which point
-// that week's attendees (winners included) have already been carried into
-// `current.duePayments` with `owedSince` set to that archived list's date
-// (see newList()'s own doc comment). So "that week" is resolved here as
-// `history`'s last entry's date, and only the winners' duePayments entries
-// matching THAT exact owedSince are cleared - any other debt a winner
-// separately owes from an earlier missed cycle is left untouched, same
-// "forward-looking, not retroactive forgiveness" spirit as
-// getPaymentExempt. No-op (returns []) if there's no history yet (nothing
-// to call "that week"), the archived list never had a date, or neither
-// winner actually owes for it.
+// that command names the winners of the week that just ended, by which
+// point that week's attendees (winners included) have already been
+// carried into `current.duePayments` with `owedSince` set to that week's
+// date (see newList()'s own doc comment). "That week" is resolved here as
+// the MOST RECENT `owedSince` among everything currently owed (ISO date
+// strings sort chronologically as plain strings, so the max is simply the
+// last one anyone was newly charged for) - and only the winners'
+// duePayments entries matching THAT exact date are cleared. Any other debt
+// a winner separately owes from an earlier missed cycle is left untouched,
+// same "forward-looking, not retroactive forgiveness" spirit as
+// getPaymentExempt. No-op (returns []) if nobody currently owes anything,
+// or neither winner actually owes for the most recent week.
 function waiveDuePaymentsForWinners(groupId, names) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
-  const state = all[groupId];
-  const current = state.current;
+  const current = all[groupId].current;
   if (!current.duePayments || !current.duePayments.length) return [];
 
-  const history = state.history || [];
-  const lastWeekDate = history.length ? history[history.length - 1].date : null;
-  if (!lastWeekDate) return [];
+  const owedSinceDates = current.duePayments.map((e) => e.owedSince).filter(Boolean);
+  if (!owedSinceDates.length) return [];
+  const lastWeekDate = owedSinceDates.reduce((max, d) => (d > max ? d : max));
 
   const normalizedNames = new Set((names || []).map(normalizeName));
   const waived = [];
@@ -1668,11 +1667,23 @@ function markPaid(groupId, name) {
   return { ok: true, count, duePayments: current.duePayments };
 }
 
-// Starts a brand new dated list, archiving whatever's currently active
-// (if it has a date set or any entries) into history first. Everyone on
-// the outgoing entries list now owes payment for it, so they're carried
-// into the new list's duePayments - merged with anyone still unpaid from
-// before, so nobody's debt gets silently dropped if they missed a cycle.
+// Starts a brand new dated list. The outgoing list itself is NOT archived
+// anywhere - only the current list is ever kept, and `history` is reset to
+// empty right along with it (wiping out any old archived lists too, so
+// this also cleans up whatever an older build of the bot may have left
+// behind - an admin never has to remember to clear that out by hand). This
+// is a completely ordinary state mutation, not special-cased against
+// !undo: like every other mutating command, !newlist runs through the
+// generic before/after wrapper (commands/index.js's withUndoTracking, via
+// getUndoableState/restoreUndoableState/saveUndoSnapshot below), which
+// snapshots `history` right along with `current` - so an admin who runs
+// !newlist by mistake can still !undo it, restoring the exact old current
+// list (and whatever history existed before) right back.
+//
+// Everyone on the outgoing entries list now owes payment for it, so
+// they're carried into the new list's duePayments - merged with anyone
+// still unpaid from before, so nobody's debt gets silently dropped if they
+// missed a cycle.
 // The outgoing waitlist is NOT carried into duePayments (they never got a
 // confirmed spot) and does not carry forward at all - the new list starts
 // with an empty waitlist. `limit` is recomputed from whatever court count
@@ -1718,10 +1729,7 @@ function newList(groupId, date, details = {}) {
   const state = all[groupId];
   const outgoing = state.current;
 
-  const hasRealContent = outgoing.date !== null || outgoing.entries.length > 0;
-  if (hasRealContent) {
-    state.history.push({ ...outgoing, archivedAt: new Date().toISOString() });
-  }
+  state.history = [];
 
   const stillOwing = outgoing.duePayments || [];
   const newlyOwing = outgoing.entries;
@@ -1729,15 +1737,16 @@ function newList(groupId, date, details = {}) {
   const mergedDue = [...stillOwing];
   for (const entry of newlyOwing) {
     if (exempt.has(normalizeName(entry.name))) continue;
-    // Spread rather than push the entry object itself - `entry` is the
-    // same object reference archived into `state.history` above (via
-    // `{ ...outgoing }`, which only copies the top-level `entries` array
-    // reference, not each entry within it) - mutating it in place would
-    // silently tag the archived historical copy with `owedSince` too.
-    // Always pushed as its OWN new entry, even if this same person already
-    // has an entry in `stillOwing` from an earlier unpaid cycle - see this
-    // function's doc comment above for why that's now intentional (owing
-    // for two separate events is two separate debts).
+    // Spread rather than push the entry object itself - `entry` is still
+    // the same object reference sitting in `outgoing.entries` (about to be
+    // discarded wholesale once `state.current` is replaced below) -
+    // mutating it in place would be harmless in practice now that nothing
+    // else holds onto that reference, but spreading keeps this loop
+    // correct independent of that. Always pushed as its OWN new entry,
+    // even if this same person already has an entry in `stillOwing` from
+    // an earlier unpaid cycle - see this function's doc comment above for
+    // why that's now intentional (owing for two separate events is two
+    // separate debts).
     mergedDue.push(outgoing.date ? { ...entry, owedSince: outgoing.date } : entry);
   }
 
@@ -1805,7 +1814,6 @@ function newList(groupId, date, details = {}) {
 module.exports = {
   getList,
   getCurrentEvent,
-  getHistory,
   getDuePayments,
   getDuePaymentsLabel,
   setDuePaymentsLabel,

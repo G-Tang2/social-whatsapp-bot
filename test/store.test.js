@@ -418,7 +418,7 @@ test('newList does not set owedSince at all when the old list never had a date',
 // commands/admin.js's handleTournamentWinners, which calls this right
 // alongside setTournamentWinners.
 
-test('waiveDuePaymentsForWinners clears the winners\' debt for the week that was just archived', () => {
+test('waiveDuePaymentsForWinners clears the winners\' debt for the most recent week they were charged for', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-13');
   store.addEntry(groupId, 'Irfan', 'i@s.whatsapp.net', false);
@@ -448,7 +448,7 @@ test('waiveDuePaymentsForWinners leaves a winner\'s UNRELATED earlier debt untou
   assert.deepEqual(due.map((e) => e.owedSince), ['2026-08-06']); // only the 8/13 entry was waived
 });
 
-test('waiveDuePaymentsForWinners is a no-op with no history yet to call "that week"', () => {
+test('waiveDuePaymentsForWinners is a no-op when nobody currently owes anything', () => {
   const groupId = freshGroupId();
   const waived = store.waiveDuePaymentsForWinners(groupId, ['Irfan', 'Tu']);
   assert.deepEqual(waived, []);

@@ -163,9 +163,12 @@ still works exactly as before.
 
 **Starting a new dated list:** an admin runs `!newlist 20/08 EBC | 13-18 |
 8PM start` to close out the current list and start a fresh one for that
-date - handy for a recurring weekly signup. The old list isn't deleted, it's
-archived internally (there's no chat command to view past lists, but nothing
-is thrown away - see "Notes on the data" below). The date is typed as
+date - handy for a recurring weekly signup. Only the current list is ever
+kept - the old one isn't archived anywhere (see "Notes on the data" below)
+- though anyone on it who hadn't paid yet is still carried forward into the
+new list's payment-due section, same as always (see "Tracking who owes
+payment" below). If you clear a list by mistake, `!undo` (see "Undoing the
+last change" below) can still put it right back. The date is typed as
 `DD/MM` - day then month, no year (e.g. `20/08` for 20 August). The bot
 figures out the year itself: it picks the next upcoming occurrence of that
 day/month, so typing a date that's already passed this year rolls forward to
@@ -188,13 +191,14 @@ list never had a date set at all, there's nothing to reuse - it replies
 asking for an explicit `DD/MM` instead of guessing.
 
 **Typo'd the date, or the session moved to a different day?** `!date DD/MM`
-corrects just that one field on the *current* list - no archiving, and
-nothing else (entries, waitlist, location, courts, time, payments, limit)
-is touched. Same `DD/MM` format and "next upcoming occurrence" year
+corrects just that one field on the *current* list - it doesn't discard the
+list, and nothing else (entries, waitlist, location, courts, time,
+payments, limit) is touched. Same `DD/MM` format and "next upcoming
+occurrence" year
 inference as `!newlist`. Run bare `!date` to see the current date without
 changing it. Use this instead of `!newlist` when the date itself was wrong
 but everyone who already signed up should stay signed up - `!newlist`
-would archive the whole list and start over empty, which isn't what you
+would discard the whole list and start over empty, which isn't what you
 want for a simple correction.
 
 **Pre-populating a new list:** add `with name1, name2, ...` to the very end
@@ -228,7 +232,7 @@ match, so a `!newlist` that changes which courts are booked updates the
 capacity in the same step.
 
 **Changing location, courts, or time without starting a new list:** the
-`!newlist` fields are optional and only matter when you're archiving the
+`!newlist` fields are optional and only matter when you're discarding the
 old list and starting a fresh one. If you just want to update where it's
 happening, which courts, or what time, without starting a new list - the
 venue changed, the booking moved to different courts, whatever - an admin
@@ -576,8 +580,8 @@ change and never overwrite the saved undo point, so checking the list in
 between doesn't cost you your one undo. If nothing has changed yet, or the
 last change was already undone, `!undo` says so rather than doing nothing
 silently. Like the other list-management commands, `!undo` is admin-only -
-given it can put back a whole cleared list or reinstate an archived one,
-it has a bigger blast radius than most commands.
+given it can put back a whole cleared list or an entire list a `!newlist`
+just discarded, it has a bigger blast radius than most commands.
 
 ## Tournament
 
@@ -712,9 +716,10 @@ sticks around across `!newlist` until an admin sets it again, so it keeps
 announcing the same result until there's a new one to announce.
 
 Tournament winners don't have to pay for the social they won: setting
-`!tournamentwinners` also clears each named winner's payment debt for that
-same week (the one `!newlist` just archived into their `duePayments`
-entry), if they had one. Any other debt they separately owe from an
+`!tournamentwinners` also clears each named winner's payment debt for the
+most recent week they were charged for (i.e. whatever `!newlist` most
+recently carried their entry into `duePayments` for), if they had one. Any
+other debt they separately owe from an
 earlier missed week is left untouched - this is a one-off thank-you for
 that week's win, not blanket forgiveness. It's not retroactive either -
 running `!tournamentwinners` again later for a different week only waives
@@ -1588,8 +1593,9 @@ that's which date group it's shown under; see "Tracking who owes payment"
 above), `duePaymentsLabel` set by `!paymentlabel`, and `tournamentEnabled`/
 `tournamentLimit`/`tournamentWinners`/`tournamentRules` set by
 `!settournament`/`!tournamentlimit`/`!tournamentwinners`/`!settournament
-rules` - see "Tournament" above), and
-`history` holds everything archived by a past `!newlist`. There's no
+rules` - see "Tournament" above). Only the current list is ever kept -
+`!newlist` doesn't archive the list it replaces anywhere, it's simply
+discarded (see "Starting a new dated list" above). There's no
 database to set up. Back up the
 `data/` and `auth_info/` folders occasionally if the list matters to you - a
 reinstalled/reset PC would lose both otherwise.

@@ -1355,7 +1355,7 @@ test('handleUndo: only an admin can run it', async () => {
   assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Jordan']); // unchanged
 });
 
-test('handleUndo: reverses a whole !newlist (un-archiving the old current, dropping the newly-archived history entry)', async () => {
+test('handleUndo: reverses a whole !newlist, restoring the discarded old current list', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
@@ -1364,13 +1364,11 @@ test('handleUndo: reverses a whole !newlist (un-archiving the old current, dropp
 
   const newlist = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 EBC' });
   await commands['!newlist'](newlist.ctx);
-  assert.equal(store.getCurrentEvent(groupId).entries.length, 0); // fresh, empty list
-  assert.equal(store.getHistory(groupId).length, 1); // old list archived
+  assert.equal(store.getCurrentEvent(groupId).entries.length, 0); // fresh, empty list - the old one isn't kept anywhere
 
   const undo = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '' });
   await commands['!undo'](undo.ctx);
-  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Jordan']); // un-archived
-  assert.equal(store.getHistory(groupId).length, 0); // archive entry removed too
+  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Jordan']); // restored
 });
 
 test('handleDate: bare command shows the current date (or "No date set") without changing it', async () => {
