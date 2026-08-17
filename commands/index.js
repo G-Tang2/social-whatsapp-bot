@@ -99,4 +99,13 @@ const commands = Object.fromEntries(
 // reasoning.
 const CATCH_UP_COMMANDS = new Set([`${COMMAND_PREFIX}in`, `${COMMAND_PREFIX}out`, `${COMMAND_PREFIX}paid`]);
 
-module.exports = { commands, CATCH_UP_COMMANDS };
+// Exported alongside the undo-tracked `commands` table so a caller that
+// needs to treat several dispatched actions as ONE undo transaction (see
+// index.js's handleAiMention, for a single @-mention that bundles multiple
+// requests together, e.g. "create a new list, add Andy/Peter/Lucy, set the
+// payment cost to $17") can call the bare handlers directly and wrap its
+// OWN single before/after snapshot around the whole batch, instead of
+// getting one (overwritten-by-the-next) undo point per action - see
+// withUndoTracking's doc comment above for why that per-command wrapping is
+// otherwise exactly right for a single typed command.
+module.exports = { commands, rawCommands, CATCH_UP_COMMANDS };

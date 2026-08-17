@@ -275,7 +275,7 @@ const qrcode = require('qrcode-terminal');
 
 const config = require('./lib/config');
 const { getMessageText, formatList, getMentionedJids, stripMentionTokens, normalizeJid } = require('./lib/helpers');
-const { getRegularPlayers } = require('./store');
+const { getRegularPlayers, getUndoableState, saveUndoSnapshot } = require('./store');
 const { isGroupAdmin } = require('./lib/adminCheck');
 const { checkGroupInactivity } = require('./lib/inactivityCheck');
 const catchUpQueue = require('./lib/catchUpQueue');
@@ -284,7 +284,7 @@ const { interpretMessage, formatTodayForPrompt, formatRegularPlayersForPrompt } 
 const activity = require('./activity');
 const spam = require('./spam');
 const ai = require('./ai');
-const { commands, CATCH_UP_COMMANDS } = require('./commands');
+const { commands, rawCommands, CATCH_UP_COMMANDS } = require('./commands');
 
 const {
   AUTH_DIR,
@@ -607,8 +607,22 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
     repostOwed = true;
   };
 
+  // Undo tracking for the WHOLE batch, taken as a single transaction -
+  // deliberately bypassing `commands`' own per-command withUndoTracking
+  // wrapper (see commands/index.js) by dispatching through `rawCommands`
+  // instead. Wrapping each action individually would let a compound
+  // @-mention like "create a new list, add Andy/Peter/Lucy, set the
+  // payment cost to $17" save THREE undo snapshots in a row, each
+  // overwriting the last - so a single !undo afterward would only reverse
+  // the payment-label change, not the whole thing the sender actually
+  // asked for in one message. Snapshotting once before the batch and once
+  // after (same before/after/diff shape as withUndoTracking) makes the
+  // entire batch undo as one step, same as if it had all been one command.
+  const undoBefore = getUndoableState(groupId);
+  const actionDescriptions = [];
+
   for (const action of dispatchable) {
-    const handler = commands[`${COMMAND_PREFIX}${action.command}`];
+    const handler = rawCommands[`${COMMAND_PREFIX}${action.command}`];
     if (!handler) {
       // Defensive - the response schema constrains command to known
       // values, so this shouldn't happen in practice; just skip this one
@@ -635,11 +649,17 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
     // typed "!update" (which never goes through the model at all) already
     // has.
     const argText = action.command === 'update' ? cleanedText : (action.argText || '');
+    actionDescriptions.push(argText ? `${COMMAND_PREFIX}${action.command} ${argText}` : `${COMMAND_PREFIX}${action.command}`);
     // Sequential, not parallel - see the doc comment above for why a later
     // action (e.g. joining the tournament) may depend on an earlier one
     // (e.g. the "newlist" that created the list it's joining) having
     // already completed.
     await handler({ sock, msg, groupId, senderId, senderName, argText, upsertType: 'notify', reply, postList: batchedPostList });
+  }
+
+  const undoAfter = getUndoableState(groupId);
+  if (JSON.stringify(undoBefore) !== JSON.stringify(undoAfter)) {
+    saveUndoSnapshot(groupId, undoBefore, actionDescriptions.join(' + '));
   }
 
   if (repostOwed) {

@@ -789,6 +789,41 @@ test('e2e: a compound @-mention where EVERY action is uncertain falls back to th
   assert.match(fakeSockInstance.sentMessages[0].content.text, /not capable of doing that/i);
 });
 
+test('e2e: !undo reverses an ENTIRE compound @-mention (new list + add names + payment label) in one step, not just the last action - regression for a real bug report where the batch saved one overwritten undo snapshot per action', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  const before = store.getCurrentEvent(GROUP_ID);
+  const beforeNames = [...before.entries, ...(before.waitlist || [])].map((e) => e.name);
+  const beforeDate = before.date;
+  const beforeLabel = before.duePaymentsLabel;
+
+  setNextGeminiResponse({
+    actions: [
+      { command: 'newlist', argText: '27/08 E2eUndoBatchVenue with E2eUndoAndy, E2eUndoPeter, E2eUndoLucy', confidence: 'high' },
+      { command: 'paymentlabel', argText: '$17 owing', confidence: 'high' },
+    ],
+  });
+
+  await deliver(
+    'create a new list for next Thursday at E2eUndoBatchVenue. Add E2eUndoAndy, E2eUndoPeter and E2eUndoLucy. Set the new payment cost to $17',
+    { from: 'admin@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] }
+  );
+
+  const afterBatch = store.getCurrentEvent(GROUP_ID);
+  assert.notEqual(afterBatch.date, beforeDate, 'expected the new list to actually be created');
+  assert.equal(afterBatch.duePaymentsLabel, '$17 owing');
+  for (const name of ['E2eUndoAndy', 'E2eUndoPeter', 'E2eUndoLucy']) {
+    assert.ok(afterBatch.entries.some((e) => e.name === name), `expected ${name} to be on the new list`);
+  }
+
+  await deliver('!undo', { from: 'admin@s.whatsapp.net', type: 'notify' });
+
+  const afterUndo = store.getCurrentEvent(GROUP_ID);
+  assert.equal(afterUndo.date, beforeDate, 'expected the whole batch - including !newlist - to be undone in one step');
+  assert.equal(afterUndo.duePaymentsLabel, beforeLabel);
+  const afterUndoNames = [...afterUndo.entries, ...(afterUndo.waitlist || [])].map((e) => e.name);
+  assert.deepEqual(afterUndoNames, beforeNames, 'expected the added names to be gone too, not left behind from a partial undo');
+});
+
 test('e2e: AI mention is ignored (Gemini never even called) when the group has !ai off', async () => {
   ai.setEnabled(GROUP_ID, false);
   const callsBefore = geminiCallCount;
