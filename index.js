@@ -1,0 +1,887 @@
+// index.js
+// WhatsApp group list-moderation bot.
+//
+// Connects to WhatsApp using an unofficial multi-device Web protocol library
+// (Baileys). You "log in" by scanning a QR code with WhatsApp on your phone,
+// exactly like linking WhatsApp Web/Desktop. No official Business API needed,
+// but see the README for the tradeoffs (ToS risk, ban risk) before relying on
+// this for anything important.
+//
+// This file is a thin orchestrator: it owns the Baileys connection
+// lifecycle and the top of the message-handling pipeline (guards, spam
+// filtering, activity tracking, catch-up gating), then dispatches to the
+// per-command handlers in commands/ via a lookup table (see commands/
+// index.js) instead of one giant switch statement. All the actual command
+// logic, config, and shared helpers live in commands/ and lib/ - see those
+// files' own comments for the details. This split (and the automated test
+// suite under test/) exists purely to keep the codebase navigable as
+// features accumulate; behavior is unchanged from the previous monolithic
+// version.
+//
+// Commands recognized in configured group chats:
+//   !in [name]     - add [name] (or your own WhatsApp display name) to the list
+//                    add several at once with commas: !in Alex, Sam, Sam+1
+//   !out [name]    - remove [name] (or your own name) from the list
+//                    also accepts commas: !out Alex, Sam
+//                    If an admin added that entry, only that same admin can
+//                    remove it. Otherwise it's the person who added it, or
+//                    any current admin. An unauthorized attempt doesn't fail
+//                    silently - the entry gets moved to the bottom of the
+//                    list and tagged (TBC) for an admin to sort out.
+//                    Bare !in/!out/!paid (no name typed) resolve "you"
+//                    by WhatsApp ID, not display name - your WhatsApp push
+//                    name doesn't always match the name that ended up on
+//                    the list, so matching by ID avoids "you" silently
+//                    missing your own entry.
+//   !list          - show the current list (plus who still owes payment, if any)
+//   !clear         - wipe the current list's entries, keeping its date/
+//                    location/courts/time (admins only)
+//   !newlist DD/MM [location] | [courts] | [time] - archive the current
+//                    list and start a fresh dated one (admins only), e.g.
+//                    !newlist 20/08 EBC | 13-18 | 8PM start. Typed as DD/MM
+//                    with no year - the year is inferred as the next
+//                    upcoming occurrence of that day/month (today counts as
+//                    upcoming) - and shown as e.g. "20th Aug Thu". The
+//                    location/courts/time part is optional and each of its
+//                    three pipe-separated segments carries forward from the
+//                    current list if left out (a single segment with no "|"
+//                    at all is treated as just the location). Everyone on
+//                    the outgoing list is carried over as owing payment
+//                    (header set by !paymentlabel, e.g. "$18 please") on the new
+//                    list.
+//   !date [DD/MM]  - admins only: correct the CURRENT list's date without
+//                    starting a new one - unlike !newlist, doesn't archive
+//                    anything or touch entries/waitlist/duePayments/
+//                    location/courts/time/limit. Same DD/MM typed format
+//                    and "next upcoming occurrence" year inference as
+//                    !newlist. Run with no text to see the current date
+//                    without changing it.
+//   !paid [name]   - mark [name] (or your own name) as paid, removing them
+//                    from the payment-due list. Also accepts commas.
+//   !location [text] - admins only: set the list's location. Works any
+//                    time, not just when starting a new list. Carries
+//                    forward to future !newlist calls. Run with no text to
+//                    see the current location without changing it.
+//   !courts [numbers] - admins only: set which courts are booked, e.g.
+//                    !courts 13-18 or !courts 1, 2, 5-8. The headcount
+//                    shown next to it is computed automatically, and the
+//                    participant limit auto-sets to that many times
+//                    PLAYERS_PER_COURT (6 by default, e.g. 6 courts -> 36) -
+//                    see !limit for overriding that. Works any time,
+//                    carries forward to future !newlist calls. Run with no
+//                    text to see the current courts without changing them.
+//   !time [text]   - admins only: set the start time text, e.g.
+//                    !time 8PM start. Works any time, carries forward to
+//                    future !newlist calls. Run with no text to see the
+//                    current time without changing it.
+//   !paymentlabel [text] - admins only: set the payment-due section's header
+//                    (e.g. !paymentlabel $20 please). Carries forward to future
+//                    !newlist calls. Run with no text to see the current
+//                    header without changing it.
+//   !limit [number] - admins only: cap the max number of people on the
+//                    list (e.g. !limit 20). Before any courts are set, this
+//                    defaults to 6 (or DEFAULT_LIMIT from .env); once
+//                    !courts is set (or respecified via !newlist), the
+//                    limit auto-recalculates to courts × PLAYERS_PER_COURT
+//                    instead - !limit still lets you override that any
+//                    time, until courts are next respecified. Once the
+//                    limit is reached, !in adds people to a waitlist shown
+//                    below the attendance list instead of turning them
+//                    away - silently, no separate reply, just the posted
+//                    list showing them in its Waitlist section. Freeing a
+//                    spot - someone leaves, an admin raises/removes the
+//                    limit, or a fresh court count raises it - auto-promotes
+//                    the next person off the waitlist, and tags them
+//                    directly (@mention) so they actually get notified,
+//                    not just listed as plain text. Lowering the limit
+//                    (directly, or via a
+//                    smaller court count) below the current headcount does
+//                    the reverse: the most recently added people are moved
+//                    onto the waitlist to bring the list back down to the
+//                    new limit, in order. Carries forward to future
+//                    !newlist calls (the waitlist itself does not). !limit
+//                    off removes the cap. Run with no number to see the
+//                    current limit without changing it.
+//   !allow <count> - admins only: let `count` extra people in from the
+//                    front of the waitlist right now, bypassing the limit
+//                    for this batch, e.g. !allow 2 moves the first 2
+//                    waitlisted people onto the list, tagging each one
+//                    (@mention) to let them know. The limit is then
+//                    raised to match the new headcount, so it sticks as
+//                    the new normal rather than reverting.
+//   !inactivity [on|off] - admins only to change: turn inactivity
+//                    reminders (see below) on or off for THIS group. Off
+//                    by default everywhere - each group opts in
+//                    individually, so the bot can watch one group chat for
+//                    quiet members without doing the same in every other
+//                    group it's in. Run with no argument to see the
+//                    current on/off state without changing it.
+//   !stale         - admins only: list who's currently been warned for
+//                    inactivity (see below), how long ago, and whether
+//                    they're now overdue for manual removal. View-only -
+//                    doesn't remove anyone itself.
+//   !spamfilter [on|off] - admins only to change: turn auto-deletion of
+//                    stock/crypto spam (see below) on or off for THIS
+//                    group. ON by default everywhere - unlike !inactivity,
+//                    each group gets this protection automatically and
+//                    opts OUT per group instead of in. Run with no
+//                    argument to see the current on/off state without
+//                    changing it.
+//   !ai [on|off]   - admins only to change: turn natural-language command
+//                    interpretation (see below) on or off for THIS group.
+//                    OFF by default everywhere - unlike !spamfilter, this
+//                    calls an external API (Gemini) and can misread
+//                    ordinary chat, so it's opt-in rather than a safety
+//                    default. Requires GEMINI_API_KEY to be set in .env -
+//                    !ai on refuses with an explanation if it isn't. Run
+//                    with no argument to see the current on/off state
+//                    without changing it.
+//   !help          - show command help
+//
+// General rule for admin-gated commands (!clear, !newlist, !date, !location,
+// !courts, !time, !paymentlabel, !limit, !allow, !inactivity, !spamfilter,
+// !ai): if you're authorized, the bot doesn't send a separate "done!" confirmation -
+// it just makes the change and posts the
+// updated list, which is proof enough. A reply is only sent when you're NOT
+// authorized to do what you asked, the command was malformed, or something
+// notable happened that isn't obvious from the list alone (e.g. !allow
+// couldn't fully satisfy the count you asked for), so the chat only gets
+// noisy when something actually needs your attention. !inactivity and
+// !spamfilter are a partial exception - see their own handlers in
+// commands/ for why they always reply. Getting waitlisted on !in is
+// NOT one of these notable cases - it's silent, just the posted list
+// showing the new Waitlist entry - but getting PROMOTED off the waitlist
+// (via !out, !limit, !courts, or !allow) always gets a tagged (@mention)
+// message, since that's a status change the promoted person otherwise has
+// no way to notice. See lib/helpers.js's formatPromotedMessage() for a note
+// on who exactly gets tagged when an admin (not the person themselves)
+// added the entry.
+//
+// Catching up after the bot was offline (e.g. the host computer lost
+// internet for a few minutes): WhatsApp queues messages server-side for a
+// disconnected device and redelivers them once it reconnects, same as it
+// would for a phone that was briefly offline. Baileys tags those
+// redelivered messages 'append' instead of 'notify' (a live message).
+// Deliberately conservative handling here: only !in, !out, and !paid are
+// honored for 'append' messages - the self-service commands where missing
+// one is most disruptive to someone trying to join, leave, or pay.
+// Everything else from that gap - other commands, plain chat/activity
+// tracking, spam filtering - is silently NOT replayed, since re-running an
+// admin command or backdating someone's activity/spam status against a
+// message that's no longer really "now" could do more harm than the
+// missed message itself. See commands/index.js's CATCH_UP_COMMANDS.
+//
+// Rather than each caught-up !in/!out/!paid immediately posting its own
+// reply/updated list as it's processed (which would spam the group with a
+// burst of repeated list reposts if several people used the bot during the
+// gap), those commands stay quiet individually and the bot instead sends
+// ONE combined summary once WhatsApp confirms the whole offline backlog has
+// been redelivered (see receivedPendingNotifications in the
+// connection.update handler below and lib/catchUpQueue.js's
+// setBacklogSynced()) - e.g. "Caught up on 3 messages sent while I was
+// offline: !in (Alex): added Alex; ..." - followed by a single fresh list
+// post. That pending batch is also mirrored to disk as it's built, so a bot
+// process restart (crash, `pm2 restart`, host reboot) before the summary
+// gets sent doesn't lose it - it's picked back up and sent once a fresh
+// connection is live (see resumePendingFlushes() below). The list changes
+// themselves were never at risk either way - store.js commits each one
+// synchronously as it's processed, independent of this batching layer; only
+// the "here's what you missed" notification could previously go missing.
+// See lib/catchUpQueue.js and lib/catchUpSummary.js.
+//
+// Inactivity reminders (separate from the signup list above): the bot can
+// track the last time each group member sent ANY message (not just
+// commands) and use that to nudge people who've gone quiet. It's off by
+// default for every group - an admin turns it on per group with
+// !inactivity on. Once on, a background check runs periodically and, for
+// anyone who's gone quiet for INACTIVITY_WARN_AFTER_DAYS, tags them in
+// the group with a one-time reminder that they'll be considered for
+// removal after INACTIVITY_REMOVE_AFTER_DAYS if they stay quiet. Group
+// admins are always exempt. This is warn-only - the bot never removes
+// anyone itself; an admin has to do that by hand from WhatsApp's own
+// group-management UI once someone's overdue (!stale shows who that is).
+// Sending any message clears a person's warning and resets their clock.
+//
+// Spam filtering (also separate from the signup list, and from inactivity
+// reminders): the bot can auto-delete two kinds of message - (1) any
+// message containing a WhatsApp group invite link (chat.whatsapp.com/...),
+// flagged on its own, and (2) messages that look like stock/crypto spam,
+// which need BOTH a link AND a finance/crypto keyword (see spam.js's
+// SPAM_KEYWORDS) to be treated as spam; either one alone is too common in
+// normal chat to safely act on. ON by default for every group - every
+// group gets this protection automatically, without an admin having to
+// remember to turn it on. An admin can turn it off per group with
+// !spamfilter off if a group needs to allow, say, its own invite link to
+// circulate. Group admins' own messages are never deleted. Deletion is silent - no bot
+// message calls it out, just WhatsApp's normal "this message was deleted"
+// in its place - and it requires the bot's own WhatsApp account to be a
+// group admin (a WhatsApp-level restriction on deleting others' messages,
+// not something this bot can work around); if it isn't, matching messages
+// are detected but left in place, and the console logs why. Admin status
+// is cached briefly per group (see lib/adminCheck.js) rather than fetched
+// fresh on every check, so a promotion/demotion can take up to a minute to
+// be reflected.
+//
+// Natural-language commands (also separate from everything above): once a
+// group turns this on with !ai on, @-mentioning the bot with a plain-
+// English request (e.g. "@bot put me down for Saturday", "@bot take
+// Peter off", "@bot clear the list") gets interpreted via the Gemini API
+// and mapped to any of the bot's commands - one of the everyday commands
+// (!in/!out/!paid/!list), an admin list-management command (!clear,
+// !newlist, !limit, !spamfilter, !update, ...), or !help/!admin - see
+// lib/geminiCommand.js's MAPPABLE_COMMANDS/COMMAND_ARG_GUIDE for the full
+// list and the actual prompt/schema.
+// Admin commands aren't permission-checked by the AI layer at all: they
+// dispatch into the exact same handler a typed command would (see
+// handleAiMention above), which already refuses a non-admin with the
+// same "Only a group admin can..." reply it always gives - so a regular
+// member @-mentioning "clear the list" gets told no, same as if they'd
+// typed !clear themselves, rather than it happening. Never triggered by a
+// message that isn't a genuine @-mention of the bot's own account (so it
+// doesn't fire on ordinary conversation just because it sounds list-
+// related), and never for a catch-up ('append') message (same reasoning
+// as CATCH_UP_COMMANDS - acting on an AI's guess against a message that's
+// no longer really "now" is riskier than just missing it). If the
+// interpretation is anything less than fully confident, the bot replies
+// with the exact !command it thinks was meant and asks the sender to
+// send that themselves rather than acting on a guess; if the message
+// doesn't look list-related at all, it stays completely silent. OFF by
+// default for every group (opt in per group with !ai on, admins only) -
+// unlike !spamfilter, this calls an external paid API and can misread
+// ordinary chat, so it's an explicit choice rather than a safety default.
+// Requires GEMINI_API_KEY in .env; see lib/config.js and the README's
+// "Natural-language commands" section.
+//
+// "Last seen" status heartbeat: separate from all of the above, the bot
+// also keeps its own WhatsApp profile About text updated with the current
+// date/time (e.g. "Last seen: 14 Aug 2026, 3:45 PM"), refreshed immediately
+// on every (re)connect and then every LAST_SEEN_STATUS_INTERVAL_MINUTES
+// (5 by default) afterwards - see lib/lastSeenStatus.js. This gives anyone
+// a way to check the bot's status straight from WhatsApp (open its contact/
+// profile) instead of needing terminal/log access to tell whether it's
+// actually online and connected right now. On by default; set
+// LAST_SEEN_STATUS=false in .env to turn it off, and TIMEZONE to control
+// what timezone the displayed time is shown in (defaults to the host
+// machine's own timezone - see lib/config.js).
+
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+  DisconnectReason,
+} = require('@whiskeysockets/baileys');
+const P = require('pino');
+const qrcode = require('qrcode-terminal');
+
+const config = require('./lib/config');
+const { getMessageText, formatList, getMentionedJids, stripMentionTokens, normalizeJid } = require('./lib/helpers');
+const { getRegularPlayers } = require('./store');
+const { isGroupAdmin } = require('./lib/adminCheck');
+const { checkGroupInactivity } = require('./lib/inactivityCheck');
+const catchUpQueue = require('./lib/catchUpQueue');
+const { updateLastSeenStatus } = require('./lib/lastSeenStatus');
+const { interpretMessage, formatTodayForPrompt, formatRegularPlayersForPrompt } = require('./lib/geminiCommand');
+const activity = require('./activity');
+const spam = require('./spam');
+const ai = require('./ai');
+const { commands, CATCH_UP_COMMANDS } = require('./commands');
+
+const {
+  AUTH_DIR,
+  ALLOWED_GROUPS,
+  COMMAND_PREFIX,
+  DEBUG,
+  INACTIVITY_CHECK_INTERVAL_MS,
+  LAST_SEEN_STATUS_ENABLED,
+  LAST_SEEN_STATUS_INTERVAL_MS,
+  TIMEZONE,
+} = config;
+
+// Last-resort safety net. Without these, a single unexpected rejection or
+// thrown error ANYWHERE (e.g. a reconnect attempt failing right after the
+// host machine wakes from sleep, before its network is back up) crashes the
+// whole process on modern Node - and since nothing here restarts it, the
+// bot just stays dead until a human notices. We log loudly and exit(1)
+// rather than trying to limp on with potentially-corrupted state; if you
+// run this under pm2 (see ecosystem.config.js/README - `pm2 start
+// ecosystem.config.js`), pm2's autorestart brings it straight back up
+// within a few seconds. Without a process supervisor like pm2, an exit
+// here is still final - it just fails loudly in the logs instead of
+// silently, which is the best a single Node process can do for itself.
+process.on('unhandledRejection', (err) => {
+  console.error('[bot] Unhandled promise rejection - exiting so a process supervisor (e.g. pm2) can restart cleanly:', err);
+  process.exit(1);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[bot] Uncaught exception - exiting so a process supervisor (e.g. pm2) can restart cleanly:', err);
+  process.exit(1);
+});
+
+// Holds whatever socket start() most recently created, so the module-scope
+// inactivity-check interval below (which lives outside start() so it isn't
+// recreated - and stacked - on every reconnect) always has a live socket to
+// use. Guard against null in the interval callback: it's briefly null while
+// a fresh connection is being established after a reconnect.
+let currentSock = null;
+
+// Reconnect backoff state (see scheduleReconnect() below). Deliberately
+// module-scope, not local to start() - it needs to persist and accumulate
+// across repeated failed reconnect attempts, and reset only once a
+// connection actually succeeds.
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+const MAX_RECONNECT_DELAY_MS = 30000;
+
+// Schedules a reconnect after an exponential-backoff delay (1s, 2s, 4s, ...
+// capped at MAX_RECONNECT_DELAY_MS), instead of retrying instantly. This
+// matters most right after the host machine wakes from sleep: the network
+// interface (Wi-Fi association, DHCP, DNS) often isn't fully back for a few
+// seconds, so an immediate retry is likely to fail too - a tight instant-
+// retry loop just hammers both the network and WhatsApp's servers with
+// back-to-back connection attempts instead of giving things a moment to
+// settle. `start()`'s own rejection is caught here (not left unhandled),
+// and a failed attempt reschedules itself with the next backoff step -
+// this is what actually keeps the bot trying to reconnect indefinitely
+// instead of dying on the first failed attempt. The reconnectTimer guard
+// prevents multiple overlapping reconnect chains from stacking up if
+// several 'close' events fire in a burst (e.g. Wi-Fi flapping while it
+// reassociates after wake).
+function scheduleReconnect() {
+  if (reconnectTimer) return; // a reconnect is already queued - don't stack another
+  const delay = Math.min(MAX_RECONNECT_DELAY_MS, 1000 * 2 ** reconnectAttempts);
+  reconnectAttempts += 1;
+  console.log(`[bot] Reconnecting in ${Math.round(delay / 1000)}s (attempt ${reconnectAttempts})...`);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    start().catch((err) => {
+      console.error('[bot] Reconnect attempt failed:', err.message);
+      scheduleReconnect();
+    });
+  }, delay);
+  // unref() so a pending reconnect timer alone doesn't keep the process
+  // alive in contexts where nothing else is (e.g. tests) - has no effect
+  // on the deployed bot, where the goal IS to keep retrying indefinitely.
+  if (typeof reconnectTimer.unref === 'function') reconnectTimer.unref();
+}
+
+async function start() {
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  const { version } = await fetchLatestBaileysVersion();
+
+  const sock = makeWASocket({
+    version,
+    auth: state,
+    logger: P({ level: 'silent' }),
+    // We handle QR display ourselves below via the connection.update event.
+    printQRInTerminal: false,
+  });
+
+  currentSock = sock;
+
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect, qr, receivedPendingNotifications } = update;
+
+    // Baileys emits this as its own standalone connection.update - false
+    // right as a connection attempt starts (fresh login or reconnect
+    // alike), true once WhatsApp confirms every message queued while the
+    // bot was offline has been fully redelivered. Forwarded to
+    // lib/catchUpQueue.js so it knows when it's actually safe to flush a
+    // batched catch-up summary, instead of just guessing "done" from a
+    // few seconds of silence - see that file's setBacklogSynced() for why
+    // that guess alone could split one reconnect's backlog into two
+    // separate summary messages.
+    if (receivedPendingNotifications === false) {
+      catchUpQueue.setBacklogSynced(false);
+    } else if (receivedPendingNotifications === true) {
+      catchUpQueue.setBacklogSynced(true);
+    }
+
+    if (qr) {
+      console.log('\n[bot] Scan this QR code with WhatsApp (Linked Devices > Link a Device):\n');
+      qrcode.generate(qr, { small: true });
+    }
+
+    if (connection === 'open') {
+      // A real, successful connection - reset the backoff so the NEXT time
+      // this drops (e.g. another sleep/wake cycle), reconnecting starts
+      // fresh at a 1s delay again rather than picking up wherever a much
+      // earlier, unrelated run of failures left off.
+      reconnectAttempts = 0;
+      console.log('[bot] Connected to WhatsApp.');
+      // Picks back up any catch-up summary batch that was left buffered
+      // without a working socket - either loaded from disk at process
+      // startup (a previous run was killed/restarted before it could send),
+      // or left over from a flush attempt that found no live connection
+      // (see lib/catchUpQueue.js's flush()). Safe to call on every
+      // (re)connect, including ones with nothing pending.
+      catchUpQueue.resumePendingFlushes(() => currentSock);
+      if (LAST_SEEN_STATUS_ENABLED) {
+        // Refresh immediately on every (re)connect rather than waiting up
+        // to LAST_SEEN_STATUS_INTERVAL_MS for the next timer tick below -
+        // otherwise the About text could sit stale for minutes right after
+        // a reconnect, which is exactly when it's most useful to be current.
+        updateLastSeenStatus(sock);
+      }
+      if (!ALLOWED_GROUPS.length) {
+        console.log(
+          '[bot] ALLOWED_GROUPS is not set - the bot will log group JIDs it sees but will not moderate any group yet.'
+        );
+        console.log('[bot] Send any message in the target group, then check the logs for its JID.');
+      } else {
+        console.log('[bot] Moderating groups:', ALLOWED_GROUPS.join(', '));
+      }
+    }
+
+    if (connection === 'close') {
+      // Clear currentSock immediately - this socket is dead either way, and
+      // we'd rather the inactivity-check interval (see below) skip a beat
+      // than try to send through a closed connection.
+      currentSock = null;
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const loggedOut = statusCode === DisconnectReason.loggedOut;
+      console.log('[bot] Connection closed.', { statusCode, loggedOut });
+      if (loggedOut) {
+        console.log('[bot] Session logged out. Delete the auth_info folder/volume and re-scan the QR code to relink.');
+      } else {
+        // Backoff + error handling lives in scheduleReconnect() - a bare
+        // `start()` here would leave any reconnect failure (e.g. the
+        // network not being back yet right after the host wakes from
+        // sleep) as an unhandled promise rejection, which crashes the
+        // whole process on modern Node with nothing left to bring it back.
+        scheduleReconnect();
+      }
+    }
+  });
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    // 'notify' = a genuinely live, just-arrived message. 'append' = WhatsApp
+    // redelivering a message from its server-side offline queue because
+    // this device (the bot) was disconnected when it first arrived - see
+    // node.attrs.offline in Baileys' messages-recv.js, which is what
+    // decides between the two. Both are let through here; handleMessage
+    // itself is what treats 'append' far more conservatively (see below).
+    if (type !== 'notify' && type !== 'append') return;
+
+    for (const msg of messages) {
+      try {
+        await handleMessage(sock, msg, type);
+      } catch (err) {
+        console.error('[bot] Error handling message:', err);
+      }
+    }
+  });
+}
+
+// Whether `msg` @-mentions the bot's own WhatsApp account - the trigger
+// condition for natural-language command interpretation (see
+// lib/geminiCommand.js). sock.user.id includes a device-id suffix (e.g.
+// "1234567890:12@s.whatsapp.net") that mentionedJid entries never do,
+// hence the normalizeJid() on both sides.
+//
+// WhatsApp has two parallel addressing formats for the same account:
+// the classic phone-number JID ("...@s.whatsapp.net", what sock.user.id
+// always is) and the newer privacy "LID" JID ("...@lid", a different
+// numeric ID for the same account). Which one a client puts in
+// contextInfo.mentionedJid when someone @-mentions the bot depends on
+// that group's/that sender's settings - some groups send the classic
+// JID, others send the LID one. Baileys exposes the bot's own LID as
+// sock.user.lid (populated after connecting, alongside sock.user.id), so
+// both are checked here - comparing only sock.user.id would silently
+// never match in LID-addressed groups, making the bot look mentioned but
+// never actually trigger.
+function messageMentionsBot(sock, msg) {
+  const candidates = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
+  if (!candidates.length) return false;
+  const mentioned = getMentionedJids(msg);
+  if (!mentioned.length) return false;
+  return mentioned.some((jid) => candidates.includes(normalizeJid(jid)));
+}
+
+// Shown for every @-mention that DOESN'T end in a confident, dispatched
+// command - command 'none' (not list-related), confidence 'low' (a guess
+// the model itself isn't sure of), or a failed/unparseable Gemini API call
+// all collapse to this one plain reply rather than three different
+// behaviors. Deliberately does NOT show a guessed !command (a previous
+// version of this feature did, as a "did you want this?" confirmation) -
+// showing a specific guess is itself a form of guessing, and a flat "I'm
+// not capable of doing that" is a clearer signal to just rephrase or use
+// the real command. See handleAiMention below for why this is ALWAYS sent in these
+// cases rather than sometimes staying silent.
+const AI_NOT_UNDERSTOOD_REPLY = `Sorry, I'm not capable of doing that - try again, or use ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) to see the exact commands I understand.`;
+
+// Handles a live, non-"!"-prefixed message that @-mentioned the bot, in a
+// group that has !ai turned on (see the call site in handleMessage below
+// for the other trigger conditions). Asks Gemini to interpret it as ONE OR
+// MORE of MAPPABLE_COMMANDS (see lib/geminiCommand.js's RESPONSE_SCHEMA/
+// SYSTEM_PROMPT "MULTIPLE ACTIONS" rules) - every command the bot has, no
+// exceptions: the everyday commands, every admin list-management one
+// (including !update, see that file's comment for how a pasted list is
+// recognized), and !help/!admin. A single @-mention can bundle several
+// distinct requests together (e.g. "start a new list for Sunday, cap the
+// tournament at 12, and add Keith/Tu/Bao to it" is three separate
+// requests), so interpretMessage() returns an ORDERED actions array, not
+// just one - each item is judged and dispatched independently:
+//  - No interpretation at all (a failed/unparseable API call), or the
+//    array has no action with command !== 'none' and confidence 'high':
+//    reply with the plain AI_NOT_UNDERSTOOD_REPLY above, rather than
+//    guessing, acting, or (a previous version of this feature) staying
+//    completely silent. Being @-mentioned always gets SOME reply now - the
+//    sender should never be left wondering whether the bot even saw their
+//    message, the same way an unrecognized "!command" would previously
+//    just vanish with no feedback at all.
+//  - Each action with command !== 'none' and confidence 'high' dispatches
+//    straight to the real command handler (commands/list.js or
+//    commands/admin.js/etc.), exactly as if that !command had been typed -
+//    reuses all of its existing validation/permission-checking/reply logic
+//    rather than duplicating any of it here. This is what enforces "admin
+//    commands only for admins": every admin-gated handler already checks
+//    isGroupAdmin() itself and replies with the same "Only a group admin
+//    can..." message it would give a non-admin's typed command, so a
+//    non-admin @-mentioning an admin request gets that same refusal rather
+//    than the action happening. Dispatched ONE AT A TIME, in the order
+//    given (awaited in sequence, not in parallel) - later actions can
+//    depend on earlier ones actually having happened first (e.g. an "in"
+//    action opting people into the tournament on a list a preceding
+//    "newlist" action just created), and each already replies/reposts the
+//    list on its own via `reply`/`postList` (same as if you'd typed each
+//    command one after another yourself) - there's no separate combined
+//    reply here.
+//  - Any action with command 'none' or confidence 'low' inside an
+//    otherwise-dispatchable batch is silently skipped (not replied to on
+//    its own) - same "never guess out loud" philosophy as a fully
+//    uncertain single-request mention, just applied per-action instead of
+//    to the whole message. Only if EVERY action in the array is
+//    undispatchable does the whole mention fall back to
+//    AI_NOT_UNDERSTOOD_REPLY.
+async function handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList }) {
+  const mentioned = getMentionedJids(msg);
+  const cleanedText = stripMentionTokens(text, mentioned);
+  // Same numbered Attendance/Waitlist/payment-due text the group is
+  // actually looking at - lets the model resolve "remove 1-3"-style
+  // position references against real current numbering, rather than
+  // guessing blind. See lib/geminiCommand.js's buildPrompt()/SYSTEM_PROMPT.
+  const listText = formatList(groupId);
+  // Lets the model resolve a relative date reference ("next Wednesday",
+  // "tomorrow") for a "newlist"/"date" request into a real DD/MM - see
+  // lib/geminiCommand.js's formatTodayForPrompt()/SYSTEM_PROMPT RELATIVE
+  // DATES rules. Resolved against the group's configured TIMEZONE (see
+  // lib/config.js), same as lib/lastSeenStatus.js's own "what day/time is
+  // it right now" logic, rather than the server's own local time/UTC.
+  const todayLabel = formatTodayForPrompt(new Date(), TIMEZONE);
+  // Lets the model tell "add the regular players" (uses the group's saved
+  // roster) apart from "these are the regular players: ..." (redefines it)
+  // - see lib/geminiCommand.js's formatRegularPlayersForPrompt()/
+  // SYSTEM_PROMPT's REGULAR PLAYERS paragraph, and commands/admin.js's
+  // !regulars for how the roster itself is stored/managed.
+  const regularPlayersText = formatRegularPlayersForPrompt(getRegularPlayers(groupId));
+  const interpretation = await interpretMessage(cleanedText, { listText, todayLabel, regularPlayersText });
+
+  const actions = interpretation && interpretation.actions;
+  const dispatchable = (actions || []).filter((a) => a.command !== 'none' && a.confidence === 'high');
+
+  if (!dispatchable.length) {
+    await reply(AI_NOT_UNDERSTOOD_REPLY);
+    return;
+  }
+
+  // Each individual handler calls `postList` itself when it changes
+  // something - correct for a single typed command, but most of these
+  // commands are "quiet on success, let the reposted list speak for
+  // itself" (see commands/admin.js's file-level comment), so three
+  // dispatched actions that each succeed quietly would otherwise repost
+  // the WHOLE list three times in a row for one @-mention - noisy, and
+  // the first two reposts are immediately stale the moment the next
+  // action runs. Instead, `postList` is swapped for a stand-in that just
+  // records "a repost is owed" without actually sending anything, and the
+  // real repost happens (at most) ONCE, after every action in the batch
+  // has finished - so the group sees the final state in one message, same
+  // as if the actions had been combined into a single command. `reply` is
+  // passed through UNCHANGED - a genuine confirmation/refusal/warning from
+  // an individual action (e.g. "Only a group admin can...", or "Couldn't
+  // add: ...") is still real, distinct information worth its own message,
+  // not a repost to collapse.
+  let repostOwed = false;
+  const batchedPostList = async () => {
+    repostOwed = true;
+  };
+
+  for (const action of dispatchable) {
+    const handler = commands[`${COMMAND_PREFIX}${action.command}`];
+    if (!handler) {
+      // Defensive - the response schema constrains command to known
+      // values, so this shouldn't happen in practice; just skip this one
+      // action rather than aborting the rest of an otherwise-valid batch.
+      continue;
+    }
+    // "update" is special-cased: NEVER trust the model's own copy of the
+    // pasted list, even though COMMAND_ARG_GUIDE asks it to reproduce the
+    // message verbatim. An LLM relaying text through a JSON field can
+    // still subtly "clean up" markdown-looking asterisks (reading
+    // "*Attendance*" as italic/bold formatting rather than literal
+    // characters to preserve), collapse blank lines, or otherwise
+    // reformat it on the way through - any of which can make the pasted
+    // *Attendance*/*Waitlist* header unrecognizable to lib/listParser.js
+    // and silently break the whole bulk edit (a real bug this fixed - an
+    // "update the list to be <pasted tournament-formatted list>" mention
+    // came back with an argText that had lost its "*Attendance*" header
+    // somewhere in transit, so handleUpdate found zero sections and
+    // refused). We already have the REAL original text on our end -
+    // `cleanedText` (mention-token-stripped but otherwise byte-for-byte
+    // untouched) - so for this one command we ignore whatever argText the
+    // model returned and substitute the genuine original message instead.
+    // No LLM relay step, no risk of reformatting - the same guarantee a
+    // typed "!update" (which never goes through the model at all) already
+    // has.
+    const argText = action.command === 'update' ? cleanedText : (action.argText || '');
+    // Sequential, not parallel - see the doc comment above for why a later
+    // action (e.g. joining the tournament) may depend on an earlier one
+    // (e.g. the "newlist" that created the list it's joining) having
+    // already completed.
+    await handler({ sock, msg, groupId, senderId, senderName, argText, upsertType: 'notify', reply, postList: batchedPostList });
+  }
+
+  if (repostOwed) {
+    await postList();
+  }
+}
+
+async function handleMessage(sock, msg, upsertType) {
+  if (DEBUG) {
+    // Logs EVERY incoming message before any filtering, so you can see
+    // exactly what the bot received and figure out which filter (if any)
+    // is dropping it. Enable with DEBUG=true in .env.
+    console.log('[debug] incoming message', {
+      chat: msg.key.remoteJid,
+      fromMe: msg.key.fromMe,
+      participant: msg.key.participant,
+      text: getMessageText(msg),
+      upsertType,
+      mentionedJid: getMentionedJids(msg),
+      botJid: sock?.user?.id,
+    });
+  }
+
+  // Ignore messages the bot itself sent (its own replies, status updates, etc.)
+  // NOTE: this also ignores messages YOU type from the same WhatsApp account
+  // the bot is linked to - WhatsApp reports those as fromMe too, since it's
+  // one account either way. To test commands, send them from a different
+  // phone/account that's also in the group, not from the linked number itself.
+  if (msg.key.fromMe) return;
+
+  const groupId = msg.key.remoteJid;
+  if (!groupId || !groupId.endsWith('@g.us')) return; // only moderate group chats
+
+  if (!msg.message) return; // no real content (e.g. a reaction or protocol message) - nothing to record or act on
+
+  const senderId = msg.key.participant || msg.key.remoteJid;
+  const senderName = msg.pushName || senderId.split('@')[0];
+  const text = getMessageText(msg).trim();
+
+  if (ALLOWED_GROUPS.length && !ALLOWED_GROUPS.includes(groupId)) {
+    return; // not a group we're configured to moderate
+  }
+  if (!ALLOWED_GROUPS.length) {
+    // Not configured yet - stay fully passive (no activity tracking, no
+    // moderation), except logging a command's group JID so an admin can
+    // copy it into .env. Gated on an actual command (not every message) to
+    // keep the console usable while the bot is still unconfigured.
+    if (text.startsWith(COMMAND_PREFIX)) {
+      let subject = groupId;
+      try {
+        subject = (await sock.groupMetadata(groupId)).subject;
+      } catch (_) {
+        /* ignore */
+      }
+      console.log(`[bot] Saw a command in unconfigured group "${subject}" -> JID: ${groupId}`);
+    }
+    return; // safe default: do nothing until ALLOWED_GROUPS is configured
+  }
+
+  // Command name/args, computed up front so both the catch-up gate below
+  // and the dispatch table further down can share it - safe to compute
+  // even when `text` isn't a command at all, since rawCmd just won't match
+  // any entry in `commands` and falls through to a silent no-op.
+  // Split on the first whitespace character - space OR newline - not just
+  // a space. Every command used to be single-line, so splitting on the
+  // first space alone was equivalent; !update (see commands/admin.js)
+  // breaks that assumption on purpose, since its whole point is taking a
+  // multi-line pasted-and-edited list as its argument, typically typed as
+  // "!update" on its own line followed by the pasted text below. Splitting
+  // on the first space only would have sliced into the MIDDLE of that
+  // pasted text (at its first space) instead of after the command word.
+  const spaceIdx = text.search(/\s/);
+  const rawCmd = (spaceIdx === -1 ? text : text.slice(0, spaceIdx)).toLowerCase();
+  const argText = (spaceIdx === -1 ? '' : text.slice(spaceIdx + 1)).trim();
+
+  // Catch-up messages (upsertType === 'append', see the messages.upsert
+  // listener above) are handled far more conservatively than live ones:
+  // only !in, !out, and !paid are honored - the self-service commands
+  // where missing one is most disruptive to someone trying to join,
+  // leave, or pay. Everything else about a catch-up message - spam
+  // filtering, activity tracking, and every other command - is
+  // intentionally NOT processed: re-running an admin command like
+  // !newlist or !limit after an arbitrary delay, or backdating someone's
+  // activity/spam status against a message that's no longer really "now",
+  // would do more harm than the missed message itself.
+  if (upsertType === 'append' && !CATCH_UP_COMMANDS.has(rawCmd)) {
+    // Worth an operator-visible trace (not DEBUG-gated) whenever this drops
+    // something that genuinely looked actionable - either a real, known
+    // command (any of `commands` other than !in/!out/!paid - e.g. !limit,
+    // !allow, !newlist, !update, ...) sent while the bot's socket was
+    // briefly disconnected/reconnecting, or a genuine @-mention of the bot
+    // that would otherwise have triggered natural-language command
+    // interpretation (see handleAiMention below - that feature only ever
+    // acts on live ('notify') messages, by design, see its own gate
+    // further down). Both cases were previously dropped with ZERO trace
+    // anywhere at default log verbosity - real reports of "I sent
+    // !allow/!limit and got no response" and "I @-mentioned the bot and
+    // got no response at all" both turned out to have exactly this as
+    // their most likely explanation. The `commands[rawCmd]` check (a real
+    // dispatch-table lookup) and messageMentionsBot() (cheap, synchronous,
+    // no network call) - not text heuristics - keep this from firing for
+    // ordinary catch-up chat/typos that were never going to do anything
+    // regardless. The @-mention branch also requires ai.isEnabled() itself,
+    // so a group with the feature off doesn't get a misleading
+    // "blame the catch-up" log when the real reason it wouldn't have
+    // worked either way is that !ai is off.
+    if (text.startsWith(COMMAND_PREFIX) && commands[rawCmd]) {
+      console.log(
+        `[bot] Dropped "${rawCmd}" in ${groupId} (from ${senderId}) because it arrived as a catch-up ('append') redelivery, not live - only ${[...CATCH_UP_COMMANDS].join('/')} are honored on catch-up (see the README's "Catching up after a network outage"). If this was a genuine request, the sender needs to send it again.`
+      );
+    } else if (!text.startsWith(COMMAND_PREFIX) && ai.isEnabled(groupId) && messageMentionsBot(sock, msg)) {
+      console.log(
+        `[bot] Dropped an @-mention of me in ${groupId} (from ${senderId}) because it arrived as a catch-up ('append') redelivery, not live - natural-language commands only ever act on live messages. If this was a genuine request, the sender needs to send it again.`
+      );
+    }
+    return;
+  }
+
+  // Spam filtering (link + stock/crypto keyword) - checked before anything
+  // else below, so a deleted spam message doesn't get counted as activity
+  // or accidentally parsed as a command. isSpamMessage() is a cheap
+  // synchronous regex check, so it runs first; isGroupAdmin() (which needs
+  // a network call, though a cached one - see lib/adminCheck.js) is only
+  // reached for messages that already look like spam, keeping the
+  // per-message overhead near zero for everyone else.
+  if (spam.isEnabled(groupId) && spam.isSpamMessage(text)) {
+    const senderIsAdmin = await isGroupAdmin(sock, groupId, senderId);
+    if (!senderIsAdmin) {
+      try {
+        // Deleting someone else's message in a group requires the bot's
+        // own WhatsApp account to be a group admin - if it isn't, this
+        // throws and the message is left in place (logged below so the
+        // operator can tell why nothing happened).
+        await sock.sendMessage(groupId, { delete: msg.key });
+      } catch (err) {
+        console.error(`[bot] Failed to delete a suspected-spam message in ${groupId} (is the bot a group admin?):`, err.message);
+      }
+      return; // deleted (or tried to) - don't record activity or treat it as a command
+    }
+  }
+
+  // Record activity for EVERY real message in a moderated group - not just
+  // bot commands - since the inactivity check (and !stale) needs to see
+  // regular chat presence, not just who's been running commands. Done
+  // before the command-prefix check below so it covers commands too, and
+  // deliberately before dispatch so no code path below can accidentally
+  // skip it. Gated on the group having inactivity checking turned on (see
+  // !inactivity) - a group that's never opted in shouldn't have
+  // activity.json growing on its behalf for no reason.
+  if (activity.isEnabled(groupId)) {
+    activity.recordActivity(groupId, senderId);
+  }
+
+  const reply = (body) => sock.sendMessage(groupId, { text: body }, { quoted: msg });
+  const postList = () => sock.sendMessage(groupId, { text: formatList(groupId) });
+
+  if (!text.startsWith(COMMAND_PREFIX)) {
+    // Natural-language command interpretation (see lib/geminiCommand.js
+    // and handleAiMention above) - deliberately narrow trigger: only a
+    // genuinely live message (never catch-up/'append' - re-running an
+    // AI-guessed interpretation against a message that's no longer really
+    // "now" is exactly what CATCH_UP_COMMANDS avoids for real commands
+    // too), only in a group that's explicitly opted in with !ai on, and
+    // only when the message actually @-mentions the bot - never triggered
+    // by ordinary chat, however list-related it might sound.
+    if (upsertType === 'notify' && ai.isEnabled(groupId) && messageMentionsBot(sock, msg)) {
+      await handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList });
+    } else if (upsertType === 'notify' && messageMentionsBot(sock, msg) && !ai.isEnabled(groupId)) {
+      // Same "a genuine @-mention that got silently dropped should leave
+      // SOME trace" reasoning as the catch-up-gate log above - this is the
+      // other precisely-detectable way it happens: the mention genuinely
+      // matched the bot's own JID/LID (a real messageMentionsBot() call,
+      // not a heuristic), but the group never turned natural-language
+      // commands on. Deliberately does NOT try to also log the remaining
+      // failure mode - messageMentionsBot() returning false for a message
+      // that was meant to mention the bot (e.g. a WhatsApp classic-JID/LID
+      // addressing mismatch, see that function's own doc comment) - since
+      // there's no reliable way to tell that apart from "mentioned some
+      // other group member, not the bot," which happens constantly in
+      // ordinary chat once !ai is on; logging every such message would
+      // bury the signal instead of surfacing it.
+      console.log(
+        `[bot] Dropped an @-mention of me in ${groupId} (from ${senderId}) because ${COMMAND_PREFIX}ai is off for this group - natural-language commands only work once an admin turns it on with ${COMMAND_PREFIX}ai on.`
+      );
+    }
+    return;
+  }
+
+  const handler = commands[rawCmd];
+  if (!handler) return; // unknown command - stay quiet to avoid being noisy in busy group chats
+
+  const result = await handler({ sock, msg, groupId, senderId, senderName, argText, upsertType, reply, postList });
+
+  // Catch-up (upsertType === 'append') !in/!out/!paid handlers stay quiet
+  // on their own (see commands/list.js's isCatchUp handling) and instead
+  // return an outcome object describing what happened - queue it here so
+  // lib/catchUpQueue.js can batch the whole offline backlog into one
+  // combined summary instead of a burst of individual replies/list
+  // reposts. Live ('notify') messages already sent their own reply/list
+  // post inside the handler, so their return value is simply unused here.
+  if (upsertType === 'append' && result) {
+    catchUpQueue.bufferCatchUpResult(groupId, () => currentSock, result);
+  }
+}
+
+// Single module-scope interval (deliberately NOT created inside start()) -
+// start() can be called repeatedly across reconnects, and an interval
+// created there would stack a new duplicate timer on every reconnect.
+// Living here instead means exactly one interval exists for the whole
+// process lifetime, and it just reads whatever socket start() most
+// recently assigned to currentSock (see above) each time it fires. Runs
+// unconditionally over every configured group whenever ALLOWED_GROUPS is
+// non-empty - checkGroupInactivity() itself is the one that checks each
+// group's own !inactivity on/off state and skips (cheaply, before any
+// network call) groups that haven't opted in.
+if (ALLOWED_GROUPS.length) {
+  const inactivityTimer = setInterval(() => {
+    for (const groupId of ALLOWED_GROUPS) {
+      checkGroupInactivity(currentSock, groupId);
+    }
+  }, INACTIVITY_CHECK_INTERVAL_MS);
+  // unref() so this timer alone doesn't keep the process alive (e.g. in
+  // tests that require() this module and never open a real socket) - in
+  // normal operation the live Baileys connection keeps the event loop
+  // running regardless, so this has no effect on the deployed bot.
+  if (typeof inactivityTimer.unref === 'function') inactivityTimer.unref();
+}
+
+// Same module-scope-interval pattern as the inactivity check above (and for
+// the same reason: living inside start() would stack a duplicate timer on
+// every reconnect). Also fires once immediately on every 'open' event above
+// so the About text doesn't sit stale between reconnects and the first tick
+// here. currentSock is read fresh on every tick, and updateLastSeenStatus()
+// itself no-ops safely if it's briefly null (see lib/lastSeenStatus.js).
+if (LAST_SEEN_STATUS_ENABLED) {
+  const lastSeenTimer = setInterval(() => {
+    updateLastSeenStatus(currentSock);
+  }, LAST_SEEN_STATUS_INTERVAL_MS);
+  if (typeof lastSeenTimer.unref === 'function') lastSeenTimer.unref();
+}
+
+start().catch((err) => {
+  console.error('[bot] Fatal error on startup:', err);
+  process.exit(1);
+});
