@@ -169,6 +169,12 @@ function getLastGeminiPromptText() {
 require('../index'); // runs start() -> captures the 'messages.upsert' handler
 const ai = require('../ai'); // same DATA_DIR as index.js, so toggling here is visible to it
 const store = require('../store'); // same DATA_DIR as index.js, so seeding regularPlayers here is visible to it
+// Same module-cache instance index.js itself dispatches through - mutating
+// a handler on these objects (see the "unexpected error" tests below) is
+// visible to index.js's real handleMessage()/handleAiMention(), since both
+// just read `commands[rawCmd]`/`rawCommands[...]` off this shared object at
+// call time rather than holding their own destructured copy.
+const { commands, rawCommands } = require('../commands');
 const { COMMAND_PREFIX } = require('../lib/config');
 const { formatList } = require('../lib/helpers');
 
@@ -199,6 +205,69 @@ test('e2e: a live !in command is processed and posts the updated list', async ()
   // -insensitively rather than assuming a particular capitalization.
   const posted = fakeSockInstance.sentMessages.find((m) => /alex/i.test(m.content.text || ''));
   assert.ok(posted, 'expected the list (containing alex) to have been posted');
+});
+
+// --- Unexpected errors get a visible reply, not silence ---
+// Regression coverage for a real gap: a handler throwing used to be caught
+// only by the outermost try/catch around handleMessage() in index.js's
+// messages.upsert listener, which just logs server-side - the sender got no
+// reply at all, indistinguishable from the bot having ignored them. See
+// UNEXPECTED_ERROR_REPLY/the try/catch around both dispatch points in
+// index.js.
+
+test('e2e: a typed command whose handler throws replies with an unexpected-error message instead of staying silent', async () => {
+  const key = `${COMMAND_PREFIX}help`;
+  const original = commands[key];
+  commands[key] = async () => {
+    throw new Error('simulated handler crash');
+  };
+  fakeSockInstance.sentMessages.length = 0;
+
+  try {
+    await deliver(key, { from: 'admin@s.whatsapp.net', type: 'notify' });
+  } finally {
+    commands[key] = original;
+  }
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  assert.match(fakeSockInstance.sentMessages[0].content.text, /something went wrong/i);
+});
+
+test('e2e: a catch-up (append) command whose handler throws stays quiet, same as it does on success', async () => {
+  const key = `${COMMAND_PREFIX}in`;
+  const original = commands[key];
+  commands[key] = async () => {
+    throw new Error('simulated handler crash');
+  };
+  fakeSockInstance.sentMessages.length = 0;
+
+  try {
+    await deliver(key, { from: 'alex@s.whatsapp.net', type: 'append' });
+  } finally {
+    commands[key] = original;
+  }
+
+  assert.equal(fakeSockInstance.sentMessages.length, 0, 'expected no error reply for a delayed catch-up redelivery');
+});
+
+test('e2e: an AI-dispatched action whose handler throws replies with an unexpected-error message instead of staying silent', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'list', argText: '', confidence: 'high' });
+  const key = `${COMMAND_PREFIX}list`;
+  const original = rawCommands[key];
+  rawCommands[key] = async () => {
+    throw new Error('simulated handler crash');
+  };
+  fakeSockInstance.sentMessages.length = 0;
+
+  try {
+    await deliver('show me the list', { from: 'admin@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+  } finally {
+    rawCommands[key] = original;
+  }
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  assert.match(fakeSockInstance.sentMessages[0].content.text, /something went wrong/i);
 });
 
 // --- Natural-language command interpretation (lib/geminiCommand.js) ---

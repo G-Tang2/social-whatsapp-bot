@@ -511,6 +511,19 @@ function messageMentionsBot(sock, msg) {
 // cases rather than sometimes staying silent.
 const AI_NOT_UNDERSTOOD_REPLY = `Sorry, I'm not capable of doing that - try again, or use ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) to see the exact commands I understand.`;
 
+// Shown when a command handler (typed or AI-dispatched) throws instead of
+// completing normally - a bug, a transient network failure talking to
+// WhatsApp/Gemini, whatever. Without this, the sender previously just got
+// silence: the error was only ever logged server-side (see the top-level
+// try/catch around handleMessage() in start()'s messages.upsert listener),
+// which is fine as a last-resort safety net for background/non-command
+// processing, but leaves someone who typed a real command with no way to
+// tell "the bot ignored me" apart from "the bot is broken right now."
+// Deliberately vague about the cause (no stack trace/error message leaked
+// into the group) - the real detail goes to the console for whoever's
+// running the bot to investigate.
+const UNEXPECTED_ERROR_REPLY = "Sorry, something went wrong on my end handling that - try again in a bit, and let an admin know if it keeps happening.";
+
 // Handles a live, non-"!"-prefixed message that @-mentioned the bot, in a
 // group that has !ai turned on (see the call site in handleMessage below
 // for the other trigger conditions). Asks Gemini to interpret it as ONE OR
@@ -826,7 +839,12 @@ async function handleMessage(sock, msg, upsertType) {
     // only when the message actually @-mentions the bot - never triggered
     // by ordinary chat, however list-related it might sound.
     if (upsertType === 'notify' && ai.isEnabled(groupId) && messageMentionsBot(sock, msg)) {
-      await handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList });
+      try {
+        await handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList });
+      } catch (err) {
+        console.error(`[bot] Error handling an AI mention in ${groupId} (from ${senderId}):`, err);
+        await reply(UNEXPECTED_ERROR_REPLY);
+      }
     } else if (upsertType === 'notify' && messageMentionsBot(sock, msg) && !ai.isEnabled(groupId)) {
       // Same "a genuine @-mention that got silently dropped should leave
       // SOME trace" reasoning as the catch-up-gate log above - this is the
@@ -851,7 +869,22 @@ async function handleMessage(sock, msg, upsertType) {
   const handler = commands[rawCmd];
   if (!handler) return; // unknown command - stay quiet to avoid being noisy in busy group chats
 
-  const result = await handler({ sock, msg, groupId, senderId, senderName, argText, upsertType, reply, postList });
+  let result;
+  try {
+    result = await handler({ sock, msg, groupId, senderId, senderName, argText, upsertType, reply, postList });
+  } catch (err) {
+    console.error(`[bot] Error running ${rawCmd} in ${groupId} (from ${senderId}):`, err);
+    // Catch-up ('append') messages stay quiet on failure too, same as they
+    // do on success (see the doc comment on the `result` handling just
+    // below) - there's no live sender actively waiting on a reply to an
+    // offline-backlog message, and posting an error reply for a delayed
+    // redelivery would be a confusing non-sequitur days/hours after the
+    // fact.
+    if (upsertType === 'notify') {
+      await reply(UNEXPECTED_ERROR_REPLY);
+    }
+    return;
+  }
 
   // Catch-up (upsertType === 'append') !in/!out/!paid handlers stay quiet
   // on their own (see commands/list.js's isCatchUp handling) and instead
