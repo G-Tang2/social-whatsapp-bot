@@ -71,11 +71,6 @@ const TIPS_TEXT = [
   '*Payments*',
   `_• Lead with "paid" on ${COMMAND_PREFIX}in or ${COMMAND_PREFIX}out to confirm payment in the same message, e.g. ${COMMAND_PREFIX}in paid or ${COMMAND_PREFIX}in paid Alex, Sam - same as sending ${COMMAND_PREFIX}paid separately right after_`,
   '',
-  '*Tournament*',
-  `_• If a group has its tournament turned on, lead with "tournament" on ${COMMAND_PREFIX}in to opt in at the same time as joining, e.g. ${COMMAND_PREFIX}in tournament, or ${COMMAND_PREFIX}in tournament Alex, Sam - works alongside "paid" too, in either order (e.g. ${COMMAND_PREFIX}in paid tournament Alex, Sam). Already on the list ("Social only")? The same command upgrades them instead of re-adding - one name (${COMMAND_PREFIX}in tournament with nobody else named) or several at once (${COMMAND_PREFIX}in tournament Alex, Sam, even if only some of them are new). Run bare ${COMMAND_PREFIX}settournament any time to see who's currently in, or ${COMMAND_PREFIX}tournament any time to see the tournament rules_`,
-  '',
-  `_• To take someone OUT of the tournament without removing them from the list, lead with "tournament" on ${COMMAND_PREFIX}out instead, e.g. ${COMMAND_PREFIX}out tournament or ${COMMAND_PREFIX}out tournament Garvin - moves them back to "Social only" and, if it freed an actual tournament spot, promotes whoever's at the front of the (🏆 WL) queue automatically_`,
-  '',
   '*Other*',
   `_• If Snoopy briefly loses internet, ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid sent during that gap still go through once it's back online_`,
 ].join('\n');
@@ -105,12 +100,6 @@ const ADMIN_HELP_TEXT = [
   '*Rosters*',
   `• *${COMMAND_PREFIX}regulars [name1, name2, ...]* - saved roster of regular players, reusable later via "regular players" in ${COMMAND_PREFIX}in/${COMMAND_PREFIX}newlist (admins to change)`,
   '',
-  '*Tournament*',
-  `• *${COMMAND_PREFIX}settournament [on|off|rules <text>]* - tournament sub-feature for this group, off by default; bare ${COMMAND_PREFIX}settournament shows who's currently in it (admins to change on/off, or set the rules text with ${COMMAND_PREFIX}settournament rules <text>)`,
-  `• *${COMMAND_PREFIX}tournament* - shows the tournament rules text an admin set via ${COMMAND_PREFIX}settournament rules <text> (anyone can view)`,
-  `• *${COMMAND_PREFIX}tournamentlimit [number]* - max people in the tournament, separate from the main ${COMMAND_PREFIX}limit (admins to change; ${COMMAND_PREFIX}tournamentlimit off removes it)`,
-  `• *${COMMAND_PREFIX}tournamentwinners [Name1, Name2]* - sets the "Congrats to Name1 and Name2 for winning last week's tournament" banner shown above the list (admins to change)`,
-  '',
   '*Group settings*',
   `• *${COMMAND_PREFIX}inactivity [on|off]* - inactivity reminders for this group, off by default (admins to change)`,
   `• *${COMMAND_PREFIX}stale* - who's been warned for inactivity, and who's overdue`,
@@ -120,7 +109,7 @@ const ADMIN_HELP_TEXT = [
   '*Other*',
   `• *${COMMAND_PREFIX}update <paste the list, edited>* - bulk-edit Attendance/Waitlist/Payment by pasting the list back with changes`,
   `• *${COMMAND_PREFIX}undo* - reverse the last change made in this group, whatever it was (admins only)`,
-  `• *${COMMAND_PREFIX}admintips* - tips and caveats for the admin commands above (${COMMAND_PREFIX}update's header block, ${COMMAND_PREFIX}settournament, and more)`,
+  `• *${COMMAND_PREFIX}admintips* - tips and caveats for the admin commands above (${COMMAND_PREFIX}update's header block, and more)`,
 ].join('\n');
 
 // The admin-side tips/caveats that used to be ADMIN_HELP_TEXT's own
@@ -142,20 +131,15 @@ const ADMIN_TIPS_TEXT = [
   '*Rosters*',
   `_• Save your regulars once with ${COMMAND_PREFIX}regulars Harry, Bonny, Ron (or ${COMMAND_PREFIX}regulars add <name> / ${COMMAND_PREFIX}regulars remove <name> to tweak it, ${COMMAND_PREFIX}regulars clear to empty it), then reuse them any time with the word "regular players" in place of names - ${COMMAND_PREFIX}in regular players, or ${COMMAND_PREFIX}newlist 20/08 with regular players. Sticks around across ${COMMAND_PREFIX}newlist/${COMMAND_PREFIX}clear until you change it_`,
   '',
-  '*Tournament*',
-  `_• ${COMMAND_PREFIX}settournament is off by default and per-group, same as ${COMMAND_PREFIX}spamfilter/${COMMAND_PREFIX}inactivity/${COMMAND_PREFIX}ai. Once on, anyone joining (or already on) the social list can opt in - add "tournament" to ${COMMAND_PREFIX}in - and the posted list splits Attendance into a "🏆 Tournament" section (capped by ${COMMAND_PREFIX}tournamentlimit) and a "Social only" section underneath; names aren't hidden, just labeled. If the tournament's full when someone opts in, they still join socially but move to the FRONT of Social only tagged (🏆 WL) - that's the tournament queue. The moment a spot frees up (someone in the tournament leaves the list via ${COMMAND_PREFIX}out, or is moved to social only via ${COMMAND_PREFIX}out tournament, or an admin raises ${COMMAND_PREFIX}tournamentlimit), whoever's at the front of that queue is promoted in automatically, with a tagged message. ${COMMAND_PREFIX}tournamentwinners Name1, Name2 sets the "Congrats to..." banner shown above the list - sticks around across ${COMMAND_PREFIX}newlist until you set it again, same as ${COMMAND_PREFIX}settournament on/off and ${COMMAND_PREFIX}tournamentlimit. Turning it off doesn't forget who'd opted in - it just hides the tournament breakdown until turned back on_`,
-  '',
-  `_• ${COMMAND_PREFIX}settournament rules <text> sets the rules text anyone can read back with bare ${COMMAND_PREFIX}tournament, e.g. ${COMMAND_PREFIX}settournament rules Best of 3, single elimination - sticks around across ${COMMAND_PREFIX}newlist until an admin changes it again, same as ${COMMAND_PREFIX}tournamentwinners_`,
-  '',
   '*Group settings*',
   `_• ${COMMAND_PREFIX}inactivity is per-group and off by default - once on, going quiet for ${INACTIVITY_WARN_AFTER_DAYS}d gets you tagged with a reminder here (any message from you clears it), and admins are always exempt_`,
   '',
   `_• ${COMMAND_PREFIX}spamfilter is per-group and ON by default - WhatsApp group invite links, and messages with both a link and a stock/crypto keyword, get deleted automatically (admins exempt); turn it off with ${COMMAND_PREFIX}spamfilter off if a group needs to allow those_`,
   '',
-  `_• ${COMMAND_PREFIX}ai is per-group and OFF by default - once on, @-mentioning me with a plain request (e.g. "@Snoopy put me down", "@Snoopy create a new list for next Wednesday with the regular players", or "@Snoopy these people are regular players: Harry, Bonny, Ron") gets mapped to a command, including admin ones for admins (see ${COMMAND_PREFIX}admin), relative dates like "next Wednesday" for ${COMMAND_PREFIX}newlist/${COMMAND_PREFIX}date, and the saved ${COMMAND_PREFIX}regulars roster; one message can bundle several distinct requests too (e.g. "create a new list for Sunday, cap the tournament at 12, and add Keith to it") and all of them get done, in order; if I'm not sure what you meant, or your message isn't list-related at all, I'll just say I'm not capable of doing that rather than guess - I always reply when you tag me_`,
+  `_• ${COMMAND_PREFIX}ai is per-group and OFF by default - once on, @-mentioning me with a plain request (e.g. "@Snoopy put me down", "@Snoopy create a new list for next Wednesday with the regular players", or "@Snoopy these people are regular players: Harry, Bonny, Ron") gets mapped to a command, including admin ones for admins (see ${COMMAND_PREFIX}admin), relative dates like "next Wednesday" for ${COMMAND_PREFIX}newlist/${COMMAND_PREFIX}date, and the saved ${COMMAND_PREFIX}regulars roster; one message can bundle several distinct requests too (e.g. "create a new list for Sunday, cap it at 12, and add Keith to it") and all of them get done, in order; if I'm not sure what you meant, or your message isn't list-related at all, I'll just say I'm not capable of doing that rather than guess - I always reply when you tag me_`,
   '',
   '*Other*',
-  `_• ${COMMAND_PREFIX}update reads back a copy-pasted, edited list: type ${COMMAND_PREFIX}update on its own line, then paste the list underneath with names added, removed, or moved between sections. Extra text anywhere else is ignored. If you also keep the date/location/courts/time block above *Attendance* in your paste, edits there get applied too - and any of those four fields you leave OUT of that block gets cleared, since your edit is treated as final; leave the whole block out to leave them untouched. The payment header itself is never read either way - use ${COMMAND_PREFIX}paymentlabel for that. While the tournament's on, moving a name between "🏆 Tournament" and "Social only" in your edit updates their tournament status too, same as moving one between Attendance and Waitlist promotes/demotes them_`,
+  `_• ${COMMAND_PREFIX}update reads back a copy-pasted, edited list: type ${COMMAND_PREFIX}update on its own line, then paste the list underneath with names added, removed, or moved between sections. Extra text anywhere else is ignored. If you also keep the date/location/courts/time block above *Attendance* in your paste, edits there get applied too - and any of those four fields you leave OUT of that block gets cleared, since your edit is treated as final; leave the whole block out to leave them untouched. The payment header itself is never read either way - use ${COMMAND_PREFIX}paymentlabel for that_`,
   '',
   `_• ${COMMAND_PREFIX}undo reverses whatever the last change in this group was - a join/leave, a ${COMMAND_PREFIX}clear, a whole ${COMMAND_PREFIX}newlist, anything - back to how things were right before it. It only remembers one step back, and running ${COMMAND_PREFIX}undo twice in a row flips back and forth between the two states (so it doubles as a redo if you change your mind)_`,
 ].join('\n');
@@ -179,8 +163,8 @@ async function handleAdminHelp(ctx) {
 }
 
 // Same admin gate as handleAdminHelp above - the admin tips reference
-// admin-only commands (!update's header-block behavior, !settournament,
-// etc.), so there's nothing useful in here for a non-admin anyway.
+// admin-only commands (!update's header-block behavior, etc.), so there's
+// nothing useful in here for a non-admin anyway.
 async function handleAdminTips(ctx) {
   const { sock, groupId, senderId, reply } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);

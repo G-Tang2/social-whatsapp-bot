@@ -1,11 +1,7 @@
 // commands/admin.js
 // Admin-gated list-management commands: !clear, !clearpayments, !newlist,
 // !location, !courts, !time, !limit, !allow, !paymentlabel, !regulars,
-// !exempt, !settournament, !tournamentlimit, !tournamentwinners, !undo,
-// !update.
-// (!tournament itself - the rules-viewing command - lives here too, but is
-// NOT admin-gated; see its doc comment below for why it's in this file
-// anyway.)
+// !exempt, !undo, !update.
 // Faithful ports of the corresponding switch cases from
 // the old monolithic index.js - reply strings and control flow are
 // unchanged. !clear and !clearpayments have no confirmation prompt or
@@ -37,14 +33,6 @@ const {
   setRegularPlayers,
   getPaymentExempt,
   setPaymentExempt,
-  isTournamentEnabled,
-  setTournamentEnabled,
-  getTournamentLimit,
-  setTournamentLimit,
-  getTournamentWinners,
-  setTournamentWinners,
-  getTournamentRules,
-  setTournamentRules,
   getUndoSnapshot,
   restoreUndoableState,
   normalizeName,
@@ -67,8 +55,6 @@ const {
   stripLeadingCourtsAddKeyword,
   expandRegularPlayersToken,
   formatPromotedMessage,
-  formatTournamentPromotedMessage,
-  formatTournamentRoster,
 } = require('../lib/helpers');
 
 async function handleClear(ctx) {
@@ -709,241 +695,6 @@ async function handleExempt(ctx) {
   await reply(`*Payment exempt*\n${formatPaymentExempt(updated)}`);
 }
 
-// !tournament is the view-only companion to !settournament (below) - anyone
-// can run it, and all it does is show the tournament rules text an admin
-// has set via !settournament rules <text>. It doesn't care whether the
-// tournament sub-feature is even on (isTournamentEnabled) - rules can be
-// posted ahead of time, same "not gated on the on/off toggle" precedent as
-// handleTournamentWinners's bare view above. It lives in this file (rather
-// than e.g. commands/list.js) simply to stay next to !settournament, which
-// it's the read-only half of.
-async function handleTournament(ctx) {
-  const { groupId, reply } = ctx;
-  const rules = getTournamentRules(groupId);
-  await reply(
-    rules
-      ? `🏆 *Tournament rules*\n\n${rules}`
-      : `No tournament rules set yet.\nAn admin can set them with: ${COMMAND_PREFIX}settournament rules <text>`
-  );
-}
-
-// !settournament manages the group's tournament sub-feature - a subset of
-// the regular social Attendance list that people can additionally opt into
-// (see commands/list.js's handleIn, which recognizes a leading
-// "tournament" keyword the same way it already recognizes "paid"), with
-// its own headcount cap (!tournamentlimit, below), a "Congrats to X and Y
-// for winning last week's tournament" banner (!tournamentwinners, below)
-// shown above the list while it's on, and free-text rules an admin can post
-// (below, "rules <text>") that anyone can read back via bare !tournament
-// (see handleTournament above - this command used to BE bare !tournament,
-// renamed to make room for that read-only rules view). Off by default -
-// each group opts in individually, same "each group is independent"
-// pattern as !spamfilter/!inactivity/!ai.
-//
-// Bare !settournament (no argument) is the "info" command anyone can run to
-// see who's currently opted in, independent of the full !list - if the
-// feature is off, it explains how to turn it on instead (mirroring
-// !inactivity/!spamfilter's own bare-view text). Changing it (on/off,
-// rules) is admins only, and - unlike most admin commands in this file,
-// which stay quiet on success and let the reposted list speak for itself -
-// on/off always replies even on success, since flipping tournament on/off
-// changes how EVERY future !list looks (see lib/helpers.js's formatList),
-// which is worth confirming explicitly, same reasoning as
-// !spamfilter/!inactivity's own on/off replies.
-async function handleSettournament(ctx) {
-  const { sock, groupId, senderId, argText, reply, postList } = ctx;
-  const trimmedArg = (argText || '').trim();
-  const normalizedArg = trimmedArg.toLowerCase();
-
-  // "rules <text>" (and bare "rules" to view/clear-hint) is handled before
-  // the bare-view/on/off branches below since it's the one sub-form that
-  // takes free text rather than a fixed keyword.
-  if (normalizedArg === 'rules' || normalizedArg.startsWith('rules ')) {
-    const rulesText = trimmedArg.slice('rules'.length).trim();
-    if (!rulesText) {
-      const currentRules = getTournamentRules(groupId);
-      await reply(
-        currentRules
-          ? `Current tournament rules:\n\n${currentRules}\n\nTo change them (admins only): ${COMMAND_PREFIX}settournament rules <text>`
-          : `No tournament rules set yet.\nTo set them (admins only): ${COMMAND_PREFIX}settournament rules <text>`
-      );
-      return;
-    }
-
-    const admin = await isGroupAdmin(sock, groupId, senderId);
-    if (!admin) {
-      await reply('Only a group admin can set the tournament rules.');
-      return;
-    }
-
-    setTournamentRules(groupId, rulesText);
-    await reply(`Tournament rules updated. Anyone can view them with ${COMMAND_PREFIX}tournament.`);
-    return;
-  }
-
-  if (!normalizedArg) {
-    if (!isTournamentEnabled(groupId)) {
-      await reply(
-        `Tournament is *OFF* for this group.\nTo turn it on (admins only): ${COMMAND_PREFIX}settournament on`
-      );
-      return;
-    }
-    const event = getCurrentEvent(groupId);
-    const tournamentEntries = event.entries.filter((entry) => entry.tournament);
-    // The (🏆 WL) queue, in the same front-of-the-line order they'll get
-    // auto-promoted in (see store.js's promoteFromTournamentWaitlist and
-    // lib/helpers.js's formatList(), which tags/orders them the same way).
-    const waitlistedEntries = event.entries.filter((entry) => entry.tournamentWaitlisted);
-    const waitlistedLine = waitlistedEntries.length
-      ? `\n\n🏆 WL queue: ${waitlistedEntries.map((entry) => entry.name).join(', ')}`
-      : '';
-    await reply(
-      `${formatTournamentRoster(tournamentEntries, event.tournamentLimit)}${waitlistedLine}\n\n`
-        + `To join: add "tournament" to ${COMMAND_PREFIX}in, e.g. ${COMMAND_PREFIX}in tournament\n`
-        + `To change (admins only): ${COMMAND_PREFIX}settournament off, ${COMMAND_PREFIX}tournamentlimit <number>, ${COMMAND_PREFIX}tournamentwinners Name1, Name2, ${COMMAND_PREFIX}settournament rules <text>`
-    );
-    return;
-  }
-
-  const admin = await isGroupAdmin(sock, groupId, senderId);
-  if (!admin) {
-    await reply('Only a group admin can turn the tournament on or off.');
-    return;
-  }
-
-  if (normalizedArg === 'on') {
-    if (isTournamentEnabled(groupId)) {
-      await reply('Tournament is already on for this group.');
-      return;
-    }
-    setTournamentEnabled(groupId, true);
-    await reply(
-      `Tournament turned *on* for this group. Anyone joining (or already on) the social list can opt in - add "tournament" to ${COMMAND_PREFIX}in, e.g. ${COMMAND_PREFIX}in tournament. Set a cap with ${COMMAND_PREFIX}tournamentlimit (admins only) if needed.`
-    );
-    await postList();
-    return;
-  }
-
-  if (normalizedArg === 'off') {
-    if (!isTournamentEnabled(groupId)) {
-      await reply('Tournament is already off for this group.');
-      return;
-    }
-    setTournamentEnabled(groupId, false);
-    await reply('Tournament turned *off* for this group. Who was opted in is still remembered, in case it gets turned back on.');
-    await postList();
-    return;
-  }
-
-  await reply(
-    `Usage: ${COMMAND_PREFIX}settournament on, ${COMMAND_PREFIX}settournament off, or ${COMMAND_PREFIX}settournament rules <text>\n(No argument shows who's currently in the tournament without changing anything.)`
-  );
-}
-
-// Same "view with no argument, admins-only to change" pattern as !limit -
-// caps how many people can be opted into the tournament at once. Same
-// auto-promotion behavior as !limit too when raising it: anyone queued at
-// the front of the (🏆 WL) tournament waitlist gets pulled in to fill the
-// new room (see store.js's setTournamentLimit/promoteFromTournamentWaitlist
-// doc comments) and gets mentioned about it below.
-async function handleTournamentLimit(ctx) {
-  const { groupId, senderId, sock, msg, argText, reply, postList } = ctx;
-  if (!argText) {
-    const currentLimit = getTournamentLimit(groupId);
-    await reply(
-      currentLimit
-        ? `Current tournament limit: ${currentLimit}\nTo change it (admins only): ${COMMAND_PREFIX}tournamentlimit <number>, or ${COMMAND_PREFIX}tournamentlimit off to remove it`
-        : `No tournament limit set - anyone who opts in gets in.\nTo set one (admins only): ${COMMAND_PREFIX}tournamentlimit <number>`
-    );
-    return;
-  }
-
-  const admin = await isGroupAdmin(sock, groupId, senderId);
-  if (!admin) {
-    await reply('Only a group admin can change the tournament limit.');
-    return;
-  }
-
-  const normalizedArg = argText.trim().toLowerCase();
-  let newLimit;
-  if (['off', 'none', 'clear', 'unlimited', '0'].includes(normalizedArg)) {
-    newLimit = null;
-  } else {
-    const parsed = Number(argText.trim());
-    if (!Number.isInteger(parsed) || parsed <= 0) {
-      await reply(
-        `"${argText}" isn't a valid limit - use a whole number, e.g. ${COMMAND_PREFIX}tournamentlimit 16, or ${COMMAND_PREFIX}tournamentlimit off to remove it`
-      );
-      return;
-    }
-    if (parsed > MAX_LIMIT) {
-      await reply(`That limit is too high (max ${MAX_LIMIT}).`);
-      return;
-    }
-    newLimit = parsed;
-  }
-
-  // No separate "limit changed" confirmation - you were authorized, so the
-  // action just happens, and the posted list (its tournament count vs. the
-  // new limit) is the proof. Anyone auto-promoted off the (🏆 WL) queue DOES
-  // get an explicit mention though, same as !limit does for its own
-  // waitlist - that's a status change for someone who isn't even part of
-  // this command, worth calling out on its own.
-  const { promoted } = setTournamentLimit(groupId, newLimit);
-  if (promoted.length) {
-    const { text, mentions } = formatTournamentPromotedMessage(promoted);
-    await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
-  }
-  await postList();
-}
-
-// Sets the two-winner "Congrats to X and Y for winning last week's
-// tournament" banner formatList() shows above the list while tournament is
-// on (see lib/helpers.js) - keeps announcing the same result until an
-// admin sets it again next time, same "sticks until you change it"
-// carry-forward as duePaymentsLabel/location/etc. Deliberately always
-// exactly two names (that's the template) rather than !regulars-style
-// add/remove/clear sub-forms - there's nothing to incrementally edit here,
-// just replace both names each time.
-async function handleTournamentWinners(ctx) {
-  const { groupId, senderId, sock, argText, reply, postList } = ctx;
-  if (!argText) {
-    const winners = getTournamentWinners(groupId);
-    await reply(
-      winners
-        ? `Current tournament winners: ${winners[0]} and ${winners[1]}\nTo change them (admins only): ${COMMAND_PREFIX}tournamentwinners Name1, Name2`
-        : `No tournament winners set yet.\nTo set them (admins only): ${COMMAND_PREFIX}tournamentwinners Name1, Name2`
-    );
-    return;
-  }
-
-  const admin = await isGroupAdmin(sock, groupId, senderId);
-  if (!admin) {
-    await reply('Only a group admin can set the tournament winners.');
-    return;
-  }
-
-  const names = argText.split(',').map((n) => n.trim()).filter(Boolean);
-  if (names.length !== 2) {
-    await reply(`Usage: ${COMMAND_PREFIX}tournamentwinners Name1, Name2\n(Exactly two names - that's the "Congrats to X and Y..." banner shown above the list.)`);
-    return;
-  }
-
-  const rejected = [];
-  for (const name of names) {
-    const modResult = checkEntry(name);
-    if (!modResult.ok) rejected.push(`${name} - ${modResult.reason}`);
-  }
-  if (rejected.length) {
-    await reply(`Couldn't set:\n${rejected.join('\n')}`);
-    return;
-  }
-
-  setTournamentWinners(groupId, names);
-  await reply(`Tournament winners set: ${names[0]} and ${names[1]}`);
-  await postList();
-}
-
 // !undo reverses the LAST mutating command run in the group - typed or
 // AI-mapped, self-service or admin-gated, anything from a single !in to a
 // whole !newlist or !clear. It doesn't know or care WHAT that command
@@ -1018,7 +769,7 @@ async function handleUpdate(ctx) {
     await reply(
       `Usage: ${COMMAND_PREFIX}update <paste the list here, with your edits>\n`
         + `Copy Snoopy's last posted list (or run ${COMMAND_PREFIX}list to get a fresh copy), add/remove/reorder names under *Attendance*, *Waitlist*, or the payment section as needed, then send it back with ${COMMAND_PREFIX}update on its own first line, followed by the pasted text.\n`
-        + `If you also keep the date/location/courts/time block above *Attendance* in your paste, edits there get applied too - and any of those four fields you leave OUT of that block gets cleared, since your edit is treated as final. Leave the whole block out entirely (nothing pasted above *Attendance*) to leave date/location/courts/time untouched. The payment header itself is never touched either way - use ${COMMAND_PREFIX}paymentlabel for that. If the tournament's on, moving a name between "🏆 Tournament" and "Social only" in your edit updates their tournament status too.`
+        + `If you also keep the date/location/courts/time block above *Attendance* in your paste, edits there get applied too - and any of those four fields you leave OUT of that block gets cleared, since your edit is treated as final. Leave the whole block out entirely (nothing pasted above *Attendance*) to leave date/location/courts/time untouched. The payment header itself is never touched either way - use ${COMMAND_PREFIX}paymentlabel for that.`
     );
     return;
   }
@@ -1071,16 +822,6 @@ async function handleUpdate(ctx) {
       attendance: filteredAttendance,
       waitlist: filteredWaitlist,
       duePayments: filteredDue,
-      // Tournament/social-only sub-placement within Attendance (see
-      // lib/listParser.js's parseListSections() and store.js's
-      // applyListUpdate doc comments) - passed straight through, unfiltered:
-      // every name here is necessarily also in `parsed.attendance` (same
-      // numbered lines, just additionally bucketed), so if moderation
-      // rejected one out of filteredAttendance, applyListUpdate's
-      // tournament reconciliation simply won't find a matching entry in
-      // current.entries for it either - nothing further to filter here.
-      tournamentPlayers: parsed.tournamentPlayers,
-      tournamentWaitlistedNames: parsed.tournamentWaitlistedNames,
     },
     senderId,
     admin
@@ -1145,7 +886,7 @@ async function handleUpdate(ctx) {
 
   const changed = Boolean(
     result.added.length || result.removed.length || result.moved.length
-      || result.paidAdded.length || result.paidRemoved.length || result.tournamentChanged.length
+      || result.paidAdded.length || result.paidRemoved.length
       || headerFieldsChanged
   );
 
@@ -1165,9 +906,6 @@ async function handleUpdate(ctx) {
   if (result.removed.length) summaryLines.push(`Removed: ${result.removed.join(', ')}`);
   if (result.moved.length) {
     summaryLines.push(`Moved: ${result.moved.map((m) => `${m.name} (${m.from} → ${m.to})`).join(', ')}`);
-  }
-  if (result.tournamentChanged.length) {
-    summaryLines.push(`Tournament: ${result.tournamentChanged.map((c) => `${c.name} (${c.from} → ${c.to})`).join(', ')}`);
   }
   if (result.paidAdded.length) summaryLines.push(`Added to payment-due: ${result.paidAdded.join(', ')}`);
   if (result.paidRemoved.length) summaryLines.push(`Marked paid: ${result.paidRemoved.join(', ')}`);
@@ -1211,10 +949,6 @@ module.exports = {
   handlePaymentlabel,
   handleRegulars,
   handleExempt,
-  handleTournament,
-  handleSettournament,
-  handleTournamentLimit,
-  handleTournamentWinners,
   handleUndo,
   handleUpdate,
 };

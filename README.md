@@ -9,8 +9,8 @@ every change.
 
 | Command | Who can use it | What it does |
 |---|---|---|
-| `!in [paid] [tournament] [name]` | anyone, up to 8 names per command (no limit for group admins) | Adds `[name]` (or your own WhatsApp display name if omitted) to the current list. Lead with `paid` (e.g. `!in paid` or `!in paid Alex, Sam`) to also mark them paid in the same message - see "Joining/leaving and paying in one message" below. Lead with `tournament` (either order alongside `paid`) to also opt into the group's tournament, if it's on - see "Tournament" below |
-| `!out [paid] [name]` | see below | Removes that entry, or flags it `(TBC)` for admin review if you're not authorized to remove it. Same leading `paid` combo as `!in`. Lead with `tournament` instead (e.g. `!out tournament` or `!out tournament Garvin`) to move that entry to social only, WITHOUT removing them from the list at all - see "Tournament" below |
+| `!in [paid] [name]` | anyone, up to 8 names per command (no limit for group admins) | Adds `[name]` (or your own WhatsApp display name if omitted) to the current list. Lead with `paid` (e.g. `!in paid` or `!in paid Alex, Sam`) to also mark them paid in the same message - see "Joining/leaving and paying in one message" below |
+| `!out [paid] [name]` | see below | Removes that entry, or flags it `(TBC)` for admin review if you're not authorized to remove it. Same leading `paid` combo as `!in` |
 | `!list` | anyone | Posts the current list |
 | `!clear` | group admins only | Wipes the current list's entries, keeping its date/location/courts/time |
 | `!clearpayments` | group admins only | Wipes who currently owes payment, without touching the list's entries/waitlist or anything else - the mirror of `!clear` |
@@ -25,10 +25,6 @@ every change.
 | `!paymentlabel [text]` | viewing: anyone; changing: group admins only | Sets the payment-due section's header (e.g. `!paymentlabel $20 please`). With no text, shows the current header without changing it |
 | `!regulars [name1, name2, ...]` | viewing: anyone; changing: group admins only | Manages a saved roster of "regular players" (see "Regular players" below), reusable later via the word `regular players` in place of names in `!in`/`!newlist`. A plain name list *replaces* the whole roster; `!regulars add <names>`/`!regulars remove <names>` tweak it instead; `!regulars clear` empties it. With no text, shows the current roster without changing it |
 | `!exempt [name1, name2, ...]` | viewing: anyone; changing: group admins only | Manages a saved roster of names who never need to pay (see "Tracking who owes payment" below) - the organizer, a sponsor, a coach, whoever. Same `add`/`remove`/`clear`/replace shape as `!regulars`. With no text, shows the current roster without changing it |
-| `!settournament [on\|off\|rules <text>]` | viewing: anyone; changing: group admins only | Turns the tournament sub-feature (see "Tournament" below) on or off for *this* group, and sets the rules text `!tournament` (below) shows. Off by default everywhere. With no argument, shows who's currently opted in instead of changing anything. `!settournament rules <text>` sets the rules text (e.g. `!settournament rules Best of 3, single elimination`); `!settournament rules` with no text shows the current rules |
-| `!tournament` | anyone | Shows the tournament rules text set via `!settournament rules <text>` (see "Tournament" below) - does not show who's opted in (that's `!settournament`) |
-| `!tournamentlimit [number]` | viewing: anyone; changing: group admins only | Caps how many people can be opted into the tournament - separate from the main `!limit`. With no number, shows the current tournament limit without changing it. `!tournamentlimit off` removes the cap |
-| `!tournamentwinners [Name1, Name2]` | viewing: anyone; changing: group admins only | Sets the two-name "Congrats to Name1 and Name2 for winning last week's tournament" banner shown above the list while the tournament is on. With no text, shows the currently set winners without changing them |
 | `!inactivity [on\|off]` | viewing: anyone; changing: group admins only | Turns inactivity reminders (see "Reminding inactive members" below) on or off for *this* group. Off by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!stale` | group admins only | Lists who's currently been warned for inactivity, how long ago, and who's overdue for manual removal (see "Reminding inactive members" below) |
 | `!spamfilter [on\|off]` | viewing: anyone; changing: group admins only | Turns auto-deletion of stock/crypto spam (see "Spam filtering" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
@@ -36,13 +32,13 @@ every change.
 | `!update <paste the list, edited>` | group admins only | Bulk-edits Attendance/Waitlist/Payment by re-reading a copy-pasted, hand-edited list (see "Bulk-editing the roster" below) |
 | `!undo` | group admins only | Reverses the single most recent change made in the group, whatever command caused it (see "Undoing the last change" below) |
 | `!help` | anyone | Shows help for the everyday commands (`!in`, `!out`, `!list`, `!paid`) |
-| `!tips` | anyone | Tips and caveats for the everyday commands (comma lists, `+N` guests, tournament opt-in, and more) - split out of `!help` so it stays a quick reference |
+| `!tips` | anyone | Tips and caveats for the everyday commands (comma lists, `+N` guests, and more) - split out of `!help` so it stays a quick reference |
 | `!admin` | group admins only | Shows help for the admin-only commands |
-| `!admintips` | group admins only | Tips and caveats for the admin commands (`!update`'s header block, `!settournament`, and more) - split out of `!admin` the same way |
+| `!admintips` | group admins only | Tips and caveats for the admin commands (`!update`'s header block, and more) - split out of `!admin` the same way |
 
 **Quiet on success, vocal on denial:** for the admin-gated commands
 (`!clear`, `!clearpayments`, `!newlist`, `!location`, `!courts`, `!time`,
-`!paymentlabel`, `!limit`, `!allow`, `!tournamentlimit`), if you're
+`!paymentlabel`, `!limit`, `!allow`), if you're
 authorized the bot doesn't send a separate "done!" reply - it just makes
 the change and posts the updated list, which is proof enough. A reply only
 shows up when you're *not* authorized to do what you asked (e.g. "Only a
@@ -483,25 +479,6 @@ own additions/removals if that was edited too - and reposts the fresh list
 right after, so there's no guessing whether the parse matched what was
 intended.
 
-**While the tournament's on, this also works for tournament/social-only
-placement.** If the pasted `*Attendance*` block includes the `🏆
-*Tournament*`/`Social only` breakdown (see "Tournament" below) -
-which it will, automatically, if you just copied the bot's own posted list
-- moving a name between the two sections and sending it back actually
-changes their tournament status, exactly like cutting a name between
-`*Attendance*` and `*Waitlist*` promotes/demotes them. Swap Bao out for
-Garvin by moving Garvin's line up under `🏆 *Tournament*` and
-Bao's down under `Social only`, and the summary reply shows `Tournament:
-Garvin (social only → tournament), Bao (tournament → social only)`. Listing
-more names under the tournament header than `!tournamentlimit` allows caps
-it at the limit (in the order given) and queues the rest, tagged `(🏆 WL)`,
-same as the tournament filling up normally would. A `(🏆 WL)` tag already
-in the pasted text (on someone queued, under Social only) round-trips
-correctly if left alone - it's parsed back out, not treated as part of
-their name. A plain, non-tournament-formatted paste (or a group that's
-never turned the tournament on) leaves everyone's tournament status
-completely untouched, same as always.
-
 **The date/location/courts/time block above `*Attendance*` gets read too,
 if it's there.** Keep the header lines the bot itself posts above
 `*Attendance*` in your paste - and edit them - and those changes get
@@ -541,11 +518,6 @@ A few things worth knowing:
 - **A name listed twice** (e.g. accidentally left in both `*Attendance*`
   and `*Waitlist*`) keeps only its first placement - same "can't be in two
   places at once" rule the list already enforces everywhere else.
-- **Tournament/social-only placement is only touched if the pasted text
-  actually has that breakdown in it.** See the paragraph above - this
-  never silently resets everyone's tournament status just because a plain,
-  hand-typed `*Attendance*` list without the `🏆 Tournament`
-  header happened to be pasted instead.
 - If nothing in the pasted text actually differs from the current roster,
   the bot says so and doesn't repost the list again for no reason.
 
@@ -578,147 +550,6 @@ last change was already undone, `!undo` says so rather than doing nothing
 silently. Like the other list-management commands, `!undo` is admin-only -
 given it can put back a whole cleared list or reinstate an archived one,
 it has a bigger blast radius than most commands.
-
-## Tournament
-
-A per-group, **off by default** sub-feature (same "each group opts in
-individually" pattern as spam filtering/inactivity/natural-language
-commands): an admin turns it on with `!settournament on`, and from then on
-anyone joining (or already on) the social Attendance list can additionally
-opt into the tournament, on top of the regular social list - it's not a
-separate signup, just a flag on your existing entry.
-
-There are two related commands, split by who they're for: `!settournament`
-(admins to turn the feature on/off, view who's currently opted in, and set
-the rules text) and `!tournament` (anyone, view-only - just shows whatever
-rules text an admin last set with `!settournament rules <text>`, e.g. match
-format, bracket times, or anything else worth pinning). `!tournament` isn't
-gated on the feature being on or off - rules can be posted ahead of time.
-
-**Opting in:** lead with the word `tournament` on `!in`, e.g. `!in
-tournament` for yourself, or `!in tournament Alex, Sam` to opt Alex and Sam
-in together (as brand new joiners, or any mix of new and existing names -
-see below). It combines with `paid` too, in either order - `!in
-tournament paid` and `!in paid tournament` both work (either flag word
-always goes before the name(s), e.g. `!in paid tournament Alex, Sam`).
-
-**Moving to social only:** lead with the word `tournament` on `!out`
-instead, e.g. `!out tournament` for yourself, or `!out tournament Garvin`
-(or several names, comma-separated) for someone else - this takes them OUT
-of the tournament (or off its `(🏆 WL)` queue if they were only queued, not
-actually in) while leaving them right where they are on the social list. It
-is NOT the same as plain `!out`, which removes the entry from the list
-entirely - `!out tournament Garvin` just untags Garvin from `🏆 Tournament`
-and drops him back under `Social only`. Taking someone out of an
-actual tournament spot (not just the queue) frees one up, so the front of
-the `(🏆 WL)` queue gets promoted automatically, same as any other spot
-opening up (see below) - and it combines with `paid` too, same
-leading-keyword either-order rule as everywhere else (`!out tournament paid
-Garvin`).
-
-**Already on the list works too, one name or several.** Running `!in
-tournament` again with no other names upgrades your own existing entry
-instead of adding a duplicate one. The same works for multiple names at
-once: `!in tournament Alex, Sam` opts BOTH into the tournament whether
-they're brand new, already on the list, or one of each - nobody gets
-duplicated, and each name is judged independently against capacity (see
-below), so it's fine if one gets in and another gets queued. The one case
-this can't reach is someone only on the main *Waitlist* (not yet confirmed
-attendance) - they get a clear reply explaining why, and can be upgraded
-once `!allow` (or a freed-up spot) promotes them first.
-
-**Capacity is separate from the main list's.** An admin sets a cap with
-`!tournamentlimit <number>` (or `!tournamentlimit off` to remove it) -
-independent of the main `!limit`, since a tournament bracket is often
-smaller than the whole social turnout. If the tournament is full when
-someone opts in, they still join the social list as normal, but tagged
-`(🏆 WL)` and moved to the FRONT of the `Social only` block, ahead of
-everyone who never asked - that position IS the tournament waitlist queue,
-first come first served, no separate list to check. The moment a spot
-opens up - someone in the tournament leaves the list entirely via `!out`,
-or is moved to social only via `!out tournament` (see above), or an admin
-raises `!tournamentlimit` - whoever's at the front of that queue is promoted into
-`🏆 Tournament` automatically, and gets tagged in a chat message
-about it (same idea as the main list's own waitlist promotions). If the
-tournament isn't turned on at all, opting in gets an explicit reply saying
-so, since (unlike a full tournament) nothing about the posted list itself
-would otherwise explain why.
-
-**The posted list changes shape while it's on.** Instead of one flat
-numbered Attendance list, entries split into a `🏆 Tournament` block
-(numbered first, with its own `(n/limit)` count and a "type !tournament for
-details" pointer to the rules text) and a `Social only` block underneath
-(numbering continuing on from there) for everyone else on the social list,
-queued (🏆 WL) entries first. Names are never hidden - the roster stays
-fully visible and numbered exactly like the rest of the list, only the
-header text and the added pointer line change. For example:
-
-```
-🏆 *Tournament* (15/16)
-type !tournament for details
-
-1. Keith
-2. Bao
-...
-15. Han
-
-Social only
-
-16. Leo (🏆 WL)
-17. Bel
-...
-```
-
-Both headers are always shown while the tournament is on, even if a
-section is empty - a brand new list nobody's joined yet still posts both
-`🏆 Tournament` and `Social only`, each showing `(none yet)`
-underneath, rather than falling back to a plain "empty" message the way a
-non-tournament list does. Same if only one side is empty, e.g. everyone
-who's joined so far opted into the tournament - `Social only` still shows,
-with `(none yet)` underneath.
-
-Anyone can run bare `!settournament` any time to see just that breakdown on
-its own (including the current `🏆 WL` queue in order), without the rest
-of the list around it - and it explains how to turn the feature on if it's
-currently off.
-
-**Posting the rules:** an admin sets free-text rules with `!settournament
-rules <text>`, e.g. `!settournament rules Best of 3, single elimination,
-losers bracket at 1PM` - anyone can then read them back any time with bare
-`!tournament`:
-
-```
-🏆 *Tournament rules*
-
-Best of 3, single elimination, losers bracket at 1PM
-```
-
-Like `!tournamentwinners` below, it sticks around across `!newlist` until
-an admin sets it again - rules don't change just because a new cycle
-started. Before any rules are set, `!tournament` explains how to set them
-instead.
-
-**Announcing last week's winners:** `!tournamentwinners Name1, Name2` (admins
-only) sets a banner shown above the whole list while the tournament is on:
-
-```
-*Congrats to Irfan and Tu for winning last week's tournament*
-```
-
-It's always exactly two names - there's nothing to incrementally edit,
-just replace both names with the next result each time. Like
-`!tournamentlimit` and the location/courts/time/payment-header fields, it
-sticks around across `!newlist` until an admin sets it again, so it keeps
-announcing the same result until there's a new one to announce.
-
-**Turning it off doesn't forget who'd opted in** - it just hides the
-tournament breakdown (and the winners banner) from the posted list until
-an admin turns it back on, at which point everyone who'd opted in reappears
-under `🏆 Tournament` automatically. Plain `!out` removes an entry
-(tournament flag included) completely, same as always - though if that
-entry was IN the tournament, its spot is what triggers the (🏆 WL) queue's
-auto-promotion described above. To leave the tournament WITHOUT leaving the
-list, use `!out tournament` instead - see "Moving to social only" above.
 
 ## Reminding inactive members
 
@@ -878,10 +709,8 @@ paid`, `@bot what's the list look like`, an admin saying `@bot clear
 the list`, an admin saying `@bot create a new list for next Wednesday
 with Harry, Bonny, and Ron`, `@bot add the regular players`, an admin
 saying `@bot these people are regular players: Harry, Bonny, Ron`, an
-admin saying `@bot undo that` right after a mistake, `@bot sign me up for
-the tournament too`, an admin saying `@bot congrats to Irfan and Tu for
-winning the tournament`, or an admin saying `@bot I got extra courts
-12-14` (adds those on top of whatever's already booked, rather than
+admin saying `@bot undo that` right after a mistake, or an admin saying
+`@bot I got extra courts 12-14` (adds those on top of whatever's already booked, rather than
 replacing it - see "Adding MORE courts instead of replacing them" above) -
 gets interpreted via the
 [Gemini API](https://ai.google.dev/) and mapped to a real command, exactly
@@ -896,14 +725,13 @@ automatically.
 
 **One message can bundle several distinct requests, and all of them get
 done.** `@bot create a new list for next Sunday at Noble Park courts 1,2 at
-7pm-9pm. The tournament limit is 12. Add Keith, Tu and Bao to the
-tournament` is really three separate requests in one message - starting a
-new list, capping the tournament, and adding specific people to it - and
-each one is dispatched to its real command in turn (`!newlist ...`, then
-`!tournamentlimit 12`, then `!in tournament, Keith, Tu, Bao`), in the order
-they need to happen (a brand new list has to exist before anyone can be
-added to it or its tournament settings changed, so a `!newlist`-equivalent
-request always runs first if the message has one). Each dispatched part
+7pm-9pm. Cap it at 12. Add Keith, Tu and Bao` is really three separate
+requests in one message - starting a new list, capping it, and adding
+specific people to it - and each one is dispatched to its real command in
+turn (`!newlist ...`, then `!limit 12`, then `!in Keith, Tu, Bao`), in the
+order they need to happen (a brand new list has to exist before anyone can
+be added to it or its settings changed, so a `!newlist`-equivalent request
+always runs first if the message has one). Each dispatched part
 replies/reposts the list on its own, same as if you'd typed each command
 one after another yourself - there's no single combined reply. If part of a
 compound message is confident and another part isn't, only the confident
@@ -1576,10 +1404,7 @@ set by `!location`/`!courts`/`!time`, its own `limit`/`waitlist` set by
 `!limit`/`!allow`, `duePayments` sub-list for `!paid` (each entry's
 `owedSince` field is the date of the list it was first carried over from -
 that's which date group it's shown under; see "Tracking who owes payment"
-above), `duePaymentsLabel` set by `!paymentlabel`, and `tournamentEnabled`/
-`tournamentLimit`/`tournamentWinners`/`tournamentRules` set by
-`!settournament`/`!tournamentlimit`/`!tournamentwinners`/`!settournament
-rules` - see "Tournament" above), and
+above), and `duePaymentsLabel` set by `!paymentlabel`), and
 `history` holds everything archived by a past `!newlist`. There's no
 database to set up. Back up the
 `data/` and `auth_info/` folders occasionally if the list matters to you - a

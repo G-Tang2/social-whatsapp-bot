@@ -20,16 +20,7 @@
 // Each entry also tracks `addedByIsAdmin` (was the adder a group admin at
 // add time?) and `tbd` (did an unauthorized !out attempt get bounced on
 // this entry?) - see removeEntry() for how those two combine to decide who
-// can remove someone and what happens when they're not allowed to. And, if
-// the group's tournament sub-feature is on (see `current.tournamentEnabled`
-// below), `tournament` (was this entry opted into the tournament, on top of
-// the regular social list? - see addEntry()/joinTournament() below and
-// commands/list.js's handleIn for how someone opts in) and
-// `tournamentWaitlisted` (did they ask to, but the tournament was full? -
-// shown as a "(🏆 WL)" tag next to their name, see lib/helpers.js's
-// formatList() - mutually exclusive with `tournament` itself, never both
-// true). Undefined/falsy on entries created before these fields existed -
-// treated the same as `false` everywhere they're read, no migration needed.
+// can remove someone and what happens when they're not allowed to.
 //
 // `current.limit` is an optional max headcount for `entries` (null = no
 // cap), seeded on brand-new groups from DEFAULT_LIMIT (6 unless overridden
@@ -94,15 +85,11 @@
 //       "courts": "13-18" | null,
 //       "courtCount": 6 | null,
 //       "time": "8PM start" | null,
-//       "entries": [ { name, addedBy, addedByIsAdmin, addedAt, tbd, tournament, tournamentWaitlisted }, ... ],
+//       "entries": [ { name, addedBy, addedByIsAdmin, addedAt, tbd }, ... ],
 //       "limit": 20 | null,
-//       "waitlist": [ { name, addedBy, addedByIsAdmin, addedAt, tbd, tournament, tournamentWaitlisted }, ... ],
+//       "waitlist": [ { name, addedBy, addedByIsAdmin, addedAt, tbd }, ... ],
 //       "duePayments": [ { name, addedBy, addedAt }, ... ],
-//       "duePaymentsLabel": "$18 please",
-//       "tournamentEnabled": false,
-//       "tournamentLimit": 16 | null,
-//       "tournamentWinners": ["Irfan", "Tu"] | null,
-//       "tournamentRules": "Best of 3, single elimination..." | null
+//       "duePaymentsLabel": "$18 please"
 //     },
 //     "history": [ { "date": ..., "location": ..., "entries": [...], "archivedAt": ... }, ... ]
 //   },
@@ -277,42 +264,6 @@ function emptyGroupState() {
       waitlist: [],
       duePayments: [],
       duePaymentsLabel: DEFAULT_PAYMENT_LABEL,
-      // Tournament sub-feature - see !settournament/!tournament/
-      // !tournamentlimit/!tournamentwinners in commands/admin.js. Off by
-      // default per group,
-      // same "opt-in" pattern as spamfilter/inactivity/ai, except state
-      // lives here in `current` (not a separate module) since it's
-      // fundamentally about THIS list - who's opted in lives on each
-      // entry itself (entry.tournament, see addEntry() below), not as a
-      // separate roster. `tournamentEnabled`/`tournamentLimit`/
-      // `tournamentWinners`/`tournamentRules` all carry forward to the next
-      // !newlist the same way duePaymentsLabel/location/courts/time do (see
-      // newList() below) - a group's tournament is a running weekly thing,
-      // not something that resets just because a new list started. The
-      // actual entries (and therefore who's opted in) DO reset with every
-      // !newlist, same as the rest of `entries`.
-      tournamentEnabled: false,
-      // null = no cap (anyone who opts in gets in) until an admin sets one
-      // with !tournamentlimit - unlike the main `limit`, there's no
-      // court-count auto-scaling for this, so it doesn't default to
-      // DEFAULT_LIMIT.
-      tournamentLimit: null,
-      // [winner1, winner2] as last set by !tournamentwinners, or null if
-      // never set - powers the "*Congrats to X and Y for winning last
-      // week's tournament*" banner formatList() shows above the list
-      // while tournamentEnabled is true (see lib/helpers.js). Persists
-      // (carries forward) until an admin sets it again, same as
-      // duePaymentsLabel - it's meant to keep announcing last week's
-      // result until there's a new one to announce.
-      tournamentWinners: null,
-      // Free-text rules set by an admin (e.g. "Best of 3, single
-      // elimination") via !settournament rules <text>, shown to anyone who
-      // runs bare !tournament (see commands/admin.js's handleTournament -
-      // the RENAMED command that used to be bare !tournament is now
-      // !settournament, see handleSettournament). null if never set.
-      // Persists across !newlist same as tournamentWinners above - rules
-      // don't change just because a new cycle started.
-      tournamentRules: null,
     },
     history: [],
     // A saved roster of "regular players" for the group - see
@@ -422,22 +373,6 @@ function migrateIfNeeded(data) {
       }
       if (data[groupId].current.time === undefined) {
         data[groupId].current.time = null;
-        migrated = true;
-      }
-      if (data[groupId].current.tournamentEnabled === undefined) {
-        data[groupId].current.tournamentEnabled = false;
-        migrated = true;
-      }
-      if (data[groupId].current.tournamentLimit === undefined) {
-        data[groupId].current.tournamentLimit = null;
-        migrated = true;
-      }
-      if (data[groupId].current.tournamentWinners === undefined) {
-        data[groupId].current.tournamentWinners = null;
-        migrated = true;
-      }
-      if (data[groupId].current.tournamentRules === undefined) {
-        data[groupId].current.tournamentRules = null;
         migrated = true;
       }
     }
@@ -558,250 +493,6 @@ function setPaymentExempt(groupId, names) {
   all[groupId].paymentExempt = names;
   writeAll(all);
   return all[groupId].paymentExempt;
-}
-
-// --- Tournament sub-feature (see commands/admin.js's !settournament/
-// !tournament/!tournamentlimit/!tournamentwinners, and commands/list.js's handleIn/
-// handleOut for how someone opts in/out via !in/!out) ---
-//
-// A group's tournament is a subset of its regular social Attendance list,
-// not a separate roster: whoever opts in gets `entry.tournament = true` on
-// their EXISTING attendance entry (see addEntry()/joinTournament() below),
-// rather than being tracked in some second list that could drift out of
-// sync with who's actually attending. Leaving the tournament WITHOUT
-// leaving the social list is a leading "tournament" keyword on !out (e.g.
-// "!out tournament Garvin") - see leaveTournament() below and
-// commands/list.js's handleLeaveTournament; leaving the social list
-// entirely is still just plain !out (see removeEntry()), which takes the
-// tournament flag along with the rest of the entry as always.
-//
-// There's no SEPARATE tournament waitlist array - someone who opts in once
-// the tournament is already full just gets `entry.tournamentWaitlisted =
-// true` on their existing social entry instead, which lib/helpers.js's
-// formatList() renders as a "(🏆 WL)" tag next to their name, sorted to the
-// FRONT of "Social only" ahead of anyone who never asked (see
-// commands/admin.js's !settournament for the same idea in its standalone info
-// view). That ordering - front of the group = front of the line - IS the
-// queue; `entries`'s own array order among tournamentWaitlisted:true
-// entries doubles as FIFO order, same as it does for everything else here.
-// A tournament spot opening up (someone with tournament:true leaves via
-// !out tournament, plain !out, or an admin raises !tournamentlimit)
-// automatically promotes off the front of that queue - see
-// promoteFromTournamentWaitlist() below, called from leaveTournament(),
-// removeEntry(), and setTournamentLimit(). Re-running !in tournament
-// (or the bare-already-on-list upgrade path, see joinTournament() below)
-// still works too, for the one case auto-promotion can't cover: someone
-// who wasn't tagged yet because they haven't tried opting in at all.
-
-function isTournamentEnabled(groupId) {
-  return !!getCurrentEvent(groupId).tournamentEnabled;
-}
-
-// Turns the tournament sub-feature on/off. Deliberately does NOT touch any
-// entry's `tournament` flag either way - turning it off just hides the
-// tournament breakdown from formatList() (see lib/helpers.js) without
-// forgetting who'd opted in, so turning it back on later doesn't require
-// everyone to re-opt-in. `tournamentLimit`/`tournamentWinners` are
-// similarly left untouched.
-function setTournamentEnabled(groupId, enabled) {
-  const all = readAll();
-  if (!all[groupId]) all[groupId] = emptyGroupState();
-  all[groupId].current.tournamentEnabled = !!enabled;
-  writeAll(all);
-  return all[groupId].current.tournamentEnabled;
-}
-
-function getTournamentLimit(groupId) {
-  const limit = getCurrentEvent(groupId).tournamentLimit;
-  return limit === undefined ? null : limit;
-}
-
-// Sets the tournament headcount cap (null removes it). Same "raising it can
-// free up room" logic as setLimit() for the main attendance list: raising
-// (or clearing) it promotes off the front of the (🏆 WL) queue to fill any
-// newly available spots (see promoteFromTournamentWaitlist() below).
-// Unlike setLimit(), there's no demotion side - lowering it below the
-// current tournament headcount simply leaves the group visibly over its
-// own stated tournament cap (same "your edit is treated as final" spirit
-// as !update) until people are manually un-opted or the limit is raised
-// back up; nobody currently in gets silently bumped out to the queue.
-// Returns { limit, promoted } - `promoted` possibly empty, so callers can
-// mention (and tag) anyone it happened to.
-function setTournamentLimit(groupId, limit) {
-  const all = readAll();
-  if (!all[groupId]) all[groupId] = emptyGroupState();
-  const current = all[groupId].current;
-  current.tournamentLimit = limit;
-  const promoted = promoteFromTournamentWaitlist(current);
-  writeAll(all);
-  return { limit: current.tournamentLimit, promoted };
-}
-
-// Moves people off the front of the tournament (🏆 WL) queue into the
-// tournament proper, one at a time, until either the queue is empty or the
-// tournament headcount hits tournamentLimit again (no-op if there's no cap
-// or nobody's waitlisted). "Front of the queue" is just `entries`' own
-// array order among tournamentWaitlisted:true entries - see the file
-// comment above for why that doubles as FIFO order, the same idea as
-// promoteFromWaitlist() above but without a second array to shift() from,
-// since tournament participation lives on the entry itself rather than in
-// a separate list. Mutates `current` in place and returns the entries that
-// got promoted, so callers can mention (and tag) them. Called whenever a
-// tournament spot might have opened up: someone with tournament:true
-// leaves the list entirely (removeEntry()), or an admin raises
-// !tournamentlimit (setTournamentLimit() above).
-function promoteFromTournamentWaitlist(current) {
-  const promoted = [];
-  while (true) {
-    const tournamentCount = current.entries.filter((e) => e.tournament).length;
-    const hasRoom = current.tournamentLimit === null || current.tournamentLimit === undefined
-      || tournamentCount < current.tournamentLimit;
-    if (!hasRoom) break;
-    const next = current.entries.find((e) => e.tournamentWaitlisted);
-    if (!next) break;
-    next.tournament = true;
-    next.tournamentWaitlisted = false;
-    promoted.push(next);
-  }
-  return promoted;
-}
-
-function getTournamentWinners(groupId) {
-  return getCurrentEvent(groupId).tournamentWinners || null;
-}
-
-// `names` is expected to already be a validated 2-element array (see
-// commands/admin.js's handleTournamentWinners) - store.js itself doesn't
-// enforce "exactly two", same division of labor as setRegularPlayers()
-// leaving name validation to its caller.
-function setTournamentWinners(groupId, names) {
-  const all = readAll();
-  if (!all[groupId]) all[groupId] = emptyGroupState();
-  all[groupId].current.tournamentWinners = names;
-  writeAll(all);
-  return all[groupId].current.tournamentWinners;
-}
-
-// Free-text tournament rules set by an admin via !settournament rules <text>,
-// shown to anyone who runs bare !tournament. Same shape/division-of-labor as
-// getTournamentWinners/setTournamentWinners above.
-function getTournamentRules(groupId) {
-  return getCurrentEvent(groupId).tournamentRules || null;
-}
-
-function setTournamentRules(groupId, rules) {
-  const all = readAll();
-  if (!all[groupId]) all[groupId] = emptyGroupState();
-  all[groupId].current.tournamentRules = rules;
-  writeAll(all);
-  return all[groupId].current.tournamentRules;
-}
-
-/**
- * Opts an EXISTING attendance entry into the tournament by name (used by
- * handleIn for someone who's already on the list and adds the "tournament"
- * keyword on a later message, e.g. "!in tournament" after already having
- * joined plain "!in" earlier - see commands/list.js). Only looks at
- * `entries`, never `waitlist` - someone not yet confirmed for the social
- * list itself can't opt into its tournament sub-feature yet; they can
- * re-run this once promoted.
- *
- * When the tournament is enabled but full, this does NOT fail outright -
- * it sets `entry.tournamentWaitlisted = true` (see the file comment above)
- * so the "(🏆 WL)" tag shows up next to their name (at the front of Social
- * only, queued for the next opening), and still reports `reason: 'full'` so
- * callers know no seat was actually granted. Usually a later spot opening
- * up promotes them automatically (see promoteFromTournamentWaitlist()
- * below), but re-running this manually also clears the tag the moment it
- * succeeds - `entry.tournamentWaitlisted` and `entry.tournament` are
- * mutually exclusive, never both true at once.
- *
- * Returns one of:
- *   { ok: false, reason: 'not_found' }  - no matching entry in `entries`
- *   { ok: false, reason: 'disabled' }   - tournament isn't turned on
- *   { ok: false, reason: 'full' }       - at tournamentLimit; tagged (🏆 WL)
- *   { ok: true, alreadyIn: true }       - was already opted in, no-op
- *   { ok: true }                        - opted in just now
- */
-function joinTournament(groupId, name) {
-  const all = readAll();
-  if (!all[groupId]) all[groupId] = emptyGroupState();
-  const current = all[groupId].current;
-  const normalized = normalizeName(name);
-  const entry = current.entries.find((e) => normalizeName(e.name) === normalized);
-  if (!entry) return { ok: false, reason: 'not_found' };
-  if (entry.tournament) return { ok: true, alreadyIn: true };
-  if (!current.tournamentEnabled) return { ok: false, reason: 'disabled' };
-
-  const tournamentCount = current.entries.filter((e) => e.tournament).length;
-  const hasRoom = current.tournamentLimit === null || current.tournamentLimit === undefined
-    || tournamentCount < current.tournamentLimit;
-  if (!hasRoom) {
-    entry.tournamentWaitlisted = true;
-    writeAll(all);
-    return { ok: false, reason: 'full' };
-  }
-
-  entry.tournament = true;
-  entry.tournamentWaitlisted = false;
-  writeAll(all);
-  return { ok: true };
-}
-
-/**
- * The mirror of joinTournament() above - takes an EXISTING attendance entry
- * OUT of the tournament by name, WITHOUT removing them from the social list
- * (used by handleOut for a leading "tournament" keyword, e.g. "!out
- * tournament Garvin" - see commands/list.js's handleLeaveTournament).
- * Leaving the list entirely is still !out's plain job (see removeEntry()) -
- * this only clears the tournament-related flags on an entry that stays
- * right where it is.
- *
- * Also clears `entry.tournamentWaitlisted` if that (rather than
- * `tournament`) was set - someone queued for the tournament but not
- * actually in it yet can still ask to be taken out of the queue entirely,
- * same command either way, since from their perspective they're just
- * saying "I don't want the tournament," whichever of the two states that
- * currently means for them.
- *
- * No authorization check, deliberately - same as joinTournament() above,
- * this is a low-stakes toggle on an entry that already exists and stays on
- * the list either way, not the bigger deal removeEntry()'s admin-added-
- * entry protection exists for (actually losing your spot on the list).
- *
- * Taking someone OUT of the tournament (not just off the queue) frees a
- * spot, so this also promotes off the front of the (🏆 WL) queue to fill
- * it - see promoteFromTournamentWaitlist() above. Someone merely leaving
- * the queue (was only `tournamentWaitlisted`, never actually `tournament`)
- * never occupied a real spot, so no promotion happens for that case - the
- * `promoted` array in that return would always be empty.
- *
- * Returns one of:
- *   { ok: false, reason: 'not_found' }     - no matching entry in `entries`
- *   { ok: true, alreadyOut: true, promoted: [] } - wasn't in the tournament
- *                                                   or queue to begin with
- *   { ok: true, promoted }                 - taken out just now; `promoted`
- *                                             lists anyone who filled the
- *                                             freed spot, possibly empty
- */
-function leaveTournament(groupId, name) {
-  const all = readAll();
-  if (!all[groupId]) all[groupId] = emptyGroupState();
-  const current = all[groupId].current;
-  const normalized = normalizeName(name);
-  const entry = current.entries.find((e) => normalizeName(e.name) === normalized);
-  if (!entry) return { ok: false, reason: 'not_found' };
-
-  if (!entry.tournament && !entry.tournamentWaitlisted) {
-    return { ok: true, alreadyOut: true, promoted: [] };
-  }
-
-  const wasInTournament = entry.tournament;
-  entry.tournament = false;
-  entry.tournamentWaitlisted = false;
-  const promoted = wasInTournament ? promoteFromTournamentWaitlist(current) : [];
-  writeAll(all);
-  return { ok: true, promoted };
 }
 
 // --- Undo support (see commands/admin.js's !undo) ---
@@ -1183,26 +874,10 @@ function tbdSafeInsertIndex(list) {
  * before this field existed - `!== false` treats that the same as `true`,
  * preserving old behavior for already-persisted data instead of silently
  * "losing" people's own entries across an upgrade.
- * `wantsTournament` (optional) records whether the person asked to also
- * join the group's tournament sub-feature (e.g. via handleIn's leading
- * "tournament" keyword - see lib/helpers.js's stripLeadingInKeywords).
- * Only actually takes effect - `entry.tournament = true` - when ALL of the
- * following hold: tournament is enabled for the group, there's room under
- * `tournamentLimit`, AND the entry lands straight on `entries` rather than
- * the waitlist (someone not yet confirmed for the social list itself can't
- * be in its tournament either - see joinTournament()'s doc comment for how
- * they can opt in later once promoted). If it's enabled but just full,
- * `entry.tournamentWaitlisted` is set instead, which formatList() (see
- * lib/helpers.js) renders as a "(🏆 WL)" tag next to their name - no
- * separate reply needed, the tag in the reposted list says it (see
- * commands/list.js's handleIn for the one exception: if tournament isn't
- * enabled at all, THAT specific case does get an explicit reply, since
- * there'd be no tournament UI in the list at all to explain why).
- *
  * Returns { ok: true, list, waitlist, waitlisted } on success, or
  * { ok: false, reason } if it's a duplicate.
  */
-function addEntry(groupId, name, addedBy, addedByIsAdmin, selfAdded, wantsTournament) {
+function addEntry(groupId, name, addedBy, addedByIsAdmin, selfAdded) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
   const current = all[groupId].current;
@@ -1222,26 +897,12 @@ function addEntry(groupId, name, addedBy, addedByIsAdmin, selfAdded, wantsTourna
     addedAt: new Date().toISOString(),
     tbd: false,
     self: !!selfAdded,
-    tournament: false,
-    tournamentWaitlisted: false,
   };
 
   const atCapacity = current.limit !== null && current.limit !== undefined && current.entries.length >= current.limit;
   if (atCapacity) {
     current.waitlist.splice(tbdSafeInsertIndex(current.waitlist), 0, entry);
   } else {
-    if (wantsTournament && current.tournamentEnabled) {
-      const tournamentCount = current.entries.filter((e) => e.tournament).length;
-      const hasRoom = current.tournamentLimit === null || current.tournamentLimit === undefined
-        || tournamentCount < current.tournamentLimit;
-      // Full, not disabled - tag them (🏆 WL) rather than silently leaving
-      // them indistinguishable from someone who never asked for the
-      // tournament at all. See the file-level tournament comment above and
-      // joinTournament()'s doc comment for the same idea on the
-      // already-on-the-list upgrade path.
-      entry.tournament = hasRoom;
-      entry.tournamentWaitlisted = !hasRoom;
-    }
     current.entries.splice(tbdSafeInsertIndex(current.entries), 0, entry);
   }
   writeAll(all);
@@ -1270,13 +931,7 @@ function addEntry(groupId, name, addedBy, addedByIsAdmin, selfAdded, wantsTourna
  *
  * Removing someone from the main list (not the waitlist) frees a spot, so
  * this also promotes off the front of the waitlist to fill it - the
- * returned `promoted` array lists anyone that happened to. If the removed
- * entry itself had `tournament: true`, that also frees a tournament spot,
- * so this additionally promotes off the front of the (🏆 WL) queue (see
- * promoteFromTournamentWaitlist()) - the returned `tournamentPromoted`
- * array lists anyone that happened to (always empty when removing from the
- * waitlist, or when the removed entry wasn't in the tournament to begin
- * with).
+ * returned `promoted` array lists anyone that happened to.
  */
 function removeEntry(groupId, name, requesterId, isAdmin) {
   const all = readAll();
@@ -1309,19 +964,16 @@ function removeEntry(groupId, name, requesterId, isAdmin) {
 
   list.splice(idx, 1);
   const promoted = fromWaitlist ? [] : promoteFromWaitlist(current);
-  const tournamentPromoted = fromWaitlist ? [] : promoteFromTournamentWaitlist(current);
   writeAll(all);
-  return { ok: true, list: current.entries, waitlist: current.waitlist, promoted, tournamentPromoted };
+  return { ok: true, list: current.entries, waitlist: current.waitlist, promoted };
 }
 
 /**
  * Bulk-reconciles the current list against a parsed copy-pasted edit (see
  * lib/listParser.js's parseListSections()) - powers !update. `parsed` is
- * { attendance: string[], waitlist: string[], duePayments: string[],
- * tournamentPlayers: string[]|null, tournamentWaitlistedNames: string[] },
+ * { attendance: string[], waitlist: string[], duePayments: string[] },
  * each name array already in the editor's intended final order for that
- * section (see parseListSections' own doc comment for what
- * tournamentPlayers null vs [] means).
+ * section.
  *
  * For each of the three sections, independently:
  *  - a name that already exists somewhere in the CURRENT attendance/
@@ -1361,33 +1013,10 @@ function removeEntry(groupId, name, requesterId, isAdmin) {
  * whatever position the editor put a name in the pasted text is where it
  * lands, (TBC) or not, same as everything else here.
  *
- * Tournament/social-only placement (new entries included) is reconciled
- * separately, AFTER the above, and ONLY when `parsed.tournamentPlayers`
- * isn't null - i.e. only when the pasted text actually contained a "🏆
- * Tournament" sub-header at all. A plain, non-tournament-formatted
- * Attendance paste (or a group that's never turned tournament on) leaves
- * every kept entry's `tournament`/`tournamentWaitlisted` flags exactly as
- * they were - this is what keeps a non-tournament !update from silently
- * touching data it never even displayed. When it IS present, every name
- * listed under the header becomes a tournament player - capped at
- * `tournamentLimit` if one's set, in the given order (same "full" idea as
- * joinTournament(), just applied to the whole roster in one pass instead
- * of one join at a time): anyone past the cap, or tagged "(🏆 WL)" under
- * Social only in the text, ends up `tournamentWaitlisted` instead; every
- * other Social-only name ends up with neither flag. This is a full
- * recompute, not an incremental adjustment - like the attendance/waitlist
- * placement above, the editor's explicit tournament placement is taken as
- * final, with no auto-promotion to backfill unused capacity if the editor
- * simply didn't list enough tournament players to fill it.
- *
- * Returns a summary: { added, removed, moved, paidAdded, paidRemoved,
- * tournamentChanged } - `added`/`removed` list plain names
- * (attendance+waitlist combined), `moved` lists { name, from, to } for
- * names that changed section, `paidAdded`/`paidRemoved` cover the payment
- * section the same way, and `tournamentChanged` lists { name, from, to }
- * (from/to each one of 'tournament'/'queued'/'social only') for every name
- * whose tournament placement actually changed - always empty when
- * `parsed.tournamentPlayers` was null.
+ * Returns a summary: { added, removed, moved, paidAdded, paidRemoved } -
+ * `added`/`removed` list plain names (attendance+waitlist combined),
+ * `moved` lists { name, from, to } for names that changed section, and
+ * `paidAdded`/`paidRemoved` cover the payment section the same way.
  */
 function applyListUpdate(groupId, parsed, editorId, editorIsAdmin) {
   const all = readAll();
@@ -1459,59 +1088,6 @@ function applyListUpdate(groupId, parsed, editorId, editorIsAdmin) {
   current.entries = newEntries;
   current.waitlist = newWaitlist;
 
-  // Tournament/social-only placement - see this function's doc comment for
-  // the full reasoning. Only touched at all when the pasted text actually
-  // contained the "🏆 Tournament" sub-header (tournamentPlayers
-  // !== null) - runs over current.entries (which by now includes BOTH kept
-  // and brand-new entries, since resolveSection() above already merged
-  // them), so a newly-added name listed under the tournament header gets
-  // opted in immediately, same as one that already existed.
-  const tournamentChanged = [];
-  function tournamentStateLabel(tournament, waitlisted) {
-    if (tournament) return 'tournament';
-    if (waitlisted) return 'queued';
-    return 'social only';
-  }
-  if (Array.isArray(parsed.tournamentPlayers)) {
-    // De-duped, in the editor's given order - a name repeated under the
-    // tournament header (unlikely, but not impossible in hand-edited text)
-    // only ever counts once, same "first placement wins" idea as
-    // resolveSection() above.
-    const seenTournament = new Set();
-    const tournamentNamesInOrder = [];
-    for (const name of parsed.tournamentPlayers) {
-      const normalized = normalizeName(name);
-      if (seenTournament.has(normalized)) continue;
-      seenTournament.add(normalized);
-      tournamentNamesInOrder.push(normalized);
-    }
-    const limit = current.tournamentLimit;
-    const cappedTournamentNames = new Set(
-      limit != null ? tournamentNamesInOrder.slice(0, limit) : tournamentNamesInOrder
-    );
-    const overflowTournamentNames = new Set(
-      limit != null ? tournamentNamesInOrder.slice(limit) : []
-    );
-    const waitlistedNames = new Set((parsed.tournamentWaitlistedNames || []).map((n) => normalizeName(n)));
-
-    for (const entry of current.entries) {
-      const normalized = normalizeName(entry.name);
-      const wasTournament = Boolean(entry.tournament);
-      const wasWaitlisted = Boolean(entry.tournamentWaitlisted);
-      const nowTournament = cappedTournamentNames.has(normalized);
-      const nowWaitlisted = !nowTournament && (overflowTournamentNames.has(normalized) || waitlistedNames.has(normalized));
-      if (wasTournament !== nowTournament || wasWaitlisted !== nowWaitlisted) {
-        tournamentChanged.push({
-          name: entry.name,
-          from: tournamentStateLabel(wasTournament, wasWaitlisted),
-          to: tournamentStateLabel(nowTournament, nowWaitlisted),
-        });
-      }
-      entry.tournament = nowTournament;
-      entry.tournamentWaitlisted = nowWaitlisted;
-    }
-  }
-
   // Payment section: same keep-metadata-if-existing, attribute-to-editor-
   // if-new reconciliation, independent of attendance/waitlist above.
   //
@@ -1565,7 +1141,7 @@ function applyListUpdate(groupId, parsed, editorId, editorIsAdmin) {
   current.duePayments = newDue;
 
   writeAll(all);
-  return { added, removed, moved, paidAdded, paidRemoved, tournamentChanged };
+  return { added, removed, moved, paidAdded, paidRemoved };
 }
 
 // Wipes the current list's entries AND waitlist in place - same date/
@@ -1748,14 +1324,6 @@ function newList(groupId, date, details = {}) {
     waitlist: [],
     duePayments: mergedDue,
     duePaymentsLabel: outgoing.duePaymentsLabel || DEFAULT_PAYMENT_LABEL,
-    // Carries forward as-is, same as duePaymentsLabel above - a group's
-    // tournament is a running weekly thing, not something !newlist resets.
-    // `entries` (and therefore who's opted in) DOES reset, same as the
-    // rest of the list - see emptyGroupState()'s doc comment.
-    tournamentEnabled: !!outgoing.tournamentEnabled,
-    tournamentLimit: outgoing.tournamentLimit === undefined ? null : outgoing.tournamentLimit,
-    tournamentWinners: outgoing.tournamentWinners || null,
-    tournamentRules: outgoing.tournamentRules || null,
   };
 
   writeAll(all);
@@ -1773,16 +1341,6 @@ module.exports = {
   setRegularPlayers,
   getPaymentExempt,
   setPaymentExempt,
-  isTournamentEnabled,
-  setTournamentEnabled,
-  getTournamentLimit,
-  setTournamentLimit,
-  getTournamentWinners,
-  setTournamentWinners,
-  getTournamentRules,
-  setTournamentRules,
-  joinTournament,
-  leaveTournament,
   getUndoableState,
   restoreUndoableState,
   saveUndoSnapshot,

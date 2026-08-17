@@ -219,13 +219,13 @@ test('interpretMessage: returns null for blank text without even calling the cli
 });
 
 test('MAPPABLE_COMMANDS: includes every single command the bot has, no exceptions - plus "none"', () => {
-  for (const cmd of ['in', 'out', 'paid', 'list', 'clear', 'clearpayments', 'newlist', 'date', 'location', 'courts', 'time', 'limit', 'allow', 'paymentlabel', 'regulars', 'tournament', 'settournament', 'tournamentlimit', 'tournamentwinners', 'undo', 'update', 'inactivity', 'stale', 'spamfilter', 'ai', 'help', 'admin', 'none']) {
+  for (const cmd of ['in', 'out', 'paid', 'list', 'clear', 'clearpayments', 'newlist', 'date', 'location', 'courts', 'time', 'limit', 'allow', 'paymentlabel', 'regulars', 'undo', 'update', 'inactivity', 'stale', 'spamfilter', 'ai', 'help', 'admin', 'none']) {
     assert.ok(MAPPABLE_COMMANDS.includes(cmd), `expected MAPPABLE_COMMANDS to include "${cmd}"`);
   }
   // Exact-length check too, not just "includes every expected one" - so an
   // accidental extra/duplicate entry in MAPPABLE_COMMANDS (which wouldn't
   // be caught by the loop above) still fails this test.
-  assert.equal(MAPPABLE_COMMANDS.length, 28);
+  assert.equal(MAPPABLE_COMMANDS.length, 24);
 });
 
 test('interpretMessage: "regulars" (e.g. declaring the regulars) is a valid mapped command', async () => {
@@ -259,67 +259,31 @@ test('interpretMessage: "admin" (a request specifically about admin commands) is
   assert.deepEqual(result, { actions: [{ command: 'admin', argText: '', confidence: 'high' }] });
 });
 
-test('interpretMessage: "settournament" (turning the sub-feature on/off) is a valid mapped command', async () => {
-  const client = fakeClient(JSON.stringify({ actions: [{ command: 'settournament', argText: 'on', confidence: 'high' }] }));
-  const result = await interpretMessage('turn the tournament on', { client });
-  assert.deepEqual(result, { actions: [{ command: 'settournament', argText: 'on', confidence: 'high' }] });
-});
-
-test('interpretMessage: "settournament" with "rules <text>" argText sets the tournament rules', async () => {
-  const client = fakeClient(JSON.stringify({ actions: [{ command: 'settournament', argText: 'rules Best of 3, single elimination', confidence: 'high' }] }));
-  const result = await interpretMessage('the tournament rules are best of 3, single elimination', { client });
-  assert.deepEqual(result, { actions: [{ command: 'settournament', argText: 'rules Best of 3, single elimination', confidence: 'high' }] });
-});
-
-test('interpretMessage: "tournament" (viewing the rules) is a valid mapped command', async () => {
-  const client = fakeClient(JSON.stringify({ actions: [{ command: 'tournament', argText: '', confidence: 'high' }] }));
-  const result = await interpretMessage('what are the tournament rules', { client });
-  assert.deepEqual(result, { actions: [{ command: 'tournament', argText: '', confidence: 'high' }] });
-});
-
-test('interpretMessage: "tournamentlimit" is a valid mapped command', async () => {
-  const client = fakeClient(JSON.stringify({ actions: [{ command: 'tournamentlimit', argText: '16', confidence: 'high' }] }));
-  const result = await interpretMessage('cap the tournament at 16', { client });
-  assert.deepEqual(result, { actions: [{ command: 'tournamentlimit', argText: '16', confidence: 'high' }] });
-});
-
-test('interpretMessage: "tournamentwinners" is a valid mapped command, with exactly two names in argText', async () => {
-  const client = fakeClient(JSON.stringify({ actions: [{ command: 'tournamentwinners', argText: 'Irfan, Tu', confidence: 'high' }] }));
-  const result = await interpretMessage('congrats to Irfan and Tu for winning the tournament', { client });
-  assert.deepEqual(result, { actions: [{ command: 'tournamentwinners', argText: 'Irfan, Tu', confidence: 'high' }] });
-});
-
-test('interpretMessage: "in" with a tournament opt-in maps the literal "tournament" keyword into argText', async () => {
-  const client = fakeClient(JSON.stringify({ actions: [{ command: 'in', argText: 'tournament', confidence: 'high' }] }));
-  const result = await interpretMessage('put me down for the tournament too', { client });
-  assert.deepEqual(result, { actions: [{ command: 'in', argText: 'tournament', confidence: 'high' }] });
-});
-
 // --- Compound messages: a single @-mention that bundles multiple distinct
-// requests together (e.g. "start a new list ... and cap the tournament at
-// 12 ... and add these people to the tournament") maps to MULTIPLE actions,
-// dispatched in order - see SYSTEM_PROMPT's "MULTIPLE ACTIONS" rules and
-// index.js's handleAiMention for how each one gets dispatched to the exact
-// same handler a typed command would hit. ---
+// requests together (e.g. "start a new list ... and cap it at 12 ... and
+// add these people") maps to MULTIPLE actions, dispatched in order - see
+// SYSTEM_PROMPT's "MULTIPLE ACTIONS" rules and index.js's handleAiMention
+// for how each one gets dispatched to the exact same handler a typed
+// command would hit. ---
 
 test('interpretMessage: a compound message maps to multiple actions, returned in the order they should run', async () => {
   const client = fakeClient(JSON.stringify({
     actions: [
       { command: 'newlist', argText: '23/08 Noble Park | 1, 2 | 7pm-9pm', confidence: 'high' },
-      { command: 'tournamentlimit', argText: '12', confidence: 'high' },
-      { command: 'in', argText: 'tournament, Keith, Tu, Bao', confidence: 'high' },
+      { command: 'limit', argText: '12', confidence: 'high' },
+      { command: 'in', argText: 'Keith, Tu, Bao', confidence: 'high' },
     ],
   }));
   const result = await interpretMessage(
-    'create a new list for next Sunday at Noble Park courts 1,2 at 7pm-9pm. The tournament limit is 12. Add Keith, Tu and Bao to the tournament',
+    'create a new list for next Sunday at Noble Park courts 1,2 at 7pm-9pm. Cap it at 12. Add Keith, Tu and Bao',
     { client }
   );
   assert.equal(result.actions.length, 3);
   assert.equal(result.actions[0].command, 'newlist');
-  assert.equal(result.actions[1].command, 'tournamentlimit');
+  assert.equal(result.actions[1].command, 'limit');
   assert.equal(result.actions[1].argText, '12');
   assert.equal(result.actions[2].command, 'in');
-  assert.equal(result.actions[2].argText, 'tournament, Keith, Tu, Bao');
+  assert.equal(result.actions[2].argText, 'Keith, Tu, Bao');
 });
 
 test('interpretMessage: returns null when an action inside a multi-action response fails validation (bad command value)', async () => {
