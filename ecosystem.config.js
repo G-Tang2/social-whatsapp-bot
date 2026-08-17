@@ -5,44 +5,26 @@
 // See README.md "Run on your own computer" section for the full setup,
 // including making pm2 auto-start on boot.
 //
-// Two apps, matching the stable/unstable split (see this directory's own
-// .env comment header, and ..\social-whatsapp-bot-stable's): 'unstable'
-// runs THIS checkout (the `main` branch, wherever it currently is) against
-// its own test group; 'stable' runs the sibling worktree checked out on the
-// `stable` branch (pinned to whatever commit was last promoted) against the
-// real group. Each has its own cwd, so each picks up its own .env/
-// auth_info/data - see lib/config.js/store.js for why those default to
-// paths relative to `cwd` rather than anything shared between the two.
-// Run `pm2 start ecosystem.config.js` from THIS directory to bring up both
-// at once; the stable worktree's own (older, frozen-at-f6b5a2a) copy of
-// this file still works too if you ever want to start just that one
-// standalone from inside it - its app name ('whatsapp-list-bot') doesn't
-// collide with either name below.
-
-const path = require('path');
+// If you run a SECOND copy of this bot from another folder on the same
+// machine (a different WhatsApp session/group), give that copy's own
+// ecosystem.config.js a DIFFERENT `name` below before starting it under
+// pm2 - pm2's process list/names are global to the whole machine, not
+// scoped per folder, so two copies both named 'whatsapp-list-bot' collide:
+// starting the second one doesn't create an independent process, it makes
+// pm2 treat it as (re)starting the SAME app, now pointed at the second
+// folder's `cwd` - which can silently break the first instance rather than
+// running both side by side.
 
 module.exports = {
   apps: [
     {
-      name: 'whatsapp-list-bot-unstable',
+      name: 'whatsapp-list-bot',
       script: 'index.js',
       cwd: __dirname,
       autorestart: true,
       restart_delay: 5000, // wait 5s before restarting after a crash
       max_restarts: 20,
       min_uptime: '30s', // don't count a restart against max_restarts unless it crashed within 30s
-      env: {
-        NODE_ENV: 'production',
-      },
-    },
-    {
-      name: 'whatsapp-list-bot-stable',
-      script: 'index.js',
-      cwd: path.join(__dirname, '..', 'social-whatsapp-bot-stable'),
-      autorestart: true,
-      restart_delay: 5000,
-      max_restarts: 20,
-      min_uptime: '30s',
       env: {
         NODE_ENV: 'production',
       },
