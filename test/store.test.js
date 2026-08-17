@@ -413,6 +413,47 @@ test('newList does not set owedSince at all when the old list never had a date',
   assert.equal(due[0].owedSince, undefined);
 });
 
+// --- waiveDuePaymentsForWinners() -----------------------------------------
+// Tournament winners don't have to pay for the social they won - see
+// commands/admin.js's handleTournamentWinners, which calls this right
+// alongside setTournamentWinners.
+
+test('waiveDuePaymentsForWinners clears the winners\' debt for the week that was just archived', () => {
+  const groupId = freshGroupId();
+  store.setDate(groupId, '2026-08-13');
+  store.addEntry(groupId, 'Irfan', 'i@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Tu', 't@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Sam', 's@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Irfan/Tu/Sam now owe for 8/13
+
+  const waived = store.waiveDuePaymentsForWinners(groupId, ['Irfan', 'Tu']);
+  assert.deepEqual(waived.sort(), ['Irfan', 'Tu']);
+
+  const due = store.getCurrentEvent(groupId).duePayments;
+  assert.deepEqual(due.map((e) => e.name), ['Sam']); // winners cleared, Sam still owes
+});
+
+test('waiveDuePaymentsForWinners leaves a winner\'s UNRELATED earlier debt untouched', () => {
+  const groupId = freshGroupId();
+  store.setDate(groupId, '2026-08-06');
+  store.addEntry(groupId, 'Irfan', 'i@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-13', {}); // Irfan owes for 8/06 (a missed, unrelated cycle)
+
+  store.addEntry(groupId, 'Irfan', 'i@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Irfan now ALSO owes for 8/13 - the week won
+
+  store.waiveDuePaymentsForWinners(groupId, ['Irfan', 'Tu']);
+
+  const due = store.getCurrentEvent(groupId).duePayments;
+  assert.deepEqual(due.map((e) => e.owedSince), ['2026-08-06']); // only the 8/13 entry was waived
+});
+
+test('waiveDuePaymentsForWinners is a no-op with no history yet to call "that week"', () => {
+  const groupId = freshGroupId();
+  const waived = store.waiveDuePaymentsForWinners(groupId, ['Irfan', 'Tu']);
+  assert.deepEqual(waived, []);
+});
+
 // --- newList(): owing separately for MULTIPLE missed events at once ------
 // Someone who still owes from an earlier cycle AND attends (without paying)
 // a LATER cycle too now gets a SEPARATE second duePayments entry for that

@@ -711,6 +711,15 @@ just replace both names with the next result each time. Like
 sticks around across `!newlist` until an admin sets it again, so it keeps
 announcing the same result until there's a new one to announce.
 
+Tournament winners don't have to pay for the social they won: setting
+`!tournamentwinners` also clears each named winner's payment debt for that
+same week (the one `!newlist` just archived into their `duePayments`
+entry), if they had one. Any other debt they separately owe from an
+earlier missed week is left untouched - this is a one-off thank-you for
+that week's win, not blanket forgiveness. It's not retroactive either -
+running `!tournamentwinners` again later for a different week only waives
+that new week's debt, not the previous winners' again.
+
 **Turning it off doesn't forget who'd opted in** - it just hides the
 tournament breakdown (and the winners banner) from the posted list until
 an admin turns it back on, at which point everyone who'd opted in reappears

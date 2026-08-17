@@ -43,6 +43,7 @@ const {
   setTournamentLimit,
   getTournamentWinners,
   setTournamentWinners,
+  waiveDuePaymentsForWinners,
   getTournamentRules,
   setTournamentRules,
   getUndoSnapshot,
@@ -901,7 +902,10 @@ async function handleTournamentLimit(ctx) {
 // tournament" banner formatList() shows above the list while tournament is
 // on (see lib/helpers.js) - keeps announcing the same result until an
 // admin sets it again next time, same "sticks until you change it"
-// carry-forward as duePaymentsLabel/location/etc. Deliberately always
+// carry-forward as duePaymentsLabel/location/etc. Also waives the winners'
+// payment debt for that same week (see store.js's
+// waiveDuePaymentsForWinners) - tournament winners don't have to pay for
+// the social they won. Deliberately always
 // exactly two names (that's the template) rather than !regulars-style
 // add/remove/clear sub-forms - there's nothing to incrementally edit here,
 // just replace both names each time.
@@ -940,7 +944,9 @@ async function handleTournamentWinners(ctx) {
   }
 
   setTournamentWinners(groupId, names);
-  await reply(`Tournament winners set: ${names[0]} and ${names[1]}`);
+  const waived = waiveDuePaymentsForWinners(groupId, names);
+  const waivedNote = waived.length ? ` (payment waived for ${waived.join(' and ')} for that week)` : '';
+  await reply(`Tournament winners set: ${names[0]} and ${names[1]}${waivedNote}`);
   await postList();
 }
 

@@ -682,6 +682,46 @@ function setTournamentWinners(groupId, names) {
   return all[groupId].current.tournamentWinners;
 }
 
+// Tournament winners don't have to pay for the social THAT week - called
+// right alongside setTournamentWinners above (see commands/admin.js's
+// handleTournamentWinners) when an admin announces a result via
+// !tournamentwinners. Per the README's "Announcing last week's winners",
+// that command names the winners of the week that just ended - i.e. the
+// list newList() most recently archived into `history` - by which point
+// that week's attendees (winners included) have already been carried into
+// `current.duePayments` with `owedSince` set to that archived list's date
+// (see newList()'s own doc comment). So "that week" is resolved here as
+// `history`'s last entry's date, and only the winners' duePayments entries
+// matching THAT exact owedSince are cleared - any other debt a winner
+// separately owes from an earlier missed cycle is left untouched, same
+// "forward-looking, not retroactive forgiveness" spirit as
+// getPaymentExempt. No-op (returns []) if there's no history yet (nothing
+// to call "that week"), the archived list never had a date, or neither
+// winner actually owes for it.
+function waiveDuePaymentsForWinners(groupId, names) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  const state = all[groupId];
+  const current = state.current;
+  if (!current.duePayments || !current.duePayments.length) return [];
+
+  const history = state.history || [];
+  const lastWeekDate = history.length ? history[history.length - 1].date : null;
+  if (!lastWeekDate) return [];
+
+  const normalizedNames = new Set((names || []).map(normalizeName));
+  const waived = [];
+  current.duePayments = current.duePayments.filter((entry) => {
+    const matches = entry.owedSince === lastWeekDate && normalizedNames.has(normalizeName(entry.name));
+    if (matches) waived.push(entry.name);
+    return !matches;
+  });
+  if (!waived.length) return [];
+
+  writeAll(all);
+  return waived;
+}
+
 // Free-text tournament rules set by an admin via !settournament rules <text>,
 // shown to anyone who runs bare !tournament. Same shape/division-of-labor as
 // getTournamentWinners/setTournamentWinners above.
@@ -1779,6 +1819,7 @@ module.exports = {
   setTournamentLimit,
   getTournamentWinners,
   setTournamentWinners,
+  waiveDuePaymentsForWinners,
   getTournamentRules,
   setTournamentRules,
   joinTournament,

@@ -1091,6 +1091,24 @@ test('handleTournamentWinners: view, admin-gated to change, requires exactly two
   assert.deepEqual(store.getTournamentWinners(groupId), ['Irfan', 'Tu']);
 });
 
+test('handleTournamentWinners waives the winners\' payment debt for the week they won', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  store.setDate(groupId, '2026-08-13');
+  store.addEntry(groupId, 'Irfan', 'i@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Tu', 't@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Sam', 's@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Irfan/Tu/Sam now owe for 8/13
+
+  const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Irfan, Tu' });
+  await adminCommands.handleTournamentWinners(set.ctx);
+
+  assert.match(set.replies[0], /payment waived for Irfan and Tu/i);
+  const due = store.getCurrentEvent(groupId).duePayments;
+  assert.deepEqual(due.map((e) => e.name), ['Sam']);
+});
+
 test('handleIn: a trailing "tournament" keyword opts a new joiner in, when there\'s room', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
