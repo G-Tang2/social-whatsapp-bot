@@ -800,7 +800,7 @@ async function handleSettournament(ctx) {
       : '';
     await reply(
       `${formatTournamentRoster(tournamentEntries, event.tournamentLimit)}${waitlistedLine}\n\n`
-        + `To join: add "tournament" to ${COMMAND_PREFIX}in, e.g. ${COMMAND_PREFIX}in tournament\n`
+        + `To join: @Snoopy sign me up for the tournament\n`
         + `To change (admins only): ${COMMAND_PREFIX}settournament off, ${COMMAND_PREFIX}tournamentlimit <number>, ${COMMAND_PREFIX}tournamentwinners Name1, Name2, ${COMMAND_PREFIX}settournament rules <text>`
     );
     return;
@@ -819,7 +819,7 @@ async function handleSettournament(ctx) {
     }
     setTournamentEnabled(groupId, true);
     await reply(
-      `Tournament turned *on* for this group. Anyone joining (or already on) the social list can opt in - add "tournament" to ${COMMAND_PREFIX}in, e.g. ${COMMAND_PREFIX}in tournament. Set a cap with ${COMMAND_PREFIX}tournamentlimit (admins only) if needed.`
+      `Tournament turned *on* for this group. Anyone joining (or already on) the social list can opt in - @Snoopy sign me up for the tournament. Set a cap with ${COMMAND_PREFIX}tournamentlimit (admins only) if needed.`
     );
     await postList();
     return;
