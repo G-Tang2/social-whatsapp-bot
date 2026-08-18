@@ -1586,6 +1586,20 @@ last-seen heartbeat's immediate-on-connect + on-timer behavior. Worth
 running after any change, especially to `store.js` or the command dispatch
 wiring.
 
+`test/geminiCommand.test.js` covers `lib/geminiCommand.js`'s own plumbing
+(JSON parsing, schema validation, prompt assembly) against a fake Gemini
+client, so it's part of the regular `npm test` run - but it can never catch
+a bug that lives in the *prompt wording itself* (the model misreading
+`SYSTEM_PROMPT` and doing the wrong thing), since the fake client only ever
+returns exactly what each test tells it to. For that, `npm run test:eval`
+runs `test-eval/geminiCommand.eval.js` against the **real** Gemini API
+(needs a real `GEMINI_API_KEY` in `.env` - the checked-in `.env` only ships
+a blank placeholder) with realistic scenarios - e.g. a list entry flagged
+`(TBC)` must still resolve by its bare name, and `argText` must never
+include the `(TBC)` tag itself. It's opt-in and excluded from `npm test`
+on purpose (real API calls, real cost, a bit non-deterministic) - run it
+after changing `SYSTEM_PROMPT`/`COMMAND_ARG_GUIDE` in `lib/geminiCommand.js`.
+
 ## Customizing moderation
 
 - **There's no language/profanity filter by default** - it was deliberately
