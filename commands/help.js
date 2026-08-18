@@ -19,7 +19,6 @@ const {
   COMMAND_PREFIX,
   PAYMENT_LABEL,
   MAX_NAMES_PER_COMMAND,
-  INACTIVITY_WARN_AFTER_DAYS,
 } = require('../lib/config');
 const { isGroupAdmin } = require('../lib/adminCheck');
 
@@ -112,8 +111,6 @@ const ADMIN_HELP_TEXT = [
   `• *${COMMAND_PREFIX}tournamentwinners [Name1, Name2]* - sets the "Congrats to Name1 and Name2 for winning last week's tournament" banner shown above the list (admins to change)`,
   '',
   '*Group settings*',
-  `• *${COMMAND_PREFIX}inactivity [on|off]* - inactivity reminders for this group, off by default (admins to change)`,
-  `• *${COMMAND_PREFIX}stale* - who's been warned for inactivity, and who's overdue`,
   `• *${COMMAND_PREFIX}spamfilter [on|off]* - auto-delete stock/crypto spam in this group, ON by default (admins to change)`,
   `• *${COMMAND_PREFIX}ai [on|off]* - let people @-mention me with a plain-English request instead of exact commands, OFF by default, requires GEMINI_API_KEY (admins to change)`,
   '',
@@ -148,8 +145,6 @@ const ADMIN_TIPS_TEXT = [
   `_• ${COMMAND_PREFIX}settournament rules <text> sets the rules anyone can read back with bare ${COMMAND_PREFIX}tournament - sticks around across ${COMMAND_PREFIX}newlist until changed, same as ${COMMAND_PREFIX}tournamentwinners_`,
   '',
   '*Group settings*',
-  `_• ${COMMAND_PREFIX}inactivity is per-group, off by default - going quiet for ${INACTIVITY_WARN_AFTER_DAYS}d gets you tagged (any message clears it); admins are always exempt_`,
-  '',
   `_• ${COMMAND_PREFIX}spamfilter is per-group, ON by default - deletes WhatsApp invite links and link+stock/crypto messages automatically (admins exempt); ${COMMAND_PREFIX}spamfilter off to allow them_`,
   '',
   `_• ${COMMAND_PREFIX}ai is per-group, OFF by default - once on, @-mentioning me with a plain request maps to a command (including admin ones for admins, relative dates like "next Wednesday", and the saved ${COMMAND_PREFIX}regulars roster). One message can bundle several requests, done in order. Unsure or unrelated? I say so rather than guess - I always reply when tagged_`,

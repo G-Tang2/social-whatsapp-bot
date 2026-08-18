@@ -3,7 +3,7 @@
 // pipeline (not just individual command handlers), via a mocked Baileys
 // module. Focused on the wiring that only shows up at the pipeline level:
 // catch-up ('append') gating, spam-deletion happening before a message is
-// ever treated as a command, activity recording, and the ALLOWED_GROUPS
+// ever treated as a command, and the ALLOWED_GROUPS
 // gate - reusing the pattern used throughout this project's manual testing
 // (see test/helpers/mockBaileys.js).
 //
@@ -1132,7 +1132,7 @@ test('e2e: a catch-up backlog delivered across two bursts still produces exactly
   }
 });
 
-test('e2e: spam is deleted before ever being treated as activity or a command', async () => {
+test('e2e: spam is deleted before ever being treated as a command', async () => {
   fakeSockInstance.sentMessages.length = 0;
   fakeSockInstance.deleted.length = 0;
 

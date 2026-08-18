@@ -29,8 +29,6 @@ every change.
 | `!tournament` | anyone | Shows the tournament rules text set via `!settournament rules <text>` (see "Tournament" below) - does not show who's opted in (that's `!settournament`) |
 | `!tournamentlimit [number]` | viewing: anyone; changing: group admins only | Caps how many people can be opted into the tournament - separate from the main `!limit`. With no number, shows the current tournament limit without changing it. `!tournamentlimit off` removes the cap |
 | `!tournamentwinners [Name1, Name2]` | viewing: anyone; changing: group admins only | Sets the two-name "Congrats to Name1 and Name2 for winning last week's tournament" banner shown above the list while the tournament is on. With no text, shows the currently set winners without changing them |
-| `!inactivity [on\|off]` | viewing: anyone; changing: group admins only | Turns inactivity reminders (see "Reminding inactive members" below) on or off for *this* group. Off by default everywhere. With no argument, shows the current on/off state without changing it |
-| `!stale` | group admins only | Lists who's currently been warned for inactivity, how long ago, and who's overdue for manual removal (see "Reminding inactive members" below) |
 | `!spamfilter [on\|off]` | viewing: anyone; changing: group admins only | Turns auto-deletion of stock/crypto spam (see "Spam filtering" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!ai [on\|off]` | viewing: anyone; changing: group admins only | Turns natural-language command interpretation (see "Natural-language commands" below) on or off for *this* group. OFF by default everywhere, and requires `GEMINI_API_KEY` to be configured. With no argument, shows the current on/off state without changing it |
 | `!update <paste the list, edited>` | group admins only | Bulk-edits Attendance/Waitlist/Payment by re-reading a copy-pasted, hand-edited list (see "Bulk-editing the roster" below) |
@@ -586,7 +584,7 @@ just discarded, it has a bigger blast radius than most commands.
 ## Tournament
 
 A per-group, **off by default** sub-feature (same "each group opts in
-individually" pattern as spam filtering/inactivity/natural-language
+individually" pattern as spam filtering/natural-language
 commands): an admin turns it on with `!settournament on`, and from then on
 anyone joining (or already on) the social Attendance list can additionally
 opt into the tournament, on top of the regular social list - it's not a
@@ -734,109 +732,21 @@ entry was IN the tournament, its spot is what triggers the (🏆 WL) queue's
 auto-promotion described above. To leave the tournament WITHOUT leaving the
 list, use `!out tournament` instead - see "Moving to social only" above.
 
-## Reminding inactive members
-
-This is a separate feature from the signup list above - it's about general
-chat presence in the group, not list membership, and it's off by default
-for every group.
-
-**It's a per-group setting, turned on/off live in chat - not an `.env`
-switch.** Run `!inactivity on` (group admins only) in whichever group you
-want it active in. This matters if the bot moderates more than one group
-via `ALLOWED_GROUPS`: turning it on in one group doesn't turn it on
-anywhere else, so a group that doesn't want this can just never run the
-command. Run bare `!inactivity` any time to see whether it's currently on
-or off for that group, and `!inactivity off` to turn it back off.
-
-Once on, the bot tracks the last time each group member sent *any*
-message - regular chat, images, stickers, voice notes, all count, not just
-bot commands. On a periodic background check (every
-`INACTIVITY_CHECK_INTERVAL_DAYS`, default 1), anyone who's gone quiet for
-`INACTIVITY_WARN_AFTER_DAYS` (default 1) gets tagged in the group with a
-one-time reminder that they'll be considered for removal if they stay
-quiet for another `INACTIVITY_REMOVE_AFTER_DAYS` (default 1). Sending any
-message - even just replying "here!" - clears the warning and resets their
-clock, exactly like the reminder promises. Those three timing settings
-live in `.env` (see `.env.example`), accept fractional values if you want
-finer control (e.g. `0.5` for 12 hours), and apply to every group that has
-the feature turned on - they're global tuning knobs, only the on/off
-switch itself is per group.
-
-A few things worth knowing about how this works:
-
-- **Warn-only, no auto-kick.** The bot never removes anyone itself, even
-  once someone's overdue. It just surfaces who's overdue via `!stale`
-  (group admins only) - actually removing someone from the group is a
-  manual step an admin takes from WhatsApp's own "Remove participant" UI,
-  same as always. This was a deliberate choice: getting flagged as
-  inactive and actually getting removed are different enough in
-  consequence that the second one should stay a human decision, not
-  something a script does unattended.
-- **Group admins are exempt.** They're never warned or counted as
-  candidates for removal, regardless of how long they've been quiet.
-- **No history before the bot started watching.** The bot can only track
-  activity from the moment a group ran `!inactivity on` (or the moment it
-  first sees a given member, if they join later) - there's no way to see
-  someone's message history from before that. So nobody is flagged purely
-  because the bot doesn't know their past; everyone starts with a clean
-  "just seen" baseline the moment the feature is turned on for their group.
-  Turning it off and back on later re-baselines everyone again, so time
-  spent with it off never counts against anyone.
-- **Requires `ALLOWED_GROUPS` to include the group.** The bot can only
-  track activity in groups it's actually configured to watch - see
-  "Configure the group and list name" below. `!inactivity on` still works
-  if you run it in an unconfigured group, but the periodic check never
-  reaches a group that isn't in `ALLOWED_GROUPS`, so nothing will actually
-  happen there.
-- **`!stale`** shows everyone currently warned, sorted most-overdue first,
-  tagged so it's obvious at a glance who needs a decision - and marks
-  anyone past `INACTIVITY_REMOVE_AFTER_DAYS` since their warning as
-  `OVERDUE`. It's admin-only and view-only; running it doesn't warn or
-  remove anyone by itself. If the feature is off for that group, it says so
-  instead of an empty report.
-- **Every sweep logs a one-line summary**, e.g. `[bot] Inactivity sweep for
-  1234...@g.us: 14 participant(s) tracked, 1 candidate(s) due for a
-  warning.`, printed unconditionally (not just with `DEBUG=true`) so a
-  "why didn't so-and-so get warned" question can be answered straight from
-  the logs (`pm2 logs`, or your terminal if running it directly) instead of
-  guessing - check for these lines around when a warning was expected. A
-  sweep that never logs at all for a group usually means that group isn't
-  in `ALLOWED_GROUPS`, or the bot's socket was disconnected right at that
-  tick (it just tries again on the next one).
-- **Resilient to a flaky/incomplete `groupMetadata()` response.** Each
-  sweep re-fetches the group's member list from WhatsApp to refresh
-  tracking. A fetch that comes back completely empty (0 participants,
-  which a real group never actually has) is treated as untrustworthy and
-  skipped entirely, logged as `groupMetadata() returned 0 participants -
-  skipping this cycle`. A fetch that's merely *missing some* previously-known
-  members - which has been observed transiently right after a reconnect,
-  while Baileys' own internal group-metadata cache is still catching up -
-  no longer drops them immediately either: someone missing from a single
-  snapshot is only marked as pending removal, and is actually dropped only
-  if they're still missing on the *next* sweep too. This matters because
-  the old immediate-drop behavior would silently reseed a fresh "just seen"
-  baseline for anyone wrongly dropped this way on their very next
-  appearance - quietly resetting their inactivity clock and making a
-  genuinely-long quiet period (even many hours) never actually trigger a
-  warning, with nothing wrong-looking in `!stale` to point at afterward.
-
 ## Spam filtering
 
-Another separate, per-group feature, but **ON by default** (unlike
-`!inactivity` below): the bot can automatically delete two kinds of
-message - WhatsApp group invite links, and messages that look like
-stock/crypto spam (the "make $10k/week trading Bitcoin, click this link"
-style messages that sometimes get dropped into group chats, often by a
-compromised or fake account). Every group the bot moderates gets this
-protection automatically, without an admin having to remember to turn it
-on.
+A separate, per-group feature, **ON by default**: the bot can automatically
+delete two kinds of message - WhatsApp group invite links, and messages
+that look like stock/crypto spam (the "make $10k/week trading Bitcoin,
+click this link" style messages that sometimes get dropped into group
+chats, often by a compromised or fake account). Every group the bot
+moderates gets this protection automatically, without an admin having to
+remember to turn it on.
 
 **A per-group setting, turned on/off live in chat.** Run `!spamfilter off`
 (group admins only) in a group that needs to allow something this would
 otherwise catch (e.g. its own invite link circulating), `!spamfilter on`
-to turn it back on, and bare `!spamfilter` to see the current state.
-Unlike `!inactivity`, which each group opts *into*, a group opts *out* of
-this one if it doesn't want it.
+to turn it back on, and bare `!spamfilter` to see the current state. A
+group opts *out* of this one if it doesn't want it, rather than opting in.
 
 **What counts as spam - two independent rules, either is enough on its
 own:**
@@ -1055,10 +965,9 @@ Everything else that arrived during the gap is intentionally ignored:
   imagine a `!newlist` or `!clear` firing minutes (or longer) later than
   the admin intended, possibly after other changes have already happened
   in between.
-- Plain chat during the gap isn't recorded as activity (for the
-  inactivity-reminders feature) and isn't checked for spam. Both of those
-  are about *when* something happened, and a message resurfacing well
-  after the fact would misrepresent that.
+- Plain chat during the gap isn't checked for spam - that's about *when*
+  something happened, and a message resurfacing well after the fact would
+  misrepresent that.
 
 This distinction comes from how WhatsApp/Baileys tag messages: a live,
 just-arrived message comes through as `'notify'`; a message the bot missed
@@ -1600,19 +1509,11 @@ database to set up. Back up the
 `data/` and `auth_info/` folders occasionally if the list matters to you - a
 reinstalled/reset PC would lose both otherwise.
 
-There's a second, separate JSON file - `data/activity.json` (or alongside
-`lists.json` on the Fly volume) - for the inactivity-reminders feature (see
-"Reminding inactive members" above). It's keyed by group JID, and each
-group's entry stores whether `!inactivity` is currently on or off for that
-group plus a per-member last-seen time and warned status. It's unrelated to
-the signup list itself, and a group that's never run `!inactivity on` has
-no meaningful data in there beyond an `off` flag.
-
-There's a third JSON file, `data/spam.json`, for the spam-filtering feature
+There's a second JSON file, `data/spam.json`, for the spam-filtering feature
 (see "Spam filtering" above) - just a per-group on/off flag, no other data,
 since spam filtering doesn't need to remember anything between messages.
 
-There's a fourth JSON file, `data/catchup_queue.json`, for the "catching up
+There's a third JSON file, `data/catchup_queue.json`, for the "catching up
 after a network outage" feature (see below) - it holds whatever batch of
 `!in`/`!out`/`!paid` outcomes is currently waiting to be sent as a combined
 summary message, so a bot process restart at the wrong moment doesn't lose
@@ -1644,10 +1545,9 @@ location - titles and locations mean different things, so
 ## Code structure (for anyone maintaining a fork)
 
 `index.js` is a thin orchestrator: it owns the Baileys connection lifecycle
-and the top of the message pipeline (guards, spam filtering, activity
-tracking, catch-up gating), then looks up the right handler in a dispatch
-table instead of one giant switch statement. The actual work is split
-across two folders:
+and the top of the message pipeline (guards, spam filtering, catch-up
+gating), then looks up the right handler in a dispatch table instead of
+one giant switch statement. The actual work is split across two folders:
 
 - `lib/` - shared, non-command code: `config.js` (all `.env`-derived
   settings, in one place), `adminCheck.js` (`isGroupAdmin()`, with a
@@ -1655,22 +1555,20 @@ across two folders:
   like `formatList()`/`parseNames()`), `listParser.js` (`parseListSections()`
   - the reverse of `formatList()`, tolerantly re-reading a copy-pasted,
   edited list's name lists back out for `!update` - see "Bulk-editing the
-  roster" above), `inactivityCheck.js` (the periodic background sweep),
-  `catchUpQueue.js`/`catchUpSummary.js` (batches caught-up `!in`/`!out`/
-  `!paid` outcomes into one combined summary - see below), and
+  roster" above), `catchUpQueue.js`/`catchUpSummary.js` (batches caught-up
+  `!in`/`!out`/`!paid` outcomes into one combined summary - see below), and
   `lastSeenStatus.js` (the WhatsApp About/status heartbeat - see "Last seen
   status heartbeat" above).
 - `commands/` - one file per group of related commands (`list.js` for
   `!in`/`!out`/`!list`/`!paid`, `admin.js` for the list-management
-  commands, `inactivity.js`, `spamfilter.js`, `help.js`), plus
+  commands, `spamfilter.js`, `help.js`), plus
   `commands/index.js`, which aggregates them into the dispatch table
   the top-level `index.js` uses. Each handler takes a single `ctx` object
   (`{ sock, msg, groupId, senderId, senderName, argText, reply, postList,
   ... }`) rather than a long parameter list.
 
-`store.js`, `activity.js`, and `spam.js` (the three JSON-file-backed data
-modules) are unchanged by this split - they're already independent of
-`index.js`.
+`store.js` and `spam.js` (the JSON-file-backed data modules) are unchanged
+by this split - they're already independent of `index.js`.
 
 **Admin-status caching:** `sock.groupMetadata()` (needed to check if
 someone's a group admin) is a network call, and it used to be made fresh
@@ -1723,32 +1621,20 @@ follow this same pattern rather than sending directly, or it'll bypass the
 batching and
 spam the group like the old per-message behavior did.
 
-**Last seen heartbeat:** like the inactivity-check interval above, the
-heartbeat that keeps the bot's WhatsApp About text current lives as a single
-module-scope `setInterval` in `index.js` (not inside `start()`, for the same
-reconnect-stacking reason), reading whatever socket `start()` most recently
-assigned to `currentSock` on each tick - see `lib/lastSeenStatus.js`'s
-`updateLastSeenStatus()`, which no-ops safely if `currentSock` is briefly
-null (e.g. mid-reconnect) and catches/logs its own errors rather than
-letting a flaky `updateProfileStatus()` call reach the global
-`unhandledRejection` safety net. It's also called once directly (with the
-just-connected socket, not `currentSock`) inside the `connection === 'open'`
-branch, so the text refreshes immediately on connect instead of waiting for
-the next timer tick.
+**Last seen heartbeat:** the heartbeat that keeps the bot's WhatsApp About
+text current lives as a single module-scope `setInterval` in `index.js`
+(not inside `start()`, so a reconnect doesn't stack a duplicate timer),
+reading whatever socket `start()` most recently assigned to `currentSock`
+on each tick - see `lib/lastSeenStatus.js`'s `updateLastSeenStatus()`,
+which no-ops safely if `currentSock` is briefly null (e.g. mid-reconnect)
+and catches/logs its own errors rather than letting a flaky
+`updateProfileStatus()` call reach the global `unhandledRejection` safety
+net. It's also called once directly (with the just-connected socket, not
+`currentSock`) inside the `connection === 'open'` branch, so the text
+refreshes immediately on connect instead of waiting for the next timer
+tick.
 
-**Debounced pruning in `activity.js`:** `pruneParticipants()` doesn't drop a
-tracked participant the moment they're missing from a single
-`groupMetadata()` snapshot - it marks them `missingSince` and only actually
-deletes them if they're still missing on the *next* call too (cleared
-immediately if they reappear first). This exists specifically because a
-single metadata fetch can transiently come back incomplete (seen around
-reconnects) without throwing, and the old immediate-delete behavior would
-let `seedParticipants()` silently reseed a fresh "now" baseline for anyone
-wrongly dropped, resetting their inactivity clock with nothing visibly
-wrong afterward. See the comment above `pruneParticipants()` and
-`test/activity-spam.test.js`'s debounce tests.
-
-**Concurrency:** `store.js`/`activity.js`/`spam.js` are fully synchronous
+**Concurrency:** `store.js`/`spam.js` are fully synchronous
 (no `async`/`await` anywhere in them) and each exported function does a
 fresh read-modify-write of the JSON file in one uninterruptible block.
 Because Node runs JavaScript on a single thread, this means two commands
@@ -1760,11 +1646,10 @@ locking at the same time.
 
 **Tests:** `npm test` runs the automated test suite (Node's built-in test
 runner, `node --test` - no extra dependency to install) under `test/`:
-unit tests for `store.js`/`activity.js`/`spam.js`/`dates.js`/`lib/`
+unit tests for `store.js`/`spam.js`/`dates.js`/`lib/`
 (including `lib/catchUpSummary.js`/`lib/catchUpQueue.js` in
-`test/catchUp.test.js`, `lib/lastSeenStatus.js` in
-`test/lastSeenStatus.test.js`, and `lib/inactivityCheck.js` in
-`test/inactivityCheck.test.js`), direct handler tests for each
+`test/catchUp.test.js` and `lib/lastSeenStatus.js` in
+`test/lastSeenStatus.test.js`), direct handler tests for each
 `commands/*.js` file, and a small set of end-to-end tests that exercise
 `index.js`'s real message-handling pipeline against a mocked WhatsApp
 connection (`test/helpers/mockBaileys.js`) - covering catch-up gating and

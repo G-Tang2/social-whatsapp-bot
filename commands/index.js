@@ -9,7 +9,6 @@ const { COMMAND_PREFIX } = require('../lib/config');
 const { getUndoableState, saveUndoSnapshot } = require('../store');
 const listCommands = require('./list');
 const adminCommands = require('./admin');
-const inactivityCommands = require('./inactivity');
 const { handleSpamfilter } = require('./spamfilter');
 const { handleAi } = require('./ai');
 const { handleHelp, handleTips, handleAdminHelp, handleAdminTips } = require('./help');
@@ -74,9 +73,6 @@ const rawCommands = {
   [`${COMMAND_PREFIX}tournamentwinners`]: adminCommands.handleTournamentWinners,
   [`${COMMAND_PREFIX}undo`]: adminCommands.handleUndo,
   [`${COMMAND_PREFIX}update`]: adminCommands.handleUpdate,
-
-  [`${COMMAND_PREFIX}inactivity`]: inactivityCommands.handleInactivityToggle,
-  [`${COMMAND_PREFIX}stale`]: inactivityCommands.handleStale,
 
   [`${COMMAND_PREFIX}spamfilter`]: handleSpamfilter,
   [`${COMMAND_PREFIX}ai`]: handleAi,

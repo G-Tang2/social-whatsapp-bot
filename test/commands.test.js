@@ -20,14 +20,12 @@ process.env.DATA_DIR = tmpDir;
 process.env.GEMINI_API_KEY = 'test-key-not-real';
 
 const store = require('../store');
-const activity = require('../activity');
 const spam = require('../spam');
 const ai = require('../ai');
 const adminCheck = require('../lib/adminCheck');
 const { formatList } = require('../lib/helpers');
 const listCommands = require('../commands/list');
 const adminCommands = require('../commands/admin');
-const inactivityCommands = require('../commands/inactivity');
 const { handleSpamfilter } = require('../commands/spamfilter');
 const { handleAi } = require('../commands/ai');
 const { handleHelp, handleTips, handleAdminHelp, handleAdminTips } = require('../commands/help');
@@ -41,7 +39,7 @@ function freshGroupId() {
 }
 
 // Builds a fake ctx matching the shape every command handler expects,
-// backed by a real (temp-dir-isolated) store/activity/spam and a fake sock.
+// backed by a real (temp-dir-isolated) store/spam and a fake sock.
 function makeCtx({ sock, groupId, senderId = 'sender@s.whatsapp.net', senderName = 'Sender', argText = '' }) {
   const msg = makeTextMessage({ from: senderId, groupId, text: `!test ${argText}`.trim() });
   const replies = [];
@@ -1893,24 +1891,6 @@ test('handleIn: plain !in (no "paid") never touches duePayments', async () => {
   const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Alex', argText: '' });
   await listCommands.handleIn(ctx);
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 1); // untouched
-});
-
-test('handleInactivityToggle: always replies, even on success, and requires admin to change', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-
-  const status = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
-  await inactivityCommands.handleInactivityToggle(status.ctx);
-  assert.match(status.replies[0], /OFF/);
-
-  const nonAdminTry = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: 'on' });
-  await inactivityCommands.handleInactivityToggle(nonAdminTry.ctx);
-  assert.match(nonAdminTry.replies[0], /Only a group admin/);
-  assert.equal(activity.isEnabled(groupId), false);
-
-  const adminTurnOn = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'on' });
-  await inactivityCommands.handleInactivityToggle(adminTurnOn.ctx);
-  assert.equal(activity.isEnabled(groupId), true);
 });
 
 test('handleSpamfilter: on by default, off/on toggle requires admin and always replies', async () => {

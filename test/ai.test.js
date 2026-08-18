@@ -3,7 +3,7 @@
 // command interpretation (see lib/geminiCommand.js for the actual Gemini
 // call, test/geminiCommand.test.js for its coverage, and
 // test/commands.test.js for the !ai chat command). Same shape/pattern as
-// spam.js's toggle (see test/activity-spam.test.js), except OFF by
+// spam.js's toggle (see test/spam.test.js), except OFF by
 // default here instead of ON.
 
 const test = require('node:test');

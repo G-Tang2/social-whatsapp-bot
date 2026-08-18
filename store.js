@@ -286,7 +286,7 @@ function emptyGroupState() {
       // Tournament sub-feature - see !settournament/!tournament/
       // !tournamentlimit/!tournamentwinners in commands/admin.js. Off by
       // default per group,
-      // same "opt-in" pattern as spamfilter/inactivity/ai, except state
+      // same "opt-in" pattern as spamfilter/ai, except state
       // lives here in `current` (not a separate module) since it's
       // fundamentally about THIS list - who's opted in lives on each
       // entry itself (entry.tournament, see addEntry() below), not as a

@@ -739,18 +739,18 @@ async function handleTournament(ctx) {
 // (see handleTournament above - this command used to BE bare !tournament,
 // renamed to make room for that read-only rules view). Off by default -
 // each group opts in individually, same "each group is independent"
-// pattern as !spamfilter/!inactivity/!ai.
+// pattern as !spamfilter/!ai.
 //
 // Bare !settournament (no argument) is the "info" command anyone can run to
 // see who's currently opted in, independent of the full !list - if the
 // feature is off, it explains how to turn it on instead (mirroring
-// !inactivity/!spamfilter's own bare-view text). Changing it (on/off,
+// !spamfilter's own bare-view text). Changing it (on/off,
 // rules) is admins only, and - unlike most admin commands in this file,
 // which stay quiet on success and let the reposted list speak for itself -
 // on/off always replies even on success, since flipping tournament on/off
 // changes how EVERY future !list looks (see lib/helpers.js's formatList),
 // which is worth confirming explicitly, same reasoning as
-// !spamfilter/!inactivity's own on/off replies.
+// !spamfilter's own on/off replies.
 async function handleSettournament(ctx) {
   const { sock, groupId, senderId, argText, reply, postList } = ctx;
   const trimmedArg = (argText || '').trim();

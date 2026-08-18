@@ -17,13 +17,9 @@
 // automatically, without an admin having to remember to turn it on. An
 // admin can still turn it off per group with !spamfilter off (see
 // index.js) if a particular group needs to allow, say, its own WhatsApp
-// invite link to circulate. This is the opposite default from
-// activity.js's inactivity toggle (off by default there - reminders are a
-// judgment call a group opts into, spam deletion is closer to a safety
-// default most groups want without having to ask for it). Deliberately a
-// separate file/concern from both moderation.js (which blocks specific
-// *entries* on the signup list, not general chat) and activity.js (chat
-// presence, not content).
+// invite link to circulate. Deliberately a separate file/concern from
+// moderation.js, which blocks specific *entries* on the signup list, not
+// general chat.
 //
 // IMPORTANT: actually deleting someone else's message in a WhatsApp group
 // requires the bot's own linked account to be a group admin - that's a
@@ -40,7 +36,7 @@
 
 // Concurrency note: every exported function below is fully synchronous (no
 // async/await) and does a fresh readAll() -> mutate -> writeAll() in one
-// uninterruptible block, so - same as store.js/activity.js - concurrent
+// uninterruptible block, so - same as store.js - concurrent
 // callers can't produce a lost update on Node's single-threaded event loop.
 // See the matching comment at the top of store.js for the full reasoning.
 
@@ -77,7 +73,7 @@ function readAll() {
 function writeAll(data) {
   ensureFile();
   // Atomic-ish write: write to temp file then rename, to avoid corruption
-  // if the process is killed mid-write - same pattern as store.js/activity.js.
+  // if the process is killed mid-write - same pattern as store.js.
   const tmpFile = `${DATA_FILE}.tmp`;
   fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2));
   fs.renameSync(tmpFile, DATA_FILE);
