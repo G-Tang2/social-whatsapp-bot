@@ -112,7 +112,7 @@ const ADMIN_HELP_TEXT = [
   '',
   '*Group settings*',
   `• *${COMMAND_PREFIX}spamfilter [on|off]* - auto-delete stock/crypto spam in this group, ON by default (admins to change)`,
-  `• *${COMMAND_PREFIX}ai [on|off]* - let people @-mention me with a plain-English request instead of exact commands, OFF by default, requires GEMINI_API_KEY (admins to change)`,
+  `• *${COMMAND_PREFIX}ai [on|off]* - let people @-mention me with a plain-English request instead of exact commands, OFF by default until set up (admins to change)`,
   '',
   '*Other*',
   `• *${COMMAND_PREFIX}update <paste the list, edited>* - bulk-edit Attendance/Waitlist/Payment by pasting the list back with changes`,

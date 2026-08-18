@@ -38,7 +38,7 @@ async function handleAi(ctx) {
     // quietly doing nothing with no explanation.
     if (!GEMINI_API_KEY) {
       await reply(
-        `Can't turn this on yet, missing API key.`
+        `Can't turn this on yet - whoever set up this bot still needs to finish setting up this feature.`
       );
       return;
     }
