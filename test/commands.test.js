@@ -1491,6 +1491,48 @@ test('handleUpdate: applies additions/removals/moves, replies with a summary, an
   assert.match(posted.content.text, /\*Attendance\*/);
 });
 
+test('handleUpdate: a payment section pasted back with its BOLD date-group headers ("*13th Aug Thu*" etc.) tags every entry under one with that header\'s owedSince - including a brand-new name, which previously always landed under "No date" regardless of which header it was typed under', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-10', {}); // Alex now owes for the 10th Aug list
+
+  const pastedEdit = [
+    '*Attendance*',
+    '',
+    '(empty)',
+    '',
+    '*Payment*',
+    '',
+    '*10th Aug Mon*',
+    '1. Alex',
+    '',
+    '*13th Aug Thu*',
+    '1. Jordan', // brand new - typed straight under a dated header, not "No date"
+  ].join('\n');
+
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
+  await adminCommands.handleUpdate(ctx);
+
+  const due = store.getCurrentEvent(groupId).duePayments;
+  const alex = due.find((e) => e.name === 'Alex');
+  const jordan = due.find((e) => e.name === 'Jordan');
+  assert.equal(alex.owedSince, '2026-08-10');
+  assert.equal(jordan.owedSince, '2026-08-13');
+});
+
+test('handleUpdate: a brand-new payment name typed under "*No date*" (or with no group header at all) still gets no owedSince, same as before this feature existed', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  const pastedEdit = ['*Attendance*', '', '(empty)', '', '*Payment*', '', '*No date*', '1. Casey'].join('\n');
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
+  await adminCommands.handleUpdate(ctx);
+
+  const due = store.getCurrentEvent(groupId).duePayments;
+  assert.equal(due.find((e) => e.name === 'Casey').owedSince, undefined);
+});
+
 test('handleUpdate: a new name that fails moderation (too long) is rejected and reported, without blocking other valid changes', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });

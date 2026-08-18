@@ -1559,17 +1559,32 @@ function applyListUpdate(groupId, parsed, editorId, editorIsAdmin) {
   // above, this can't just be a name->single-entry Map; it's a
   // name->QUEUE of that name's existing entries, each consumed (in
   // existing-array order) by the first pasted-back occurrence of that name
-  // that claims it, so every individual entry's own owedSince/addedBy/etc.
-  // metadata survives the round-trip correctly rather than only the first
-  // occurrence keeping it and the rest being treated as brand new. A
-  // pasted name with MORE occurrences than existing entries for it (e.g.
-  // hand-adding a second debt for someone who only had one) creates a
-  // fresh entry, with no owedSince, for the extra occurrence(s) - same as
-  // any other brand-new payment name. A pasted name with FEWER occurrences
-  // than it actually has entries for (or the name missing entirely) leaves
-  // the leftover, unclaimed entries in the queue - each one counted as
-  // paidRemoved below, same "not present in the paste = removed" rule
-  // attendance/waitlist already follow.
+  // that claims it, so every individual entry's own addedBy/etc. metadata
+  // survives the round-trip correctly rather than only the first occurrence
+  // keeping it and the rest being treated as brand new. A pasted name with
+  // MORE occurrences than existing entries for it (e.g. hand-adding a
+  // second debt for someone who only had one) creates a fresh entry for the
+  // extra occurrence(s) - same as any other brand-new payment name. A
+  // pasted name with FEWER occurrences than it actually has entries for (or
+  // the name missing entirely) leaves the leftover, unclaimed entries in
+  // the queue - each one counted as paidRemoved below, same "not present in
+  // the paste = removed" rule attendance/waitlist already follow.
+  //
+  // Each pasted item is either a plain string (a bare name, no date-group
+  // signal at all - the shape every direct caller other than
+  // lib/listParser.js's parseListSections() still uses) or an
+  // { name, owedSince? } object (parseListSections' own shape - see that
+  // function's doc comment). `hasOwedSince` below distinguishes "the paste
+  // carried no date-group info for this entry at all" (a plain string, or
+  // an object with the key altogether missing) - in which case a kept
+  // entry's existing owedSince is left completely untouched, same as before
+  // this feature existed - from "the paste explicitly placed this entry
+  // under a date group" (object WITH the key, even if its value is
+  // null/undefined for "*No date*") - in which case that's applied as an
+  // edit, same "your edit is final" philosophy as the header-field block
+  // above: a kept entry's owedSince gets overwritten (cleared, if the group
+  // was "No date"), and a brand-new entry starts with that owedSince
+  // instead of none.
   const existingDueByName = new Map();
   for (const entry of current.duePayments) {
     const normalized = normalizeName(entry.name);
@@ -1579,22 +1594,27 @@ function applyListUpdate(groupId, parsed, editorId, editorIsAdmin) {
   const paidAdded = [];
   const paidRemoved = [];
   const newDue = [];
-  for (const rawName of parsed.duePayments || []) {
-    const trimmed = (rawName || '').trim();
+  for (const rawItem of parsed.duePayments || []) {
+    const item = typeof rawItem === 'string' ? { name: rawItem } : (rawItem || {});
+    const trimmed = (item.name || '').trim();
     if (!trimmed) continue;
     const normalized = normalizeName(trimmed);
+    const hasOwedSince = Object.prototype.hasOwnProperty.call(item, 'owedSince');
     const queue = existingDueByName.get(normalized);
     if (queue && queue.length) {
-      newDue.push(queue.shift());
+      const existingEntry = queue.shift();
+      newDue.push(hasOwedSince ? { ...existingEntry, owedSince: item.owedSince || undefined } : existingEntry);
     } else {
-      newDue.push({
+      const newEntry = {
         name: trimmed,
         addedBy: editorId,
         addedByIsAdmin: !!editorIsAdmin,
         addedAt: new Date().toISOString(),
         tbd: false,
         self: false,
-      });
+      };
+      if (hasOwedSince && item.owedSince) newEntry.owedSince = item.owedSince;
+      newDue.push(newEntry);
       paidAdded.push(trimmed);
     }
   }

@@ -457,25 +457,30 @@ own first line, followed by the pasted (edited) text underneath, e.g.:
 The bot re-reads just the three name lists from that text and reconciles
 them against the current roster: a name still there keeps everything about
 its original entry (who added it, whether they were an admin at the time,
-its `(TBC)` status, and - for a payment-due name - the date group described
-above) even if it moved to a different section, a different date group, or
-a different position in the list - moving a name from `*Waitlist*` into
+and its `(TBC)` status) even if it moved to a different section or a
+different position in the list - moving a name from `*Waitlist*` into
 `*Attendance*` this way genuinely promotes them, same as if a spot had
-freed up normally. The `13th Aug Thu`/`No date`-style group headers inside
-the payment section are just read past, not treated as part of any name -
-so pasting the payment section back unedited (even with names shuffled
-between the printed groups, or a group's whole header line deleted) still
-keeps each name's REAL underlying date, since that's driven by the bot's
-own records, not by whichever group heading the name happened to be pasted
-back under. A brand-new name typed straight into the payment section has
-no old list to date it from, so it's added under `No date`. A name that
-appears MORE THAN ONCE in the paste (someone owing for two separate
-events, see "Tracking who owes payment" above) round-trips correctly too -
-each occurrence is matched, in order, against one of that name's real
-entries, so both keep their own individual date; pasting back fewer
+freed up normally. The bold `*13th Aug Thu*`/`*No date*`-style group
+headers inside the payment section ARE read and applied to every name
+listed under them - same "your edit is final" philosophy as the
+date/location/courts/time header block above: pasting the payment section
+back with names moved between groups (or a name typed fresh straight under
+one) actually changes that entry's date, `*No date*` clears it, and
+pasting the section back completely unedited is a no-op that leaves every
+name's existing date exactly where it was. A group header has to keep its
+bold asterisks to be recognized this way - a hand-edit that strips them
+(or a name pasted with no group header above it at all, e.g. directly
+under the payment label) is read past as plain stray text instead, leaving
+that name's existing date (if any) untouched, same as before this feature
+existed. A name that appears MORE THAN ONCE in the paste (someone owing
+for two separate events, see "Tracking who owes payment" above) round-trips
+correctly too - each occurrence is matched, in order, against one of that
+name's real entries, keeping its other metadata (who added it, etc.) while
+still picking up whichever group it's now listed under; pasting back fewer
 copies of a name than it actually has entries for clears the leftover
 one(s) (reported same as any other removal), and pasting back MORE copies
-than it has adds a fresh, no-date entry for the extra one(s).
+than it has adds a fresh entry for the extra one(s), dated from its group
+header if it has one.
 A name that's brand new gets added and attributed to whichever admin ran
 `!update` (there's no other WhatsApp identity to credit a hand-typed name
 to). A name that was on the list before but is missing from the pasted

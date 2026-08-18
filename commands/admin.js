@@ -1066,10 +1066,26 @@ async function handleUpdate(ctx) {
       return true;
     });
   }
+  // Same moderation rule as filterSection above, but for parsed.duePayments'
+  // { name, owedSince? } shape (see lib/listParser.js's parseListSections()
+  // doc comment) rather than plain name strings - keeps each item intact
+  // (owedSince included) so applyListUpdate (store.js) still sees whichever
+  // date-group signal the paste carried for it.
+  function filterDueSection(items, existingNames) {
+    return items.filter((item) => {
+      if (existingNames.has(normalizeName(item.name))) return true; // already accepted before - skip re-checking
+      const modResult = checkEntry(item.name);
+      if (!modResult.ok) {
+        rejected.push(`${item.name} - ${modResult.reason}`);
+        return false;
+      }
+      return true;
+    });
+  }
 
   const filteredAttendance = filterSection(parsed.attendance, existingRosterNames);
   const filteredWaitlist = filterSection(parsed.waitlist, existingRosterNames);
-  const filteredDue = filterSection(parsed.duePayments, existingDueNames);
+  const filteredDue = filterDueSection(parsed.duePayments, existingDueNames);
 
   const result = applyListUpdate(
     groupId,

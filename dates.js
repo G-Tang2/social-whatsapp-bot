@@ -93,6 +93,55 @@ function parseDayMonthFromDisplayText(str) {
   return { day, month: monthIdx + 1 };
 }
 
+// Opposite resolution of resolveNextOccurrence above: given an already-
+// parsed day/month pair, resolves the year as the closest occurrence NOT
+// AFTER `referenceDate` (today, if omitted; today itself counts as
+// eligible) - i.e. the most recent PAST-or-current occurrence, stepping
+// back a year if the current year's candidate hasn't happened yet. Shared
+// by parseOwedSinceDisplayDate below, for the same reason
+// parseDisplayDateForUpdate exists alongside parseDisplayDate: a payment
+// section's date-group header (e.g. "16th Aug Sun") always describes an
+// ALREADY-FINISHED list, so resolving it as "next upcoming" would bump a
+// recently-passed date a full year into the future the moment its month/day
+// is behind today's - wrong for a debt that's actually still recent.
+function resolveMostRecentOccurrence(day, month, referenceDate) {
+  const today = referenceDate || new Date();
+  const todayUTC = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+
+  let year = today.getUTCFullYear();
+  let candidate = Date.UTC(year, month - 1, day);
+
+  const rolledOver = new Date(candidate);
+  if (rolledOver.getUTCMonth() !== month - 1 || rolledOver.getUTCDate() !== day) {
+    return null;
+  }
+
+  if (candidate > todayUTC) {
+    year -= 1;
+    candidate = Date.UTC(year, month - 1, day);
+  }
+
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  return `${year}-${mm}-${dd}`;
+}
+
+// Parses a payment section's date-group header text (e.g. "16th Aug Sun",
+// the exact shape formatDisplayDate() below produces) into a canonical
+// owed-since ISO date, for lib/listParser.js's parseListSections() to
+// reattach to the payment entries pasted underneath it via !update. Uses
+// resolveMostRecentOccurrence above rather than plain parseDisplayDate's
+// "next upcoming" resolution - see that function's own doc comment for why
+// an owed-since date needs the opposite direction. Returns null under the
+// same conditions parseDayMonthFromDisplayText does (not a day-plus-month
+// shape at all - e.g. the payment label line, or "No date", which
+// listParser.js checks for separately).
+function parseOwedSinceDisplayDate(str, referenceDate) {
+  const parsed = parseDayMonthFromDisplayText(str);
+  if (!parsed) return null;
+  return resolveMostRecentOccurrence(parsed.day, parsed.month, referenceDate);
+}
+
 // The reverse of formatDisplayDate() below: parses "20th Aug Thu" back into
 // a canonical "YYYY-MM-DD" - same "no year, next upcoming occurrence"
 // resolution as parseTypedDate above, via the same resolveNextOccurrence()
@@ -230,5 +279,6 @@ module.exports = {
   parseTypedDate,
   parseDisplayDate,
   parseDisplayDateForUpdate,
+  parseOwedSinceDisplayDate,
   nextOccurrenceOfSameWeekday,
 };

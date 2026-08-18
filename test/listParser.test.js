@@ -34,7 +34,7 @@ test('parseListSections reads back the exact format formatList() produces', () =
   const result = parseListSections(text);
   assert.deepEqual(result.attendance, ['Jordan', 'Alex']);
   assert.deepEqual(result.waitlist, ['Sam']);
-  assert.deepEqual(result.duePayments, ['Riley']);
+  assert.deepEqual(result.duePayments, [{ name: 'Riley' }]); // no date-group header above it - owedSince key omitted
   assert.equal(result.sectionsFound, 3);
   assert.deepEqual(result.headerLines, ['27th Aug Thu', 'EBC', 'Courts 13-18 (6)', '8PM start']);
 });
@@ -76,7 +76,7 @@ test('parseListSections ignores the plain divider line formatList() prints above
   const result = parseListSections(text);
   assert.deepEqual(result.attendance, ['Jordan']);
   assert.deepEqual(result.waitlist, []);
-  assert.deepEqual(result.duePayments, ['Jordan']);
+  assert.deepEqual(result.duePayments, [{ name: 'Jordan' }]);
   // Only 2 sections (Attendance, Payment) - the divider must NOT itself be
   // counted as a section header.
   assert.equal(result.sectionsFound, 2);
@@ -95,7 +95,7 @@ test('parseListSections handles a custom !paymentlabel header (not the literal w
 
   const result = parseListSections(text);
   assert.deepEqual(result.attendance, ['Alex']);
-  assert.deepEqual(result.duePayments, ['Sam']);
+  assert.deepEqual(result.duePayments, [{ name: 'Sam' }]);
 });
 
 test('parseListSections ignores stray "extra text blocks" anywhere in the message', () => {
@@ -130,16 +130,77 @@ test('parseListSections strips the trailing "(TBC)" flag from a name', () => {
 test('parseListSections strips the owed-since date tag from a payment-due name, e.g. "Alex (13th Aug Thu)" -> "Alex" - backward-compat regression guard for round-tripping an OLDER inline-tag-format message (see OWED_SINCE_SUFFIX in lib/listParser.js - formatList() itself no longer prints this shape, it groups under a date header line instead; see the grouped-format tests below)', () => {
   const text = ['*Attendance*', '', '1. Sam', '', '*Payment*', '', '1. Alex (13th Aug Thu)', '2. Jordan'].join('\n');
   const result = parseListSections(text);
-  assert.deepEqual(result.duePayments, ['Alex', 'Jordan']);
+  // Not under a bold date-group header, so owedSince is omitted either way -
+  // the stripped inline tag itself is never read back into owedSince.
+  assert.deepEqual(result.duePayments, [{ name: 'Alex' }, { name: 'Jordan' }]);
 });
 
 test('parseListSections does NOT strip an ordinary parenthetical that just happens to be at the end of a payment name (only the exact owed-since date shape is recognized)', () => {
   const text = ['*Attendance*', '', '1. Sam', '', '*Payment*', '', '1. Michael (Mike)'].join('\n');
   const result = parseListSections(text);
-  assert.deepEqual(result.duePayments, ['Michael (Mike)']);
+  assert.deepEqual(result.duePayments, [{ name: 'Michael (Mike)' }]);
 });
 
-test('parseListSections reads the CURRENT grouped payment format - plain-text date/"No date" group headers are silently skipped as stray text, and every name from every group ends up in the flat duePayments list, in the order the groups were printed', () => {
+test('parseListSections reads formatList()\'s actual BOLD date-group headers ("*No date*"/"*13th Aug Thu*") and tags every name under one with that group\'s owedSince - null for "*No date*", the resolved ISO date otherwise - in the order the groups were printed', () => {
+  const text = [
+    '*Attendance*',
+    '',
+    '1. Sam',
+    '',
+    '*Payment*',
+    '',
+    '*No date*',
+    '1. Casey',
+    '',
+    '*13th Aug Thu*',
+    '1. Alex',
+    '',
+    '*20th Aug Thu*',
+    '1. Jordan',
+    '2. Priya',
+  ].join('\n');
+  const referenceDate = new Date(Date.UTC(2026, 7, 21)); // 2026-08-21 - after both dated groups
+  const result = parseListSections(text, referenceDate);
+  assert.deepEqual(result.duePayments, [
+    { name: 'Casey', owedSince: null },
+    { name: 'Alex', owedSince: '2026-08-13' },
+    { name: 'Jordan', owedSince: '2026-08-20' },
+    { name: 'Priya', owedSince: '2026-08-20' },
+  ]);
+});
+
+test('parseListSections: a date-group header resolves to the closest PAST occurrence relative to referenceDate, not the closest upcoming one - an owed-since date always describes an already-finished list', () => {
+  const text = ['*Attendance*', '', '1. Sam', '', '*Payment*', '', '*16th Aug Sun*', '1. Alex'].join('\n');
+  // "Today" is BEFORE 16th Aug this year, so the header must resolve to
+  // LAST year's 16th Aug, not bump forward to this year's (which hasn't
+  // happened yet, and can't be what a payment-due list is dated for).
+  const referenceDate = new Date(Date.UTC(2026, 7, 10)); // 2026-08-10
+  const result = parseListSections(text, referenceDate);
+  assert.deepEqual(result.duePayments, [{ name: 'Alex', owedSince: '2025-08-16' }]);
+});
+
+test('parseListSections: an unrecognized bold-only line inside an already-started payment section is tolerated as stray text and does NOT reset the current date-group - entries after it stay under whichever real header was last seen', () => {
+  const text = [
+    '*Attendance*',
+    '',
+    '1. Sam',
+    '',
+    '*Payment*',
+    '',
+    '*13th Aug Thu*',
+    '1. Alex',
+    '*a random bold note, not a date*',
+    '2. Jordan',
+  ].join('\n');
+  const referenceDate = new Date(Date.UTC(2026, 7, 21));
+  const result = parseListSections(text, referenceDate);
+  assert.deepEqual(result.duePayments, [
+    { name: 'Alex', owedSince: '2026-08-13' },
+    { name: 'Jordan', owedSince: '2026-08-13' },
+  ]);
+});
+
+test('parseListSections: a payment-section date-group header pasted back WITHOUT the bold asterisks (a hand-edit that dropped the formatting) is just read past as stray text, same as before this feature existed - owedSince is left omitted for every name, not defaulted to "no date"', () => {
   const text = [
     '*Attendance*',
     '',
@@ -158,13 +219,18 @@ test('parseListSections reads the CURRENT grouped payment format - plain-text da
     '2. Priya',
   ].join('\n');
   const result = parseListSections(text);
-  assert.deepEqual(result.duePayments, ['Casey', 'Alex', 'Jordan', 'Priya']);
+  assert.deepEqual(result.duePayments, [
+    { name: 'Casey' },
+    { name: 'Alex' },
+    { name: 'Jordan' },
+    { name: 'Priya' },
+  ]);
 });
 
 test('parseListSections: a payment-section date-group header line, e.g. "13th Aug Thu", is never itself mistaken for a numbered entry or a new section - it has no leading "N." and isn\'t bold, so it just falls through the generic stray-text tolerance', () => {
   const text = ['*Attendance*', '', '1. Sam', '', '*Payment*', '', '13th Aug Thu', '1. Alex'].join('\n');
   const result = parseListSections(text);
-  assert.deepEqual(result.duePayments, ['Alex']);
+  assert.deepEqual(result.duePayments, [{ name: 'Alex' }]);
   assert.equal(result.sectionsFound, 2); // Attendance + Payment only - the date header must not count as a 3rd section
 });
 
