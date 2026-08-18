@@ -121,11 +121,11 @@ test('stripLeadingCourtsAddKeyword does not strip "add"/"extra" as part of a lon
 
 test('stripTrailingWithNames splits off a trailing "with <names>" clause', () => {
   assert.deepEqual(
-    stripTrailingWithNames('EBC | 13-18 | 8PM start with Harry, Bonny, Ron'),
-    { rest: 'EBC | 13-18 | 8PM start', namesText: 'Harry, Bonny, Ron' }
+    stripTrailingWithNames('EBC | 13-18 | 8PM start with Peter, Chris, Linda'),
+    { rest: 'EBC | 13-18 | 8PM start', namesText: 'Peter, Chris, Linda' }
   );
-  assert.deepEqual(stripTrailingWithNames('with Harry, Bonny, Ron'), { rest: '', namesText: 'Harry, Bonny, Ron' });
-  assert.deepEqual(stripTrailingWithNames('WITH Harry'), { rest: '', namesText: 'Harry' }); // case-insensitive
+  assert.deepEqual(stripTrailingWithNames('with Peter, Chris, Linda'), { rest: '', namesText: 'Peter, Chris, Linda' });
+  assert.deepEqual(stripTrailingWithNames('WITH Peter'), { rest: '', namesText: 'Peter' }); // case-insensitive
 });
 
 test('stripTrailingWithNames leaves text alone when there is no "with" clause', () => {
@@ -188,7 +188,7 @@ test('REGULAR_PLAYERS_TOKEN matches "regular players" and reasonable variants, c
 });
 
 test('REGULAR_PLAYERS_TOKEN does not match a real name that merely contains the word, or an unrelated word', () => {
-  for (const token of ['Regulator Players', 'regularly', 'usuals', 'Harry']) {
+  for (const token of ['Regulator Players', 'regularly', 'usuals', 'Peter']) {
     assert.ok(!REGULAR_PLAYERS_TOKEN.test(token), `expected "${token}" NOT to match`);
   }
 });
@@ -203,10 +203,10 @@ test('expandRegularPlayersToken: returns names completely unchanged (same refere
 
 test('expandRegularPlayersToken: splices the saved roster in at the token\'s position, preserving other names', () => {
   const groupId = freshRegularPlayersGroupId();
-  store.setRegularPlayers(groupId, ['Harry', 'Bonny', 'Ron']);
+  store.setRegularPlayers(groupId, ['Peter', 'Chris', 'Linda']);
 
   const result = expandRegularPlayersToken(['Extra Guest', 'regular players'], groupId);
-  assert.deepEqual(result.names, ['Extra Guest', 'Harry', 'Bonny', 'Ron']);
+  assert.deepEqual(result.names, ['Extra Guest', 'Peter', 'Chris', 'Linda']);
   assert.equal(result.usedEmptyRegularPlayers, false);
 });
 

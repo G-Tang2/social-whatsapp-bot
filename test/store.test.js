@@ -607,16 +607,16 @@ test('getPaymentExempt starts empty for a brand-new group', () => {
 
 test('setPaymentExempt replaces the whole roster and getPaymentExempt reads it back', () => {
   const groupId = freshGroupId();
-  const result = store.setPaymentExempt(groupId, ['Harry', 'Bonny']);
-  assert.deepEqual(result, ['Harry', 'Bonny']);
-  assert.deepEqual(store.getPaymentExempt(groupId), ['Harry', 'Bonny']);
+  const result = store.setPaymentExempt(groupId, ['Peter', 'Chris']);
+  assert.deepEqual(result, ['Peter', 'Chris']);
+  assert.deepEqual(store.getPaymentExempt(groupId), ['Peter', 'Chris']);
 });
 
 test('newList skips an exempt name entirely when carrying attendance into duePayments - they never show up owing anything', () => {
   const groupId = freshGroupId();
-  store.setPaymentExempt(groupId, ['Harry']);
+  store.setPaymentExempt(groupId, ['Peter']);
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Harry', 'h@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Peter', 'h@s.whatsapp.net', false);
   store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
 
@@ -627,22 +627,22 @@ test('newList skips an exempt name entirely when carrying attendance into duePay
 test('newList exemption is forward-looking only - an existing debt from BEFORE someone was exempted is left untouched', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Harry', 'h@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Harry owes for 8/13, before being exempted
+  store.addEntry(groupId, 'Peter', 'h@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Peter owes for 8/13, before being exempted
 
-  store.setPaymentExempt(groupId, ['Harry']); // exempted AFTER already owing
-  store.newList(groupId, '2026-08-27', {}); // nothing new happens - Harry didn't attend this cycle anyway
+  store.setPaymentExempt(groupId, ['Peter']); // exempted AFTER already owing
+  store.newList(groupId, '2026-08-27', {}); // nothing new happens - Peter didn't attend this cycle anyway
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  assert.deepEqual(due.map((e) => e.name), ['Harry']); // the OLD debt is still there
+  assert.deepEqual(due.map((e) => e.name), ['Peter']); // the OLD debt is still there
   assert.equal(due[0].owedSince, '2026-08-13');
 });
 
 test('newList exemption is case/whitespace-insensitive, same normalizeName() matching as everywhere else', () => {
   const groupId = freshGroupId();
-  store.setPaymentExempt(groupId, ['  harry  ']);
+  store.setPaymentExempt(groupId, ['  peter  ']);
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Harry', 'h@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Peter', 'h@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
 
   assert.deepEqual(store.getCurrentEvent(groupId).duePayments, []);
@@ -1017,23 +1017,23 @@ test('getRegularPlayers: an unconfigured group has an empty roster, not an error
 
 test('setRegularPlayers: replaces the whole roster and getRegularPlayers reflects it', () => {
   const groupId = freshGroupId();
-  const result = store.setRegularPlayers(groupId, ['Harry', 'Bonny', 'Ron']);
-  assert.deepEqual(result, ['Harry', 'Bonny', 'Ron']);
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Harry', 'Bonny', 'Ron']);
+  const result = store.setRegularPlayers(groupId, ['Peter', 'Chris', 'Linda']);
+  assert.deepEqual(result, ['Peter', 'Chris', 'Linda']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Peter', 'Chris', 'Linda']);
 
-  store.setRegularPlayers(groupId, ['Only Harry']);
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Only Harry']);
+  store.setRegularPlayers(groupId, ['Only Peter']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Only Peter']);
 });
 
 test('regularPlayers survives newList() and clearList() - it is not part of the current cycle', () => {
   const groupId = freshGroupId();
-  store.setRegularPlayers(groupId, ['Harry', 'Bonny']);
+  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
 
   store.newList(groupId, '2026-08-20', {});
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Harry', 'Bonny']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Peter', 'Chris']);
 
   store.clearList(groupId);
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Harry', 'Bonny']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Peter', 'Chris']);
 });
 
 test('getUndoSnapshot: null for a group with no saved undo point yet', () => {
@@ -1043,39 +1043,39 @@ test('getUndoSnapshot: null for a group with no saved undo point yet', () => {
 
 test('getUndoableState: reflects current/history/regularPlayers as of right now', () => {
   const groupId = freshGroupId();
-  store.addEntry(groupId, 'Harry', 'sender@s.whatsapp.net', false, true);
-  store.setRegularPlayers(groupId, ['Bonny']);
+  store.addEntry(groupId, 'Peter', 'sender@s.whatsapp.net', false, true);
+  store.setRegularPlayers(groupId, ['Chris']);
 
   const snapshot = store.getUndoableState(groupId);
-  assert.deepEqual(snapshot.current.entries.map((e) => e.name), ['Harry']);
-  assert.deepEqual(snapshot.regularPlayers, ['Bonny']);
+  assert.deepEqual(snapshot.current.entries.map((e) => e.name), ['Peter']);
+  assert.deepEqual(snapshot.regularPlayers, ['Chris']);
   assert.deepEqual(snapshot.history, []);
 });
 
 test('saveUndoSnapshot/getUndoSnapshot: round-trips a snapshot and its description', () => {
   const groupId = freshGroupId();
   const before = store.getUndoableState(groupId);
-  store.addEntry(groupId, 'Harry', 'sender@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Peter', 'sender@s.whatsapp.net', false, true);
 
-  store.saveUndoSnapshot(groupId, before, '!in Harry');
+  store.saveUndoSnapshot(groupId, before, '!in Peter');
   const entry = store.getUndoSnapshot(groupId);
-  assert.equal(entry.description, '!in Harry');
+  assert.equal(entry.description, '!in Peter');
   assert.deepEqual(entry.snapshot.current.entries, []); // the pre-add snapshot, not current state
 });
 
 test('restoreUndoableState: overwrites current/history/regularPlayers wholesale from a snapshot, leaving undo itself alone', () => {
   const groupId = freshGroupId();
   const before = store.getUndoableState(groupId);
-  store.addEntry(groupId, 'Harry', 'sender@s.whatsapp.net', false, true);
-  store.setRegularPlayers(groupId, ['Bonny']);
-  store.saveUndoSnapshot(groupId, before, '!in Harry');
+  store.addEntry(groupId, 'Peter', 'sender@s.whatsapp.net', false, true);
+  store.setRegularPlayers(groupId, ['Chris']);
+  store.saveUndoSnapshot(groupId, before, '!in Peter');
 
   store.restoreUndoableState(groupId, before);
   assert.deepEqual(store.getCurrentEvent(groupId).entries, []);
   assert.deepEqual(store.getRegularPlayers(groupId), []);
   // restoreUndoableState itself doesn't touch the undo slot - that's the
   // dispatch wrapper's job (commands/index.js), not this primitive's.
-  assert.equal(store.getUndoSnapshot(groupId).description, '!in Harry');
+  assert.equal(store.getUndoSnapshot(groupId).description, '!in Peter');
 });
 
 // --- Tournament sub-feature (see commands/admin.js's !tournament/

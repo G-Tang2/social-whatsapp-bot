@@ -113,7 +113,7 @@ async function handleNewlist(ctx) {
 
   if (!argText) {
     await reply(
-      `Usage: ${COMMAND_PREFIX}newlist DD/MM [location] | [courts] | [time] [with name1, name2, ...]\nExample: ${COMMAND_PREFIX}newlist 20/08 EBC | 13-18 | 8PM start with Harry, Bonny, Ron\n(No year - it's inferred as the next upcoming occurrence of that day/month. Location/courts/time are optional and carry forward from the current list if left out. The optional trailing "with ..." clause immediately signs up everyone named, in order, on the brand new list - "with regular players" signs up the group's whole saved roster, see ${COMMAND_PREFIX}regulars. Use "same" instead of a date, e.g. ${COMMAND_PREFIX}newlist same, to reuse whatever day of the week the current list is already on.)`
+      `Usage: ${COMMAND_PREFIX}newlist DD/MM [location] | [courts] | [time] [with name1, name2, ...]\nExample: ${COMMAND_PREFIX}newlist 20/08 EBC | 13-18 | 8PM start with Peter, Chris, Linda\n(No year - it's inferred as the next upcoming occurrence of that day/month. Location/courts/time are optional and carry forward from the current list if left out. The optional trailing "with ..." clause immediately signs up everyone named, in order, on the brand new list - "with regular players" signs up the group's whole saved roster, see ${COMMAND_PREFIX}regulars. Use "same" instead of a date, e.g. ${COMMAND_PREFIX}newlist same, to reuse whatever day of the week the current list is already on.)`
     );
     return;
   }
@@ -124,7 +124,7 @@ async function handleNewlist(ctx) {
 
   // "same" (in place of a DD/MM date) reuses whatever day of the week the
   // CURRENT list is already on, e.g. "!newlist same" or "!newlist same
-  // with Harry, Bonny" - handy for a recurring weekly/biweekly list where
+  // with Peter, Chris" - handy for a recurring weekly/biweekly list where
   // the day never changes, and it's also what the natural-language AI
   // mapping falls back to for a bare "create a new list" request with no
   // date mentioned at all (see lib/geminiCommand.js's matching SPECIAL
@@ -169,8 +169,8 @@ async function handleNewlist(ctx) {
   newList(groupId, resolvedDate, details);
 
   // Optional "with <names>" clause immediately pre-populates the brand
-  // new list, so e.g. "!newlist 20/08 EBC | 13-18 | 8PM start with Harry,
-  // Bonny, Ron" both starts the new cycle AND signs everyone up in one
+  // new list, so e.g. "!newlist 20/08 EBC | 13-18 | 8PM start with Peter,
+  // Chris, Linda" both starts the new cycle AND signs everyone up in one
   // command, instead of needing a separate !in right after (particularly
   // handy for the natural-language AI mention path - see
   // lib/geminiCommand.js's COMMAND_ARG_GUIDE - where "create a new list
@@ -528,7 +528,7 @@ function formatRegularPlayers(names) {
 //                                    the natural mapping for someone just
 //                                    declaring who the regulars are for
 //                                    the first time, e.g. "these people
-//                                    are regular players: Harry, Bonny, Ron"
+//                                    are regular players: Peter, Chris, Linda"
 // Always replies with the resulting roster (there's no "list" to repost
 // that would otherwise make the change visible, unlike most other admin
 // commands here) rather than staying quiet on success.

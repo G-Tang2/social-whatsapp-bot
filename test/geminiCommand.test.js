@@ -190,7 +190,7 @@ test('formatTodayForPrompt: a timezone offset that shifts the calendar day chang
 });
 
 test('formatRegularPlayersForPrompt: joins names with commas, or a placeholder for an empty/missing roster', () => {
-  assert.equal(formatRegularPlayersForPrompt(['Harry', 'Bonny', 'Ron']), 'Harry, Bonny, Ron');
+  assert.equal(formatRegularPlayersForPrompt(['Peter', 'Chris', 'Linda']), 'Peter, Chris, Linda');
   assert.equal(formatRegularPlayersForPrompt([]), '(none set yet)');
   assert.equal(formatRegularPlayersForPrompt(undefined), '(none set yet)');
 });
@@ -199,9 +199,9 @@ test('interpretMessage: includes the given regularPlayersText in the prompt sent
   const { client, getCapturedArgs } = fakeClientCapturingConfig(
     JSON.stringify({ actions: [{ command: 'in', argText: 'regular players', confidence: 'high' }] })
   );
-  await interpretMessage('add the regular players', { client, regularPlayersText: 'Harry, Bonny, Ron' });
+  await interpretMessage('add the regular players', { client, regularPlayersText: 'Peter, Chris, Linda' });
   const { contents } = getCapturedArgs();
-  assert.match(contents, /REGULAR PLAYERS: Harry, Bonny, Ron/, 'expected the regular-players roster to appear in the prompt sent to the model');
+  assert.match(contents, /REGULAR PLAYERS: Peter, Chris, Linda/, 'expected the regular-players roster to appear in the prompt sent to the model');
 });
 
 test('interpretMessage: omitting regularPlayersText still works (no roster context, same as before this option existed)', async () => {
@@ -229,9 +229,9 @@ test('MAPPABLE_COMMANDS: includes every single command the bot has, no exception
 });
 
 test('interpretMessage: "regulars" (e.g. declaring the regulars) is a valid mapped command', async () => {
-  const client = fakeClient(JSON.stringify({ actions: [{ command: 'regulars', argText: 'Harry, Bonny, Ron', confidence: 'high' }] }));
-  const result = await interpretMessage('these people are regular players: Harry, Bonny, Ron', { client });
-  assert.deepEqual(result, { actions: [{ command: 'regulars', argText: 'Harry, Bonny, Ron', confidence: 'high' }] });
+  const client = fakeClient(JSON.stringify({ actions: [{ command: 'regulars', argText: 'Peter, Chris, Linda', confidence: 'high' }] }));
+  const result = await interpretMessage('these people are regular players: Peter, Chris, Linda', { client });
+  assert.deepEqual(result, { actions: [{ command: 'regulars', argText: 'Peter, Chris, Linda', confidence: 'high' }] });
 });
 
 test('interpretMessage: "undo" (e.g. reversing the last change) is a valid mapped command, with no argument', async () => {

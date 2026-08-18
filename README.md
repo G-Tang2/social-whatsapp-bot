@@ -126,8 +126,8 @@ shorthand for yourself-and-2-more, not as three named people, and if you
 DO want to name the friends individually just list them normally instead
 (e.g. `!in Alex, Peter, Chris`).
 
-**Regular players:** save a group's regulars once with `!regulars Harry, Bonny,
-Ron` (admins only to change; anyone can run bare `!regulars` to see the
+**Regular players:** save a group's regulars once with `!regulars Peter, Chris,
+Linda` (admins only to change; anyone can run bare `!regulars` to see the
 current roster). From then on, anyone can sign the whole saved roster up
 by typing the words `regular players` in place of names - `!in regular
 players` adds them all in one command, and it can combine with an
@@ -179,7 +179,7 @@ case of just wiping the current list without starting a new dated one.
 
 **Reusing the same day of the week:** type `same` instead of a `DD/MM`
 date, e.g. `!newlist same` or `!newlist same EBC | 13-18 | 8PM start with
-Harry, Bonny` - handy for a recurring weekly/biweekly game where the day
+Peter, Chris` - handy for a recurring weekly/biweekly game where the day
 never changes, and it's also what "@snoopy create a new list" (with no
 date mentioned at all) maps to via the natural-language `!ai` mention path
 (see "Natural-language commands" below). The bot works out the date itself
@@ -204,9 +204,9 @@ want for a simple correction.
 **Pre-populating a new list:** add `with name1, name2, ...` to the very end
 of `!newlist` (after everything else, including any `|` segments) to sign
 those people up on the brand new list in the same command, e.g. `!newlist
-20/08 EBC | 13-18 | 8PM start with Harry, Bonny, Ron` or, with no
-location/courts/time mentioned at all, just `!newlist 20/08 with Harry,
-Bonny, Ron`. Everyone listed is added in the exact order given, using the
+20/08 EBC | 13-18 | 8PM start with Peter, Chris, Linda` or, with no
+location/courts/time mentioned at all, just `!newlist 20/08 with Peter,
+Chris, Linda`. Everyone listed is added in the exact order given, using the
 same rules as `!in` (comma-separated, `Name+1`-style guest suffixes work,
 and so does the `regular players` word for the saved roster - see "Regular
 players" above, e.g. `!newlist 20/08 with regular players`) - and it still
@@ -413,8 +413,8 @@ entries/waitlist/date/location/courts/time untouched. Changed your mind?
 any other command.
 
 Some people never need to pay at all - the organizer themselves, a
-sponsor, a coach. A group admin can mark them exempt with `!exempt Harry`
-(or `!exempt Harry, Bonny` for several at once) - anyone on that saved
+sponsor, a coach. A group admin can mark them exempt with `!exempt Peter`
+(or `!exempt Peter, Chris` for several at once) - anyone on that saved
 roster is simply skipped every time `!newlist` carries the attendance list
 into payment-due, no matter how many lists they're on, so they never show
 up owing anything in the first place. Same shape as `!regulars`:
@@ -890,8 +890,8 @@ English request - `@bot put me down for Saturday`, `@bot add me and 2
 friends`, `@bot take Peter and Chris off`, `@bot remove 1-3`, `@bot I
 paid`, `@bot what's the list look like`, an admin saying `@bot clear
 the list`, an admin saying `@bot create a new list for next Wednesday
-with Harry, Bonny, and Ron`, `@bot add the regular players`, an admin
-saying `@bot these people are regular players: Harry, Bonny, Ron`, an
+with Peter, Chris, and Linda`, `@bot add the regular players`, an admin
+saying `@bot these people are regular players: Peter, Chris, Linda`, an
 admin saying `@bot undo that` right after a mistake, `@bot sign me up for
 the tournament too`, an admin saying `@bot congrats to Irfan and Tu for
 winning the tournament`, or an admin saying `@bot I got extra courts
@@ -939,10 +939,10 @@ that exists right now).
 request given as a relative day - "next Wednesday", "this Friday",
 "tomorrow" - is resolved into the actual `DD/MM` using the real current
 date/day-of-week (in the group's configured `TIMEZONE`) as the reference
-point, so `@bot create a new list for next Wednesday with Harry, Bonny,
-Ron` both figures out the right date and pre-populates the list with
+point, so `@bot create a new list for next Wednesday with Peter, Chris,
+Linda` both figures out the right date and pre-populates the list with
 everyone named in one message - equivalent to typing `!newlist 20/08 with
-Harry, Bonny, Ron` by hand (see "Starting a new dated list" above for the
+Peter, Chris, Linda` by hand (see "Starting a new dated list" above for the
 `with ...` clause itself). If the date reference is ambiguous, it falls
 back to the same "I'm not capable of doing that" reply as any other
 uncertain request (see below) instead of guessing.
@@ -959,8 +959,8 @@ vague, is instead resolved normally as above.
 **Aware of the saved regular-players roster.** Whether the roster is set
 (and who's on it) is also included as context, so `@bot add the regular
 players` maps to `!in regular players` (uses the saved roster - see "Regular
-players" above) while `@bot these people are regular players: Harry, Bonny,
-Ron` maps to `!regulars Harry, Bonny, Ron` (redefines it) - the bot tells
+players" above) while `@bot these people are regular players: Peter, Chris,
+Linda` maps to `!regulars Peter, Chris, Linda` (redefines it) - the bot tells
 these apart rather than confusing "use the roster" with "change the
 roster". Bulk-removing or bulk-charging the whole roster via `!out`/
 `!paid` isn't supported this way (or via typed `!out`/`!paid` either) -

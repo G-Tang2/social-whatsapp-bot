@@ -912,7 +912,7 @@ function restoreUndoableState(groupId, snapshot) {
 
 // Records `snapshot` (see getUndoableState) as the new undo target, along
 // with a short human-readable `description` of the command that's about
-// to make it stale (e.g. "!clear" or "!in Harry, Bonny") - shown back by
+// to make it stale (e.g. "!clear" or "!in Peter, Chris") - shown back by
 // !undo as confirmation of what it just reversed. Called by
 // commands/index.js's dispatch wrapper, never directly by a command
 // handler.

@@ -38,7 +38,7 @@ async function handleAi(ctx) {
     // quietly doing nothing with no explanation.
     if (!GEMINI_API_KEY) {
       await reply(
-        `Can't turn this on yet - GEMINI_API_KEY isn't configured. Get a free key from https://aistudio.google.com/apikey, add it to .env as GEMINI_API_KEY, and restart Snoopy, then try ${COMMAND_PREFIX}ai on again.`
+        `Can't turn this on yet, missing API key.`
       );
       return;
     }
@@ -48,7 +48,7 @@ async function handleAi(ctx) {
     }
     ai.setEnabled(groupId, true);
     await reply(
-      `Natural-language commands turned *on* for this group. @-mention me with a plain request (e.g. "@Snoopy put me down for Saturday") and I'll try to work out which command you meant - including admin ones like ${COMMAND_PREFIX}clear or ${COMMAND_PREFIX}limit for admins.\nIf I'm not fully sure what you meant, I'll ask you to confirm rather than guessing - and I'll stay quiet entirely if your message doesn't look list-related at all.`
+      `Natural-language commands turned *on* for this group. @-mention me with a plain request (e.g. "@Snoopy put me down for Saturday") and I'll try to work out which command you meant - including admin ones like ${COMMAND_PREFIX}clear or ${COMMAND_PREFIX}limit for admins.`
     );
     return;
   }

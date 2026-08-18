@@ -402,19 +402,19 @@ test('e2e: an admin @-mentioning "create a new list ... with <names>" dispatches
   // stub its output directly and confirm index.js/commands/admin.js
   // dispatch it correctly, same as every other admin-command e2e test in
   // this file.
-  setNextGeminiResponse({ command: 'newlist', argText: '19/08 with Harry, Bonny, Ron', confidence: 'high' });
+  setNextGeminiResponse({ command: 'newlist', argText: '19/08 with Peter, Chris, Linda', confidence: 'high' });
   fakeSockInstance.sentMessages.length = 0;
 
-  await deliver('create a new list for next Wednesday with Harry, Bonny, and Ron', {
+  await deliver('create a new list for next Wednesday with Peter, Chris, and Linda', {
     from: 'admin@s.whatsapp.net',
     type: 'notify',
     mentions: [BOT_JID],
   });
 
-  const posted = fakeSockInstance.sentMessages.find((m) => /Harry/.test(m.content.text || ''));
+  const posted = fakeSockInstance.sentMessages.find((m) => /Peter/.test(m.content.text || ''));
   assert.ok(posted, 'expected the posted list to show the pre-populated names');
-  assert.match(posted.content.text, /Bonny/);
-  assert.match(posted.content.text, /Ron/);
+  assert.match(posted.content.text, /Chris/);
+  assert.match(posted.content.text, /Linda/);
 });
 
 test('e2e: the prompt sent to Gemini includes today\'s date/weekday, so relative dates like "next Wednesday" can be resolved for !newlist/!date', async () => {

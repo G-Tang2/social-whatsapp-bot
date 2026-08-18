@@ -628,7 +628,7 @@ test('handleNewlist: "same" is case-insensitive and combines with location/court
     sock,
     groupId,
     senderId: 'admin@s.whatsapp.net',
-    argText: 'SAME EBC | 13-18 | 8PM start with Harry, Bonny',
+    argText: 'SAME EBC | 13-18 | 8PM start with Peter, Chris',
   });
   await adminCommands.handleNewlist(ctx.ctx);
 
@@ -636,7 +636,7 @@ test('handleNewlist: "same" is case-insensitive and combines with location/court
   assert.equal(event.location, 'EBC');
   assert.equal(event.courtCount, 6);
   assert.equal(event.time, '8PM start');
-  assert.deepEqual(event.entries.map((e) => e.name), ['Harry', 'Bonny']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Chris']);
 });
 
 test('handleNewlist: "same" on a list that never had a date set replies with a clear error instead of guessing', async () => {
@@ -659,13 +659,13 @@ test('handleNewlist: a trailing "with <names>" clause pre-populates the brand ne
     sock,
     groupId,
     senderId: 'admin@s.whatsapp.net',
-    argText: '20/08 EBC | 13-18 | 8PM start with Harry, Bonny, Ron',
+    argText: '20/08 EBC | 13-18 | 8PM start with Peter, Chris, Linda',
   });
   await adminCommands.handleNewlist(ctx.ctx);
 
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.location, 'EBC');
-  assert.deepEqual(event.entries.map((e) => e.name), ['Harry', 'Bonny', 'Ron']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Chris', 'Linda']);
   // Attributed to the admin who ran !newlist, but not marked `self` -
   // none of these three ran the command themselves.
   assert.ok(event.entries.every((e) => e.addedBy === 'admin@s.whatsapp.net' && e.self === false));
@@ -675,12 +675,12 @@ test('handleNewlist: "with <names>" works with no location/courts/time mentioned
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 with Harry, Bonny, Ron' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 with Peter, Chris, Linda' });
   await adminCommands.handleNewlist(ctx.ctx);
 
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.location, null);
-  assert.deepEqual(event.entries.map((e) => e.name), ['Harry', 'Bonny', 'Ron']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Chris', 'Linda']);
 });
 
 test('handleNewlist: "with <names>" still respects the new list\'s own limit, waitlisting anyone over it', async () => {
@@ -691,7 +691,7 @@ test('handleNewlist: "with <names>" still respects the new list\'s own limit, wa
     sock,
     groupId,
     senderId: 'admin@s.whatsapp.net',
-    argText: '20/08 with Harry, Bonny, Ron, Rj, Rron, Charlie, Will', // limit defaults to 6
+    argText: '20/08 with Peter, Chris, Linda, Rj, Rron, Charlie, Will', // limit defaults to 6
   });
   await adminCommands.handleNewlist(ctx.ctx);
 
@@ -714,13 +714,13 @@ test('handleNewlist: without a "with" clause, nothing is added to the brand new 
 test('handleNewlist: "with regular players" pre-populates from the saved roster, and can combine with an explicit extra name', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setRegularPlayers(groupId, ['Harry', 'Bonny', 'Ron']);
+  store.setRegularPlayers(groupId, ['Peter', 'Chris', 'Linda']);
 
   const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 with regular players, Extra Guest' });
   await adminCommands.handleNewlist(ctx.ctx);
 
   const event = store.getCurrentEvent(groupId);
-  assert.deepEqual(event.entries.map((e) => e.name), ['Harry', 'Bonny', 'Ron', 'Extra Guest']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Chris', 'Linda', 'Extra Guest']);
 });
 
 test('handleNewlist: "with regular players" on an empty saved roster adds nobody and mentions it', async () => {
@@ -738,13 +738,13 @@ test('handleNewlist: "with regular players" on an empty saved roster adds nobody
 test('handleIn: "regular players" adds the saved roster, and none of the added entries are marked self', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.setRegularPlayers(groupId, ['Harry', 'Bonny']);
+  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
 
   const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: 'regular players' });
   await listCommands.handleIn(ctx);
 
   const event = store.getCurrentEvent(groupId);
-  assert.deepEqual(event.entries.map((e) => e.name), ['Harry', 'Bonny']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Chris']);
   assert.ok(event.entries.every((e) => e.self === false));
 });
 
@@ -768,18 +768,18 @@ test('handleRegulars: bare command shows "(none set)" for a brand new group, and
   await adminCommands.handleRegulars(empty.ctx);
   assert.match(empty.replies[0], /none set/i);
 
-  store.setRegularPlayers(groupId, ['Harry', 'Bonny']);
+  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
   const shown = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
   await adminCommands.handleRegulars(shown.ctx);
-  assert.match(shown.replies[0], /1\. Harry/);
-  assert.match(shown.replies[0], /2\. Bonny/);
+  assert.match(shown.replies[0], /1\. Peter/);
+  assert.match(shown.replies[0], /2\. Chris/);
 });
 
 test('handleRegulars: only an admin can change it - a non-admin\'s attempt to set it is refused', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'Harry, Bonny' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'Peter, Chris' });
   await adminCommands.handleRegulars(ctx.ctx);
   assert.match(ctx.replies[0], /only a group admin/i);
   assert.deepEqual(store.getRegularPlayers(groupId), []);
@@ -790,38 +790,38 @@ test('handleRegulars: a plain name list REPLACES the whole roster', async () => 
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setRegularPlayers(groupId, ['Old Player']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Harry, Bonny, Ron' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Peter, Chris, Linda' });
   await adminCommands.handleRegulars(ctx.ctx);
 
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Harry', 'Bonny', 'Ron']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Peter', 'Chris', 'Linda']);
 });
 
 test('handleRegulars: "add <names>" appends to the existing roster without duplicating an already-present name', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setRegularPlayers(groupId, ['Harry', 'Bonny']);
+  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'add Bonny, Dean' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'add Chris, Dean' });
   await adminCommands.handleRegulars(ctx.ctx);
 
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Harry', 'Bonny', 'Dean']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Peter', 'Chris', 'Dean']);
 });
 
 test('handleRegulars: "remove <names>" removes matching names, case/whitespace-insensitively, and leaves the rest', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setRegularPlayers(groupId, ['Harry', 'Bonny', 'Ron']);
+  store.setRegularPlayers(groupId, ['Peter', 'Chris', 'Linda']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'remove  bonny ' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'remove  chris ' });
   await adminCommands.handleRegulars(ctx.ctx);
 
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Harry', 'Ron']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Peter', 'Linda']);
 });
 
 test('handleRegulars: "clear" empties the roster', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setRegularPlayers(groupId, ['Harry', 'Bonny']);
+  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
 
   const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'clear' });
   await adminCommands.handleRegulars(ctx.ctx);
@@ -840,18 +840,18 @@ test('handleExempt: bare command shows "(none set)" for a brand new group, and t
   await adminCommands.handleExempt(empty.ctx);
   assert.match(empty.replies[0], /none set/i);
 
-  store.setPaymentExempt(groupId, ['Harry', 'Bonny']);
+  store.setPaymentExempt(groupId, ['Peter', 'Chris']);
   const shown = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
   await adminCommands.handleExempt(shown.ctx);
-  assert.match(shown.replies[0], /1\. Harry/);
-  assert.match(shown.replies[0], /2\. Bonny/);
+  assert.match(shown.replies[0], /1\. Peter/);
+  assert.match(shown.replies[0], /2\. Chris/);
 });
 
 test('handleExempt: only an admin can change it - a non-admin\'s attempt to set it is refused', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'Harry, Bonny' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'Peter, Chris' });
   await adminCommands.handleExempt(ctx.ctx);
   assert.match(ctx.replies[0], /only a group admin/i);
   assert.deepEqual(store.getPaymentExempt(groupId), []);
@@ -862,38 +862,38 @@ test('handleExempt: a plain name list REPLACES the whole roster', async () => {
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setPaymentExempt(groupId, ['Old Name']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Harry, Bonny, Ron' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Peter, Chris, Linda' });
   await adminCommands.handleExempt(ctx.ctx);
 
-  assert.deepEqual(store.getPaymentExempt(groupId), ['Harry', 'Bonny', 'Ron']);
+  assert.deepEqual(store.getPaymentExempt(groupId), ['Peter', 'Chris', 'Linda']);
 });
 
 test('handleExempt: "add <names>" appends to the existing roster without duplicating an already-present name', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setPaymentExempt(groupId, ['Harry', 'Bonny']);
+  store.setPaymentExempt(groupId, ['Peter', 'Chris']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'add Bonny, Dean' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'add Chris, Dean' });
   await adminCommands.handleExempt(ctx.ctx);
 
-  assert.deepEqual(store.getPaymentExempt(groupId), ['Harry', 'Bonny', 'Dean']);
+  assert.deepEqual(store.getPaymentExempt(groupId), ['Peter', 'Chris', 'Dean']);
 });
 
 test('handleExempt: "remove <names>" removes matching names, case/whitespace-insensitively, and leaves the rest', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setPaymentExempt(groupId, ['Harry', 'Bonny', 'Ron']);
+  store.setPaymentExempt(groupId, ['Peter', 'Chris', 'Linda']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'remove  bonny ' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'remove  chris ' });
   await adminCommands.handleExempt(ctx.ctx);
 
-  assert.deepEqual(store.getPaymentExempt(groupId), ['Harry', 'Ron']);
+  assert.deepEqual(store.getPaymentExempt(groupId), ['Peter', 'Linda']);
 });
 
 test('handleExempt: "clear" empties the roster', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setPaymentExempt(groupId, ['Harry', 'Bonny']);
+  store.setPaymentExempt(groupId, ['Peter', 'Chris']);
 
   const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'clear' });
   await adminCommands.handleExempt(ctx.ctx);
@@ -904,9 +904,9 @@ test('handleExempt: "clear" empties the roster', async () => {
 test('handleExempt: an exempt name never ends up owing anything, even after attending and a !newlist transition', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setPaymentExempt(groupId, ['Harry']);
+  store.setPaymentExempt(groupId, ['Peter']);
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Harry', 'h@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Peter', 'h@s.whatsapp.net', false);
   store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
 
   store.newList(groupId, '2026-08-20', {});
