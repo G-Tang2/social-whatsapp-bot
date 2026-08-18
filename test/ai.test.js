@@ -66,6 +66,6 @@ test('handleAi: "!ai on" refuses (and does not turn it on) when GEMINI_API_KEY i
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'on' });
   await handleAi(ctx);
-  assert.match(replies[0], /GEMINI_API_KEY isn't configured/);
+  assert.match(replies[0], /Can't turn this on yet/);
   assert.equal(ai.isEnabled(groupId), false);
 });
