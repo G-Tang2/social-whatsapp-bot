@@ -272,7 +272,7 @@ test('formatCount shows just the count, or count/limit when a limit is set', () 
   assert.equal(formatCount(5, 20), '(5/20)');
 });
 
-test('formatList: while tournament is enabled, splits Attendance into a "🏆 Tournament" block (numbered first, with a "type !tournament for details" pointer) and a "Social only" block (numbering continues)', () => {
+test('formatList: while tournament is enabled, splits Attendance into a "🏆 Tournament" block (numbered first, with an "Ask @Snoopy for details" pointer) and a "Social only" block (numbering continues)', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 2);
@@ -281,7 +281,7 @@ test('formatList: while tournament is enabled, splits Attendance into a "🏆 To
   store.addEntry(groupId, 'Wendy', 'wendy@s.whatsapp.net', false, true, false);
 
   const text = formatList(groupId);
-  assert.match(text, /🏆 \*Tournament\* \(2\/2\)\ntype !tournament for details\n\n1\. Keith\n2\. Bao/);
+  assert.match(text, /🏆 \*Tournament\* \(2\/2\)\nAsk @Snoopy for details\n\n1\. Keith\n2\. Bao/);
   assert.match(text, /Social only\n\n3\. Wendy/);
 });
 
@@ -321,7 +321,7 @@ test('formatList: while tournament is enabled, both headers show even with ZERO 
 
   const text = formatList(groupId);
   assert.match(text, /\*Attendance\* \(0\/\d+\)/);
-  assert.match(text, /🏆 \*Tournament\* \(0\)\ntype !tournament for details\n\n\(none yet\)/);
+  assert.match(text, /🏆 \*Tournament\* \(0\)\nAsk @Snoopy for details\n\n\(none yet\)/);
   assert.match(text, /Social only\n\n\(none yet\)/);
   assert.doesNotMatch(text, /use !in to add your name/);
 });
@@ -332,7 +332,7 @@ test('formatList: while tournament is enabled, the Social only header still show
   store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // tournament only, nobody social-only yet
 
   const text = formatList(groupId);
-  assert.match(text, /🏆 \*Tournament\* \(1\)\ntype !tournament for details\n\n1\. Keith/);
+  assert.match(text, /🏆 \*Tournament\* \(1\)\nAsk @Snoopy for details\n\n1\. Keith/);
   assert.match(text, /Social only\n\n\(none yet\)/);
 });
 

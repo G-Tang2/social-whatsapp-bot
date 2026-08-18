@@ -648,7 +648,7 @@ would otherwise explain why.
 
 **The posted list changes shape while it's on.** Instead of one flat
 numbered Attendance list, entries split into a `🏆 Tournament` block
-(numbered first, with its own `(n/limit)` count and a "type !tournament for
+(numbered first, with its own `(n/limit)` count and an "Ask @Snoopy for
 details" pointer to the rules text) and a `Social only` block underneath
 (numbering continuing on from there) for everyone else on the social list,
 queued (🏆 WL) entries first. Names are never hidden - the roster stays
@@ -657,7 +657,7 @@ header text and the added pointer line change. For example:
 
 ```
 🏆 *Tournament* (15/16)
-type !tournament for details
+Ask @Snoopy for details
 
 1. Keith
 2. Bao
