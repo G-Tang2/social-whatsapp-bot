@@ -350,7 +350,7 @@ test('formatList: the winners banner only shows while tournament is enabled, and
   store.setTournamentEnabled(groupId, true);
   store.setTournamentWinners(groupId, ['Irfan', 'Tu']);
 
-  assert.match(formatList(groupId), /^\*Congrats to Irfan and Tu for winning last week's tournament\*/);
+  assert.match(formatList(groupId), /🎉 \*Congrats to Irfan and Tu for winning last week's tournament\*/);
 
   store.setTournamentEnabled(groupId, false);
   assert.doesNotMatch(formatList(groupId), /Congrats to/);
@@ -372,14 +372,14 @@ test('formatList: with tournament off, Attendance renders as one flat numbered l
 // See store.js's newList() (which sets entry.owedSince) and this function's
 // own doc comment above the payment-section rendering.
 
-test('formatList: a payment-due entry with owedSince is grouped under a plain-text date header, renumbered from 1', () => {
+test('formatList: a payment-due entry with owedSince is grouped under a bold date header, renumbered from 1', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setDate(groupId, '2026-08-13');
   store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {}); // Alex now owes, tagged with the OLD (8/13) date
 
   const text = formatList(groupId);
-  assert.match(text, /\*Payment\*\n\n13th Aug Thu\n1\. Alex$/m);
+  assert.match(text, /\*Payment\*\n\n\*13th Aug Thu\*\n1\. Alex$/m);
 });
 
 test('formatList: a payment-due entry with no owedSince (predates the feature, or added manually via !update) goes under a "No date" group instead of a real date', () => {
@@ -388,7 +388,7 @@ test('formatList: a payment-due entry with no owedSince (predates the feature, o
   store.newList(groupId, '2026-08-20', {}); // no date was ever set - no owedSince to show
 
   const text = formatList(groupId);
-  assert.match(text, /\*Payment\*\n\nNo date\n1\. Alex$/m);
+  assert.match(text, /\*Payment\*\n\n\*No date\*\n1\. Alex$/m);
 });
 
 test('formatList: dated payment groups are sorted MOST RECENT first, and a "No date" group (if any) always comes before every dated group regardless', () => {
@@ -409,7 +409,7 @@ test('formatList: dated payment groups are sorted MOST RECENT first, and a "No d
   // "No date" (Casey, brand new via !update) first no matter what, then the
   // NEWER date (Jordan, 8/20) before the older one (Alex, 8/13) - never
   // oldest-first and never interleaved.
-  assert.match(paymentSection, /^No date\n1\. Casey\n\n20th Aug Thu\n1\. Jordan\n\n13th Aug Thu\n1\. Alex/);
+  assert.match(paymentSection, /^\*No date\*\n1\. Casey\n\n\*20th Aug Thu\*\n1\. Jordan\n\n\*13th Aug Thu\*\n1\. Alex/);
 });
 
 test('formatElapsed renders compact day/hour/minute durations', () => {
