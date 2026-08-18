@@ -823,6 +823,13 @@ it calls an external paid API and can occasionally misread ordinary chat,
 so it's an explicit opt-in rather than a safety default every group gets
 automatically.
 
+**Just @-mentioning the bot with nothing else attached is a shortcut for
+signing yourself up.** `@bot` on its own - no request text at all - is
+treated the same as typing bare `!in`. Unlike everything else in this
+section, this doesn't need `!ai` turned on and never calls Gemini (there's
+no actual language to interpret in an empty message), so it works in every
+group regardless of the natural-language feature's on/off state.
+
 **One message can bundle several distinct requests, and all of them get
 done.** `@bot create a new list for next Sunday at Noble Park courts 1,2 at
 7pm-9pm. The tournament limit is 12. Add Keith, Tu and Bao to the

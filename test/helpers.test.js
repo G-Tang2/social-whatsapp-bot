@@ -323,7 +323,7 @@ test('formatList: while tournament is enabled, both headers show even with ZERO 
   assert.match(text, /\*Attendance\* \(0\/\d+\)/);
   assert.match(text, /🏆 \*Tournament\* \(0\)\nAsk @Snoopy for details\n\n\(none yet\)/);
   assert.match(text, /Social only\n\n\(none yet\)/);
-  assert.doesNotMatch(text, /use !in to add your name/);
+  assert.doesNotMatch(text, /@Snoopy to add your name/);
 });
 
 test('formatList: while tournament is enabled, the Social only header still shows (with a placeholder) even when everyone who\'s joined so far is in the tournament', () => {
@@ -342,7 +342,7 @@ test('formatList: with tournament OFF, a totally empty list still renders the pl
   const text = formatList(groupId);
   assert.doesNotMatch(text, /🏆 \*Tournament\*/);
   assert.doesNotMatch(text, /Social only/);
-  assert.match(text, /\*Attendance\*\n\n\(empty, limit \d+ - use !in to add your name\)/);
+  assert.match(text, /\*Attendance\*\n\n\(empty, limit \d+ - @Snoopy to add your name\)/);
 });
 
 test('formatList: the winners banner only shows while tournament is enabled, and disappears (without forgetting the winners) once turned off', () => {
@@ -389,6 +389,27 @@ test('formatList: a payment-due entry with no owedSince (predates the feature, o
 
   const text = formatList(groupId);
   assert.match(text, /\*Payment\*\n\n\*No date\*\n1\. Alex$/m);
+});
+
+test('formatList: the payment section header is always the fixed bold "*Payment*" word, with no separate label line underneath when !paymentlabel was never customized', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {});
+
+  const text = formatList(groupId);
+  // Straight from the divider into "*Payment*" and then directly the first
+  // group header - no extra label line, no blank line before the group.
+  assert.match(text, /──────────\n\*Payment\*\n\n\*No date\*\n1\. Alex/);
+});
+
+test('formatList: a customized !paymentlabel prints as a plain (unbolded) line directly under the bold "*Payment*" header, no blank line between them', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.setDuePaymentsLabel(groupId, '$16 payID: 0413455423');
+  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {});
+
+  const text = formatList(groupId);
+  assert.match(text, /──────────\n\*Payment\*\n\$16 payID: 0413455423\n\n\*No date\*\n1\. Alex/);
 });
 
 test('formatList: dated payment groups are sorted MOST RECENT first, and a "No date" group (if any) always comes before every dated group regardless', () => {

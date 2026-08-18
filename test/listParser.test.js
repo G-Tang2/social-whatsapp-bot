@@ -244,7 +244,7 @@ test('parseListSections handles a missing waitlist/payment section (only Attenda
 });
 
 test('parseListSections ignores the "(empty...)" placeholder line for a zero-entry Attendance section', () => {
-  const text = ['*Attendance*', '', '(empty, limit 6 - use !in to add your name)'].join('\n');
+  const text = ['*Attendance*', '', '(empty, limit 6 - @Snoopy to add your name)'].join('\n');
   const result = parseListSections(text);
   assert.deepEqual(result.attendance, []);
   assert.equal(result.sectionsFound, 1);

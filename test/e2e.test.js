@@ -270,6 +270,48 @@ test('e2e: an AI-dispatched action whose handler throws replies with an unexpect
   assert.match(fakeSockInstance.sentMessages[0].content.text, /something went wrong/i);
 });
 
+// --- Bare @-mention ("just tag me") is a quick sign-up shortcut ----------
+// @-mentioning the bot with no other text attached is treated the same as
+// typing bare !in - dispatched straight to the real handler, no Gemini call
+// involved (there's nothing to interpret) and independent of !ai, so it
+// works even in a group that's never turned natural-language commands on.
+// See index.js's `bareMention` check.
+
+test('e2e: a bare @-mention with no other text signs the sender up, same as bare !in, without calling Gemini - and works even with !ai off', async () => {
+  ai.setEnabled(GROUP_ID, false); // deliberately off - this shortcut shouldn't need it
+  const callsBefore = geminiCallCount;
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('@bot', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  assert.equal(geminiCallCount, callsBefore, 'a bare mention has nothing to interpret - Gemini should never be called');
+  const posted = fakeSockInstance.sentMessages.find((m) => /jordan/i.test(m.content.text || ''));
+  assert.ok(posted, 'expected jordan to have been added and the list posted, same as a real bare !in would');
+});
+
+test('e2e: a bare @-mention still skips Gemini even with !ai turned ON - the bare-mention shortcut is checked before natural-language interpretation', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  const callsBefore = geminiCallCount;
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('@bot', { from: 'sam@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  assert.equal(geminiCallCount, callsBefore, 'still should not call Gemini even with !ai on');
+  const posted = fakeSockInstance.sentMessages.find((m) => /sam/i.test(m.content.text || ''));
+  assert.ok(posted, 'expected sam to have been added and the list posted');
+});
+
+test('e2e: a bare @-mention arriving as a catch-up (append) redelivery is dropped, same as any other catch-up mention', async () => {
+  ai.setEnabled(GROUP_ID, false);
+  const callsBefore = geminiCallCount;
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('@bot', { from: 'jordan@s.whatsapp.net', type: 'append', mentions: [BOT_JID] });
+
+  assert.equal(geminiCallCount, callsBefore);
+  assert.equal(fakeSockInstance.sentMessages.length, 0);
+});
+
 // --- Natural-language command interpretation (lib/geminiCommand.js) ---
 // Exercises the real messageMentionsBot()/handleAiMention() wiring in
 // index.js end-to-end - real mention detection against the fake sock's

@@ -795,6 +795,17 @@ async function handleMessage(sock, msg, upsertType) {
   const postList = () => sock.sendMessage(groupId, { text: formatList(groupId) });
 
   if (!text.startsWith(COMMAND_PREFIX)) {
+    const mentionsBot = messageMentionsBot(sock, msg);
+    // A message that mentions the bot and, once every @-mention token is
+    // stripped back out, has nothing else left at all - just "@Snoopy" on
+    // its own, no request text attached. Treated as the same quick "sign me
+    // up" shortcut as typing bare !in - see commands/list.js's handleIn.
+    // Deliberately independent of !ai (ai.isEnabled(groupId), checked
+    // below): there's no actual language to interpret here (an empty
+    // string isn't a request Gemini needs to read), so this works in every
+    // group regardless of whether natural-language commands are turned on.
+    const bareMention = mentionsBot && !stripMentionTokens(text, getMentionedJids(msg)).trim();
+
     // Natural-language command interpretation (see lib/geminiCommand.js
     // and handleAiMention above) - deliberately narrow trigger: only a
     // genuinely live message (never catch-up/'append' - re-running an
@@ -803,14 +814,21 @@ async function handleMessage(sock, msg, upsertType) {
     // too), only in a group that's explicitly opted in with !ai on, and
     // only when the message actually @-mentions the bot - never triggered
     // by ordinary chat, however list-related it might sound.
-    if (upsertType === 'notify' && ai.isEnabled(groupId) && messageMentionsBot(sock, msg)) {
+    if (upsertType === 'notify' && bareMention) {
+      try {
+        await commands[`${COMMAND_PREFIX}in`]({ sock, msg, groupId, senderId, senderName, argText: '', upsertType, reply, postList });
+      } catch (err) {
+        console.error(`[bot] Error handling a bare @-mention (treated as ${COMMAND_PREFIX}in) in ${groupId} (from ${senderId}):`, err);
+        await reply(UNEXPECTED_ERROR_REPLY);
+      }
+    } else if (upsertType === 'notify' && ai.isEnabled(groupId) && mentionsBot) {
       try {
         await handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList });
       } catch (err) {
         console.error(`[bot] Error handling an AI mention in ${groupId} (from ${senderId}):`, err);
         await reply(UNEXPECTED_ERROR_REPLY);
       }
-    } else if (upsertType === 'notify' && messageMentionsBot(sock, msg) && !ai.isEnabled(groupId)) {
+    } else if (upsertType === 'notify' && mentionsBot && !ai.isEnabled(groupId)) {
       // Same "a genuine @-mention that got silently dropped should leave
       // SOME trace" reasoning as the catch-up-gate log above - this is the
       // other precisely-detectable way it happens: the mention genuinely
