@@ -96,6 +96,41 @@ test('parseListSections handles a custom !paymentlabel header (not the literal w
   const result = parseListSections(text);
   assert.deepEqual(result.attendance, ['Alex']);
   assert.deepEqual(result.duePayments, [{ name: 'Sam' }]);
+  // Old-format paste (the whole bold line WAS the label, nothing separate
+  // underneath it) - a payment section WAS found, but no separate label
+  // line - resolves as an explicit clear, same as any other present-but-
+  // empty header field.
+  assert.equal(result.duePaymentsLabel, null);
+});
+
+test('parseListSections reads formatList()\'s CURRENT payment header format - the fixed bold "*Payment*" line with the actual (customized) label directly underneath it, unbolded, no blank line in between', () => {
+  const text = ['*Attendance*', '', '1. Alex', '', '*Payment*', '$16 payID: 0413455423', '', '1. Sam'].join('\n');
+  const result = parseListSections(text);
+  assert.deepEqual(result.attendance, ['Alex']);
+  assert.deepEqual(result.duePayments, [{ name: 'Sam' }]);
+  assert.equal(result.duePaymentsLabel, '$16 payID: 0413455423');
+});
+
+test('parseListSections: a "*Payment*" header with NOTHING customized (blank line straight after it, formatList()\'s own un-customized output) reads duePaymentsLabel as an explicit clear (null), "your edit is final" same as the other header fields', () => {
+  const text = ['*Attendance*', '', '1. Alex', '', '*Payment*', '', '1. Sam'].join('\n');
+  const result = parseListSections(text);
+  assert.equal(result.duePaymentsLabel, null);
+});
+
+test('parseListSections: a customized label still round-trips correctly even when the payment section also has bold date-group headers below it', () => {
+  const text = [
+    '*Attendance*', '', '1. Alex', '',
+    '*Payment*', '$16 payID: 0413455423', '',
+    '*No date*', '1. Casey',
+  ].join('\n');
+  const result = parseListSections(text);
+  assert.equal(result.duePaymentsLabel, '$16 payID: 0413455423');
+  assert.deepEqual(result.duePayments, [{ name: 'Casey', owedSince: null }]);
+});
+
+test('parseListSections: when the payment section is entirely absent from the paste, duePaymentsLabel is undefined - never touched', () => {
+  const result = parseListSections(['*Attendance*', '', '1. Alex'].join('\n'));
+  assert.equal(result.duePaymentsLabel, undefined);
 });
 
 test('parseListSections ignores stray "extra text blocks" anywhere in the message', () => {

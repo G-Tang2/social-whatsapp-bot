@@ -971,6 +971,7 @@ test('handlePaid: a bare "!paid" (no name) with entries under TWO DIFFERENT name
 test('handleSettournament: bare command explains how to turn it on when off, admin-gates on/off, and always replies', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setTournamentEnabled(groupId, false); // tournament is ON by default now - start from off to exercise the toggle
 
   const view = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
   await adminCommands.handleSettournament(view.ctx);
@@ -1146,6 +1147,7 @@ test('handleIn: tournament full - the person still joins socially, quietly, tagg
 test('handleIn: tournament not enabled at all - joins socially, WITH an explicit reply (unlike the quiet full case)', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, false); // tournament is ON by default now
 
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', senderName: 'Keith', argText: 'tournament' });
   await listCommands.handleIn(ctx);
@@ -1262,6 +1264,7 @@ test('handleIn: upgrading a name that\'s only on the main WAITLIST (not confirme
 test('handleIn: upgrading names already on the list when the tournament is disabled gets the explicit "not enabled" reply, not silent nothing', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, false); // tournament is ON by default now
 
   const joinSocial = makeCtx({ sock, groupId, senderId: 'gary@s.whatsapp.net', senderName: 'Gary', argText: 'Alex, Sam' });
   await listCommands.handleIn(joinSocial.ctx);
@@ -1712,6 +1715,63 @@ test('handleUpdate: no header block pasted at all leaves date/location/courts/ti
   assert.match(event.date, /-08-09$/);
   assert.equal(event.location, 'Old Park');
   assert.equal(event.time, '6pm-8pm');
+});
+
+test('handleUpdate: a pasted payment section with a customized label line updates the payment-due header, same as !paymentlabel', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-09', {}); // Alex now owes
+
+  const pastedEdit = ['*Attendance*', '', '(empty)', '', '*Payment*', '$16 payID: 0413455423', '', '*No date*', '1. Alex'].join('\n');
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
+  await adminCommands.handleUpdate(ctx);
+
+  assert.match(replies[0], /Payment-due header: \*Payment\* → \*\$16 payID: 0413455423\*/);
+  assert.equal(store.getDuePaymentsLabel(groupId), '$16 payID: 0413455423');
+});
+
+test('handleUpdate: a payment section pasted back with NO label line (formatList()\'s own un-customized output) CLEARS an existing custom label back to the default - "your edit is final," same as date/location/courts/time', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setDuePaymentsLabel(groupId, '$16 payID: 0413455423');
+  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-09', {});
+
+  const pastedEdit = ['*Attendance*', '', '(empty)', '', '*Payment*', '', '*No date*', '1. Alex'].join('\n');
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
+  await adminCommands.handleUpdate(ctx);
+
+  assert.match(replies[0], /Payment-due header: \*\$16 payID: 0413455423\* → \*Payment\*/);
+  assert.equal(store.getDuePaymentsLabel(groupId), 'Payment');
+});
+
+test('handleUpdate: no payment section pasted at all leaves the payment-due header completely untouched', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setDuePaymentsLabel(groupId, '$16 payID: 0413455423');
+  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+
+  const pastedEdit = ['*Attendance*', '', '1. Alex', '2. NewPerson'].join('\n');
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
+  await adminCommands.handleUpdate(ctx);
+
+  assert.equal(store.getDuePaymentsLabel(groupId), '$16 payID: 0413455423');
+});
+
+test('handleUpdate: an over-length payment label in the paste is rejected with a note, without blocking the other changes', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-09', {});
+
+  const tooLong = 'X'.repeat(200);
+  const pastedEdit = ['*Attendance*', '', '(empty)', '', '*Payment*', tooLong, '', '*No date*', '1. Alex'].join('\n');
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
+  await adminCommands.handleUpdate(ctx);
+
+  assert.match(replies[0], /Couldn't update the payment-due header/);
+  assert.equal(store.getDuePaymentsLabel(groupId), 'Payment'); // left untouched
 });
 
 test('handleUpdate: an invalid courts value in the header block is rejected with a note, without blocking the other header/roster changes', async () => {

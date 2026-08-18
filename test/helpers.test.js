@@ -338,6 +338,7 @@ test('formatList: while tournament is enabled, the Social only header still show
 
 test('formatList: with tournament OFF, a totally empty list still renders the plain "empty" message, unaffected by the tournament-headers change', () => {
   const groupId = freshRegularPlayersGroupId();
+  store.setTournamentEnabled(groupId, false); // tournament is ON by default now
 
   const text = formatList(groupId);
   assert.doesNotMatch(text, /🏆 \*Tournament\*/);
@@ -359,6 +360,7 @@ test('formatList: the winners banner only shows while tournament is enabled, and
 
 test('formatList: with tournament off, Attendance renders as one flat numbered list, same as before this feature existed', () => {
   const groupId = freshRegularPlayersGroupId();
+  store.setTournamentEnabled(groupId, false); // tournament is ON by default now
   store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true);
   store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true);
 

@@ -1024,7 +1024,7 @@ async function handleUpdate(ctx) {
     await reply(
       `Usage: ${COMMAND_PREFIX}update <paste the list here, with your edits>\n`
         + `Copy Snoopy's last posted list (or run ${COMMAND_PREFIX}list to get a fresh copy), add/remove/reorder names under *Attendance*, *Waitlist*, or the payment section as needed, then send it back with ${COMMAND_PREFIX}update on its own first line, followed by the pasted text.\n`
-        + `If you also keep the date/location/courts/time block above *Attendance* in your paste, edits there get applied too - and any of those four fields you leave OUT of that block gets cleared, since your edit is treated as final. Leave the whole block out entirely (nothing pasted above *Attendance*) to leave date/location/courts/time untouched. The payment header itself is never touched either way - use ${COMMAND_PREFIX}paymentlabel for that. If the tournament's on, moving a name between "🏆 Tournament" and "Social only" in your edit updates their tournament status too.`
+        + `If you also keep the date/location/courts/time block above *Attendance* in your paste, edits there get applied too - and any of those four fields you leave OUT of that block gets cleared, since your edit is treated as final. Leave the whole block out entirely (nothing pasted above *Attendance*) to leave date/location/courts/time untouched. The plain (unbolded) line right under *Payment* works the same way for the payment-due header (same as ${COMMAND_PREFIX}paymentlabel) - keep the *Payment* line but drop that label line and the header resets to its default, same "your edit is final" rule; drop the payment section from your paste entirely to leave the header untouched. If the tournament's on, moving a name between "🏆 Tournament" and "Social only" in your edit updates their tournament status too.`
     );
     return;
   }
@@ -1165,10 +1165,35 @@ async function handleUpdate(ctx) {
     }
   }
 
+  // Payment-due header label (e.g. "$16 payID: 0413455423" - see
+  // !paymentlabel) - applied independently of the `headerFields` block
+  // above (a label edit can appear in a paste with no date/location/courts
+  // /time block at all, and vice versa - they're two unrelated header
+  // lines in two unrelated places in the message), but with the SAME "your
+  // edit is final" rule: parsed.duePaymentsLabel is undefined only when the
+  // paste had no payment section at all (leave the label alone); a payment
+  // section that WAS present but had no label line comes back as an
+  // explicit clear (null - see lib/listParser.js's parseListSections() doc
+  // comment on duePaymentsLabel), resetting back to the configured default
+  // exactly like a date/location/courts/time field left out of a present
+  // header block does.
+  let paymentLabelChanged = false;
+  const currentStoredLabel = event.duePaymentsLabel || null; // raw stored value, not the PAYMENT_LABEL-resolved display text
+  if (parsed.duePaymentsLabel !== undefined && parsed.duePaymentsLabel !== currentStoredLabel) {
+    if (parsed.duePaymentsLabel && parsed.duePaymentsLabel.length > MAX_LABEL_LENGTH) {
+      headerChanges.push(`Couldn't update the payment-due header - too long (max ${MAX_LABEL_LENGTH} characters), left as *${getDuePaymentsLabel(groupId)}*.`);
+    } else {
+      const beforeDisplay = getDuePaymentsLabel(groupId);
+      setDuePaymentsLabel(groupId, parsed.duePaymentsLabel || '');
+      headerChanges.push(`Payment-due header: *${beforeDisplay}* → *${getDuePaymentsLabel(groupId)}*`);
+      paymentLabelChanged = true;
+    }
+  }
+
   const changed = Boolean(
     result.added.length || result.removed.length || result.moved.length
       || result.paidAdded.length || result.paidRemoved.length || result.tournamentChanged.length
-      || headerFieldsChanged
+      || headerFieldsChanged || paymentLabelChanged
   );
 
   if (courtsPromoted.length) {

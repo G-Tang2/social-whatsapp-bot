@@ -284,20 +284,24 @@ function emptyGroupState() {
       duePayments: [],
       duePaymentsLabel: DEFAULT_PAYMENT_LABEL,
       // Tournament sub-feature - see !settournament/!tournament/
-      // !tournamentlimit/!tournamentwinners in commands/admin.js. Off by
-      // default per group,
-      // same "opt-in" pattern as spamfilter/ai, except state
-      // lives here in `current` (not a separate module) since it's
-      // fundamentally about THIS list - who's opted in lives on each
-      // entry itself (entry.tournament, see addEntry() below), not as a
-      // separate roster. `tournamentEnabled`/`tournamentLimit`/
-      // `tournamentWinners`/`tournamentRules` all carry forward to the next
-      // !newlist the same way duePaymentsLabel/location/courts/time do (see
-      // newList() below) - a group's tournament is a running weekly thing,
-      // not something that resets just because a new list started. The
-      // actual entries (and therefore who's opted in) DO reset with every
+      // !tournamentlimit/!tournamentwinners in commands/admin.js. ON by
+      // default per group - unlike spamfilter/ai (opt-in, since those call
+      // an external service or take moderation action on someone else's
+      // message), this is just an extra opt-in sub-list within a group's
+      // own attendance, so there's no real downside to having it already
+      // available; an admin can still turn it off with !settournament off
+      // if a group doesn't want it. State lives here in `current` (not a
+      // separate module like ai.js/spam.js) since it's fundamentally about
+      // THIS list - who's opted in lives on each entry itself
+      // (entry.tournament, see addEntry() below), not as a separate
+      // roster. `tournamentEnabled`/`tournamentLimit`/`tournamentWinners`/
+      // `tournamentRules` all carry forward to the next !newlist the same
+      // way duePaymentsLabel/location/courts/time do (see newList()
+      // below) - a group's tournament is a running weekly thing, not
+      // something that resets just because a new list started. The actual
+      // entries (and therefore who's opted in) DO reset with every
       // !newlist, same as the rest of `entries`.
-      tournamentEnabled: false,
+      tournamentEnabled: true,
       // null = no cap (anyone who opts in gets in) until an admin sets one
       // with !tournamentlimit - unlike the main `limit`, there's no
       // court-count auto-scaling for this, so it doesn't default to
@@ -431,7 +435,12 @@ function migrateIfNeeded(data) {
         migrated = true;
       }
       if (data[groupId].current.tournamentEnabled === undefined) {
-        data[groupId].current.tournamentEnabled = false;
+        // Same default as emptyGroupState() above (ON) - a stored group
+        // missing this field entirely predates the field itself, not a
+        // group that ever explicitly ran !settournament off (that would
+        // have stored an actual `false`, not left the key out), so it gets
+        // the same default a genuinely brand-new group would.
+        data[groupId].current.tournamentEnabled = true;
         migrated = true;
       }
       if (data[groupId].current.tournamentLimit === undefined) {

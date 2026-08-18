@@ -25,7 +25,7 @@ every change.
 | `!paymentlabel [text]` | viewing: anyone; changing: group admins only | Sets the payment-due section's header (e.g. `!paymentlabel $20 please`). With no text, shows the current header without changing it |
 | `!regulars [name1, name2, ...]` | viewing: anyone; changing: group admins only | Manages a saved roster of "regular players" (see "Regular players" below), reusable later via the word `regular players` in place of names in `!in`/`!newlist`. A plain name list *replaces* the whole roster; `!regulars add <names>`/`!regulars remove <names>` tweak it instead; `!regulars clear` empties it. With no text, shows the current roster without changing it |
 | `!exempt [name1, name2, ...]` | viewing: anyone; changing: group admins only | Manages a saved roster of names who never need to pay (see "Tracking who owes payment" below) - the organizer, a sponsor, a coach, whoever. Same `add`/`remove`/`clear`/replace shape as `!regulars`. With no text, shows the current roster without changing it |
-| `!settournament [on\|off\|rules <text>]` | viewing: anyone; changing: group admins only | Turns the tournament sub-feature (see "Tournament" below) on or off for *this* group, and sets the rules text `!tournament` (below) shows. Off by default everywhere. With no argument, shows who's currently opted in instead of changing anything. `!settournament rules <text>` sets the rules text (e.g. `!settournament rules Best of 3, single elimination`); `!settournament rules` with no text shows the current rules |
+| `!settournament [on\|off\|rules <text>]` | viewing: anyone; changing: group admins only | Turns the tournament sub-feature (see "Tournament" below) on or off for *this* group, and sets the rules text `!tournament` (below) shows. On by default everywhere. With no argument, shows who's currently opted in instead of changing anything. `!settournament rules <text>` sets the rules text (e.g. `!settournament rules Best of 3, single elimination`); `!settournament rules` with no text shows the current rules |
 | `!tournament` | anyone | Shows the tournament rules text set via `!settournament rules <text>` (see "Tournament" below) - does not show who's opted in (that's `!settournament`) |
 | `!tournamentlimit [number]` | viewing: anyone; changing: group admins only | Caps how many people can be opted into the tournament - separate from the main `!limit`. With no number, shows the current tournament limit without changing it. `!tournamentlimit off` removes the cap |
 | `!tournamentwinners [Name1, Name2]` | viewing: anyone; changing: group admins only | Sets the two-name "Congrats to Name1 and Name2 for winning last week's tournament" banner shown above the list while the tournament is on. With no text, shows the currently set winners without changing them |
@@ -523,9 +523,20 @@ philosophy as the roster's own overflow handling below. Drop the whole
 header block from your paste entirely (nothing above `*Attendance*` that
 looks like a date) and all four fields are left completely untouched, as
 `!update` always did before this existed - only a genuine header block
-triggers the "your edit is final" clearing behavior. The payment section's
-own header text (its custom `!paymentlabel`) is never read either way -
-use `!paymentlabel` for that.
+triggers the "your edit is final" clearing behavior.
+
+**The payment section's own header line gets read too, the same way.** Keep
+the plain (unbolded) line directly under the bold `*Payment*` header in
+your paste - the actual `!paymentlabel` text, e.g. `$16 payID:
+0413455423` - and editing it updates the payment-due header the same as
+running `!paymentlabel` would, summarized alongside everything else. Same
+"your edit is final" rule as date/location/courts/time: if your paste keeps
+the `*Payment*` line but drops the label line under it (or your paste is
+just formatList()'s own default, un-customized output, which never prints
+one to begin with), the header resets back to its default rather than
+being left alone. Leave the whole payment section out of your paste
+entirely and the header is untouched, same as any other field you don't
+mention.
 
 A few things worth knowing:
 
@@ -588,12 +599,14 @@ just discarded, it has a bigger blast radius than most commands.
 
 ## Tournament
 
-A per-group, **off by default** sub-feature (same "each group opts in
-individually" pattern as spam filtering/natural-language
-commands): an admin turns it on with `!settournament on`, and from then on
-anyone joining (or already on) the social Attendance list can additionally
-opt into the tournament, on top of the regular social list - it's not a
-separate signup, just a flag on your existing entry.
+A per-group, **on by default** sub-feature - unlike spam filtering/
+natural-language commands (opt-in, since those call an external service or
+take moderation action on someone else's message), there's no real
+downside to a group having this already available, so it starts on; an
+admin can turn it off with `!settournament off` if a group doesn't want it.
+While it's on, anyone joining (or already on) the social Attendance list
+can additionally opt into the tournament, on top of the regular social
+list - it's not a separate signup, just a flag on your existing entry.
 
 There are two related commands, split by who they're for: `!settournament`
 (admins to turn the feature on/off, view who's currently opted in, and set

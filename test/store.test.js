@@ -1081,13 +1081,13 @@ test('restoreUndoableState: overwrites current/history/regularPlayers wholesale 
 // --- Tournament sub-feature (see commands/admin.js's !tournament/
 // !tournamentlimit/!tournamentwinners, and commands/list.js's handleIn) ---
 
-test('isTournamentEnabled: off by default, reflects setTournamentEnabled', () => {
+test('isTournamentEnabled: ON by default, reflects setTournamentEnabled', () => {
   const groupId = freshGroupId();
-  assert.equal(store.isTournamentEnabled(groupId), false);
-  store.setTournamentEnabled(groupId, true);
   assert.equal(store.isTournamentEnabled(groupId), true);
   store.setTournamentEnabled(groupId, false);
   assert.equal(store.isTournamentEnabled(groupId), false);
+  store.setTournamentEnabled(groupId, true);
+  assert.equal(store.isTournamentEnabled(groupId), true);
 });
 
 test('getTournamentLimit/setTournamentLimit: null (no cap) by default, returns { limit, promoted }', () => {
@@ -1180,6 +1180,7 @@ test('addEntry: a wantsTournament=true entry is flagged tournament:true when ena
 
 test('addEntry: wantsTournament is ignored (tournament stays false) when the feature is disabled', () => {
   const groupId = freshGroupId();
+  store.setTournamentEnabled(groupId, false);
   const result = store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
   assert.equal(result.ok, true);
   assert.equal(store.getCurrentEvent(groupId).entries[0].tournament, false);
@@ -1216,6 +1217,7 @@ test('addEntry: someone waitlisted (over the MAIN limit) never gets tournament:t
 
 test('joinTournament: opts an existing attendance entry in, subject to enabled/room/already-in checks', () => {
   const groupId = freshGroupId();
+  store.setTournamentEnabled(groupId, false);
   store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true);
 
   // Not enabled yet.
