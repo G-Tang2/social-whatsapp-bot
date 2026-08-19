@@ -294,13 +294,14 @@ function emptyGroupState() {
       // separate module like ai.js/spam.js) since it's fundamentally about
       // THIS list - who's opted in lives on each entry itself
       // (entry.tournament, see addEntry() below), not as a separate
-      // roster. `tournamentEnabled`/`tournamentLimit`/`tournamentWinners`/
-      // `tournamentRules` all carry forward to the next !newlist the same
-      // way duePaymentsLabel/location/courts/time do (see newList()
-      // below) - a group's tournament is a running weekly thing, not
-      // something that resets just because a new list started. The actual
-      // entries (and therefore who's opted in) DO reset with every
-      // !newlist, same as the rest of `entries`.
+      // roster. `tournamentEnabled`/`tournamentLimit`/`tournamentRules`
+      // carry forward to the next !newlist the same way
+      // duePaymentsLabel/location/courts/time do (see newList() below) - a
+      // group's tournament is a running weekly thing, not something that
+      // resets just because a new list started. `tournamentWinners` is the
+      // one exception - see its own comment below. The actual entries (and
+      // therefore who's opted in) DO reset with every !newlist, same as
+      // the rest of `entries`.
       tournamentEnabled: true,
       // null = no cap (anyone who opts in gets in) until an admin sets one
       // with !tournamentlimit - unlike the main `limit`, there's no
@@ -310,17 +311,19 @@ function emptyGroupState() {
       // [winner1, winner2] as last set by !tournamentwinners, or null if
       // never set - powers the "*Congrats to X and Y for winning last
       // week's tournament*" banner formatList() shows above the list
-      // while tournamentEnabled is true (see lib/helpers.js). Persists
-      // (carries forward) until an admin sets it again, same as
-      // duePaymentsLabel - it's meant to keep announcing last week's
-      // result until there's a new one to announce.
+      // while tournamentEnabled is true (see lib/helpers.js). Unlike
+      // everything else here, this does NOT carry forward across !newlist
+      // (see newList()'s own comment on this field) - it's an announcement
+      // about the cycle that just ended, not a standing setting, so
+      // starting a fresh cycle clears it rather than keep showing a
+      // now-stale "Congrats" banner above the new list.
       tournamentWinners: null,
       // Free-text rules set by an admin (e.g. "Best of 3, single
       // elimination") via !settournament rules <text>, shown to anyone who
       // runs bare !tournament (see commands/admin.js's handleTournament -
       // the RENAMED command that used to be bare !tournament is now
       // !settournament, see handleSettournament). null if never set.
-      // Persists across !newlist same as tournamentWinners above - rules
+      // Persists across !newlist (unlike tournamentWinners above) - rules
       // don't change just because a new cycle started.
       tournamentRules: null,
     },
@@ -1832,7 +1835,16 @@ function newList(groupId, date, details = {}) {
     // rest of the list - see emptyGroupState()'s doc comment.
     tournamentEnabled: !!outgoing.tournamentEnabled,
     tournamentLimit: outgoing.tournamentLimit === undefined ? null : outgoing.tournamentLimit,
-    tournamentWinners: outgoing.tournamentWinners || null,
+    // Unlike tournamentRules just below, winners are deliberately NOT
+    // carried forward - "Congrats to X and Y" is an announcement about the
+    // cycle that just ended, not a standing fact about the group, so it
+    // would be actively wrong to keep showing it above the NEXT cycle's
+    // list. Reset to null here; an admin (or the "@Snoopy ... and the
+    // tournament winners are ..." natural-language path - see
+    // lib/geminiCommand.js's MULTIPLE ACTIONS "newlist always first" rule)
+    // re-announces it with !tournamentwinners for the new cycle if there's
+    // a fresh result to show.
+    tournamentWinners: null,
     tournamentRules: outgoing.tournamentRules || null,
   };
 

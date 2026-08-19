@@ -826,6 +826,42 @@ test('e2e: !tournamentwinners sets the "Congrats to ..." banner, which then show
   assert.ok(posted, 'expected the winners banner to appear above the posted list');
 });
 
+test('e2e: !newlist clears the previous cycle\'s tournament winners banner', async () => {
+  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  await deliver('!tournamentwinners E2eClearedWinnerA, E2eClearedWinnerB', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  await deliver('!newlist 25/08', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('!list', { from: 'jordan@s.whatsapp.net', type: 'notify' });
+
+  const posted = fakeSockInstance.sentMessages[0].content.text;
+  assert.doesNotMatch(posted, /Congrats to/);
+});
+
+test('e2e: an admin @-mentioning "create a new list for tomorrow and the tournament winners are Peter and Rob" runs !newlist FIRST, then !tournamentwinners - the winners land on the fresh list instead of being immediately cleared by it', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  setNextGeminiResponse({
+    actions: [
+      { command: 'newlist', argText: '25/08', confidence: 'high' },
+      { command: 'tournamentwinners', argText: 'Peter, Rob', confidence: 'high' },
+    ],
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('create a new list for tomorrow and the tournament winners are Peter and Rob', {
+    from: 'admin@s.whatsapp.net',
+    type: 'notify',
+    mentions: [BOT_JID],
+  });
+
+  // If "tournamentwinners" had run BEFORE "newlist" (wrong order), newList()
+  // would have immediately cleared it right back to null - this is a real
+  // regression guard for that ordering bug, not just a "does the field get
+  // set at all" check.
+  assert.deepEqual(store.getTournamentWinners(GROUP_ID), ['Peter', 'Rob']);
+});
+
 test('e2e: a non-admin typing !settournament on is refused, and the feature stays off', async () => {
   // Explicitly off first - earlier tests in this file may have already
   // turned it on for GROUP_ID (shared across this whole file, unlike

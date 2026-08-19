@@ -740,10 +740,18 @@ only) sets a banner shown above the whole list while the tournament is on:
 ```
 
 It's always exactly two names - there's nothing to incrementally edit,
-just replace both names with the next result each time. Like
-`!tournamentlimit` and the location/courts/time/payment-header fields, it
-sticks around across `!newlist` until an admin sets it again, so it keeps
-announcing the same result until there's a new one to announce.
+just replace both names with the next result each time. Unlike
+`!tournamentlimit` and the location/courts/time/payment-header fields,
+**it does NOT carry forward across `!newlist`** - a fresh `!newlist`
+clears it automatically, since it's an announcement about the cycle that
+just ended, not a standing setting, and would otherwise keep showing a
+stale "Congrats" banner above the new cycle's list. Announce it again with
+`!tournamentwinners` for each new result. If you're announcing winners in
+the same breath as starting the new list (e.g. via a natural-language
+@-mention like "create a new list for tomorrow and the tournament winners
+are Peter and Rob"), the bot runs `!newlist` first and `!tournamentwinners`
+right after, so the winners land on the fresh list instead of being wiped
+by it.
 
 Tournament winners don't have to pay for the social they won: setting
 `!tournamentwinners` also clears each named winner's payment debt for the

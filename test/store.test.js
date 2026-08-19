@@ -1349,11 +1349,10 @@ test('leaveTournament: leaving an actual spot promotes the front of the (🏆 WL
   assert.equal(keith.tournament, false);
 });
 
-test('newList: tournamentEnabled/tournamentLimit/tournamentWinners/tournamentRules carry forward, but entries (and their tournament flags) reset', () => {
+test('newList: tournamentEnabled/tournamentLimit/tournamentRules carry forward, but entries (and their tournament flags) reset', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 16);
-  store.setTournamentWinners(groupId, ['Irfan', 'Tu']);
   store.setTournamentRules(groupId, 'Best of 3, single elimination');
   store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
 
@@ -1361,9 +1360,17 @@ test('newList: tournamentEnabled/tournamentLimit/tournamentWinners/tournamentRul
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.tournamentEnabled, true);
   assert.equal(event.tournamentLimit, 16);
-  assert.deepEqual(event.tournamentWinners, ['Irfan', 'Tu']);
   assert.equal(event.tournamentRules, 'Best of 3, single elimination');
   assert.equal(event.entries.length, 0); // fresh cycle - nobody's opted in yet
+});
+
+test('newList: tournamentWinners is cleared, unlike every other tournament setting - it announces the cycle that just ended, not a standing setting', () => {
+  const groupId = freshGroupId();
+  store.setTournamentEnabled(groupId, true);
+  store.setTournamentWinners(groupId, ['Irfan', 'Tu']);
+
+  store.newList(groupId, '2026-08-20', {});
+  assert.equal(store.getTournamentWinners(groupId), null);
 });
 
 test('setTournamentEnabled(false) does not clear entries\' tournament flags - they reappear if re-enabled', () => {
