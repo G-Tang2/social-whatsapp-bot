@@ -826,6 +826,11 @@ test('e2e: !settournament rules <text> sets the rules, and anyone can read them 
 
 test('e2e: a compound @-mention (new list + tournament limit + add named people to the tournament) dispatches all three actions in order', async () => {
   ai.setEnabled(GROUP_ID, true);
+  // Isolate from an earlier test's saved regulars roster on this shared
+  // GROUP_ID - !newlist now always merges the roster into the tournament
+  // (see commands/admin.js's handleNewlist), which would otherwise inflate
+  // the tournament count/roster this test asserts on below.
+  store.setRegularPlayers(GROUP_ID, []);
   await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
   setNextGeminiResponse({
     actions: [

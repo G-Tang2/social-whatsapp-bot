@@ -698,7 +698,7 @@ test('handleNewlist: "with <names>" still respects the new list\'s own limit, wa
   assert.deepEqual(event.waitlist.map((e) => e.name), ['Will']);
 });
 
-test('handleNewlist: without a "with" clause, nothing is added to the brand new list (unchanged behavior)', async () => {
+test('handleNewlist: without a "with" clause and no saved regulars, nothing is added to the brand new list (unchanged behavior)', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
@@ -731,6 +731,52 @@ test('handleNewlist: "with regular players" on an empty saved roster adds nobody
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.entries.length, 0);
   assert.ok(ctx.replies.some((r) => /none saved yet/i.test(r)));
+});
+
+test('handleNewlist: the saved regulars roster is always added and opted into the tournament, even with no "with" clause at all', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setRegularPlayers(groupId, ['Peter', 'Chris', 'Linda']);
+
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 EBC' });
+  await adminCommands.handleNewlist(ctx.ctx);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Chris', 'Linda']);
+  assert.ok(event.entries.every((e) => e.tournament === true));
+});
+
+test('handleNewlist: an explicit "with <names>" clause stays social-only, while the merged-in regulars are opted into the tournament', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
+
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 with Extra Guest' });
+  await adminCommands.handleNewlist(ctx.ctx);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Extra Guest', 'Peter', 'Chris']);
+  const byName = Object.fromEntries(event.entries.map((e) => [e.name, e]));
+  assert.equal(byName['Extra Guest'].tournament, false);
+  assert.equal(byName['Peter'].tournament, true);
+  assert.equal(byName['Chris'].tournament, true);
+});
+
+test('handleNewlist: a regular also explicitly named in "with <names>" is added once, still opted into the tournament', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
+
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 with Peter, Extra Guest' });
+  await adminCommands.handleNewlist(ctx.ctx);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Extra Guest', 'Chris']);
+  const byName = Object.fromEntries(event.entries.map((e) => [e.name, e]));
+  assert.equal(byName['Peter'].tournament, true);
+  assert.equal(byName['Chris'].tournament, true);
+  assert.equal(byName['Extra Guest'].tournament, false);
+  assert.ok(!ctx.replies.some((r) => /already on the list/i.test(r)));
 });
 
 test('handleIn: "regular players" adds the saved roster, and none of the added entries are marked self', async () => {

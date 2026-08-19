@@ -113,7 +113,7 @@ async function handleNewlist(ctx) {
 
   if (!argText) {
     await reply(
-      `Usage: ${COMMAND_PREFIX}newlist DD/MM [location] | [courts] | [time] [with name1, name2, ...]\nExample: ${COMMAND_PREFIX}newlist 20/08 EBC | 13-18 | 8PM start with Peter, Chris, Linda\n(No year - it's inferred as the next upcoming occurrence of that day/month. Location/courts/time are optional and carry forward from the current list if left out. The optional trailing "with ..." clause immediately signs up everyone named, in order, on the brand new list - "with regular players" signs up the group's whole saved roster, see ${COMMAND_PREFIX}regulars. Use "same" instead of a date, e.g. ${COMMAND_PREFIX}newlist same, to reuse whatever day of the week the current list is already on.)`
+      `Usage: ${COMMAND_PREFIX}newlist DD/MM [location] | [courts] | [time] [with name1, name2, ...]\nExample: ${COMMAND_PREFIX}newlist 20/08 EBC | 13-18 | 8PM start with Peter, Chris, Linda\n(No year - it's inferred as the next upcoming occurrence of that day/month. Location/courts/time are optional and carry forward from the current list if left out. The optional trailing "with ..." clause immediately signs up everyone named, in order, on the brand new list. The saved regulars roster (see ${COMMAND_PREFIX}regulars) is always added too and opted straight into the tournament, whether or not "with ..." is used. Use "same" instead of a date, e.g. ${COMMAND_PREFIX}newlist same, to reuse whatever day of the week the current list is already on.)`
     );
     return;
   }
@@ -184,35 +184,53 @@ async function handleNewlist(ctx) {
   // a bare !in - see store.js's addEntry doc comment). No
   // MAX_NAMES_PER_COMMAND cap, matching !in's own no-cap-for-admins
   // policy, since !newlist is already admin-only.
-  if (namesText) {
-    let names = namesText.split(',').map((n) => n.trim()).filter(Boolean);
-    // "regular players" (see REGULAR_PLAYERS_TOKEN/expandRegularPlayersToken in
-    // lib/helpers.js, and !regulars below for how that roster is set) lets
-    // an admin pre-populate the brand new list with the group's whole
-    // saved roster instead of typing everyone out, e.g. "!newlist 20/08
-    // with regular players" or "!newlist 20/08 with regular players, Extra
-    // Guest" - a no-op when the phrase isn't present.
-    const regularPlayersExpansion = expandRegularPlayersToken(names, groupId);
-    names = regularPlayersExpansion.names;
+  //
+  // The saved regulars roster (see !regulars) is ALSO always merged in
+  // here, every time - not just when "with regular players" is typed -
+  // and always opted straight into the tournament (wantsTournament: true
+  // below; a no-op per addEntry's doc comment if the group's tournament
+  // isn't enabled or is already full, same as any other tournament add).
+  // Deduped against the explicit "with <names>" list (by name) so a
+  // regular who's also explicitly named isn't rejected as a duplicate of
+  // themselves - explicit names keep their own (non-tournament) treatment
+  // either way.
+  let names = namesText ? namesText.split(',').map((n) => n.trim()).filter(Boolean) : [];
+  // "regular players" (see REGULAR_PLAYERS_TOKEN/expandRegularPlayersToken in
+  // lib/helpers.js, and !regulars below for how that roster is set) still
+  // works as an explicit placeholder inside "with ..." too, e.g. to
+  // interleave regulars at a specific position alongside extra guests -
+  // harmless now that regulars are merged in automatically anyway, since
+  // the dedupe below just skips them the second time.
+  const regularPlayersExpansion = expandRegularPlayersToken(names, groupId);
+  names = regularPlayersExpansion.names;
 
-    const rejected = [];
-    if (regularPlayersExpansion.usedEmptyRegularPlayers) {
-      rejected.push(`regular players - none saved yet (see ${COMMAND_PREFIX}regulars to set them)`);
+  const rejected = [];
+  if (regularPlayersExpansion.usedEmptyRegularPlayers) {
+    rejected.push(`regular players - none saved yet (see ${COMMAND_PREFIX}regulars to set them)`);
+  }
+
+  const regulars = getRegularPlayers(groupId);
+  const regularNamesNormalized = new Set(regulars.map(normalizeName));
+  const seen = new Set(names.map(normalizeName));
+  for (const name of regulars) {
+    if (seen.has(normalizeName(name))) continue;
+    seen.add(normalizeName(name));
+    names.push(name);
+  }
+
+  for (const name of names) {
+    const modResult = checkEntry(name);
+    if (!modResult.ok) {
+      rejected.push(`${name} - ${modResult.reason}`);
+      continue;
     }
-    for (const name of names) {
-      const modResult = checkEntry(name);
-      if (!modResult.ok) {
-        rejected.push(`${name} - ${modResult.reason}`);
-        continue;
-      }
-      const result = addEntry(groupId, name, senderId, true, false);
-      if (!result.ok) {
-        rejected.push(`${name.trim()} - already on the list`);
-      }
+    const result = addEntry(groupId, name, senderId, true, false, regularNamesNormalized.has(normalizeName(name)));
+    if (!result.ok) {
+      rejected.push(`${name.trim()} - already on the list`);
     }
-    if (rejected.length) {
-      await reply(`New list started. Couldn't add:\n${rejected.join('\n')}`);
-    }
+  }
+  if (rejected.length) {
+    await reply(`New list started. Couldn't add:\n${rejected.join('\n')}`);
   }
 
   await postList();
