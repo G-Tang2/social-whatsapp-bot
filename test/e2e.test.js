@@ -977,7 +977,7 @@ test('e2e: a Gemini API failure does not crash, but still gets the same "I don\'
   assert.match(fakeSockInstance.sentMessages[0].content.text, /not capable of doing that/i);
 });
 
-test('e2e: a Gemini call that times out gets a "took too long, try again" reply, NOT the generic "not capable of doing that" one', async () => {
+test('e2e: a Gemini call that times out gets a "took too long, try again" reply pointing to !help/!admin for typed commands, NOT the generic "not capable of doing that" one', async () => {
   ai.setEnabled(GROUP_ID, true);
   setNextGeminiTimeout();
   fakeSockInstance.sentMessages.length = 0;
@@ -988,6 +988,7 @@ test('e2e: a Gemini call that times out gets a "took too long, try again" reply,
   const replyText = fakeSockInstance.sentMessages[0].content.text;
   assert.match(replyText, /took too long/i);
   assert.match(replyText, /try again/i);
+  assert.match(replyText, new RegExp(`${COMMAND_PREFIX}help`));
   assert.doesNotMatch(replyText, /not capable of doing that/i);
 });
 
