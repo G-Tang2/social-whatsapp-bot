@@ -219,19 +219,25 @@ test('interpretMessage: returns null for blank text without even calling the cli
 });
 
 test('MAPPABLE_COMMANDS: includes every single command the bot has, no exceptions - plus "none"', () => {
-  for (const cmd of ['in', 'out', 'paid', 'list', 'clear', 'clearpayments', 'newlist', 'date', 'location', 'courts', 'time', 'limit', 'allow', 'paymentlabel', 'regulars', 'tournament', 'settournament', 'tournamentlimit', 'tournamentwinners', 'undo', 'update', 'spamfilter', 'ai', 'help', 'admin', 'none']) {
+  for (const cmd of ['in', 'out', 'paid', 'list', 'clear', 'clearpayments', 'newlist', 'date', 'location', 'courts', 'time', 'limit', 'allow', 'paymentlabel', 'regulars', 'exempt', 'tournament', 'settournament', 'tournamentlimit', 'tournamentwinners', 'undo', 'update', 'spamfilter', 'ai', 'help', 'admin', 'none']) {
     assert.ok(MAPPABLE_COMMANDS.includes(cmd), `expected MAPPABLE_COMMANDS to include "${cmd}"`);
   }
   // Exact-length check too, not just "includes every expected one" - so an
   // accidental extra/duplicate entry in MAPPABLE_COMMANDS (which wouldn't
   // be caught by the loop above) still fails this test.
-  assert.equal(MAPPABLE_COMMANDS.length, 26);
+  assert.equal(MAPPABLE_COMMANDS.length, 27);
 });
 
 test('interpretMessage: "regulars" (e.g. declaring the regulars) is a valid mapped command', async () => {
   const client = fakeClient(JSON.stringify({ actions: [{ command: 'regulars', argText: 'Peter, Chris, Linda', confidence: 'high' }] }));
   const result = await interpretMessage('these people are regular players: Peter, Chris, Linda', { client });
   assert.deepEqual(result, { actions: [{ command: 'regulars', argText: 'Peter, Chris, Linda', confidence: 'high' }] });
+});
+
+test('interpretMessage: "exempt" (e.g. declaring who never has to pay) is a valid mapped command', async () => {
+  const client = fakeClient(JSON.stringify({ actions: [{ command: 'exempt', argText: 'Keith, Tu, Bao', confidence: 'high' }] }));
+  const result = await interpretMessage('exempt Keith, Tu and Bao from paying', { client });
+  assert.deepEqual(result, { actions: [{ command: 'exempt', argText: 'Keith, Tu, Bao', confidence: 'high' }] });
 });
 
 test('interpretMessage: "undo" (e.g. reversing the last change) is a valid mapped command, with no argument', async () => {

@@ -526,6 +526,28 @@ test('e2e: a non-admin @-mentioning "these are the regular players: ..." is refu
   assert.deepEqual(store.getRegularPlayers(GROUP_ID), ['UnchangedPlayer']);
 });
 
+test('e2e: an admin @-mentioning "regulars are X, Y, Z. Exempt them from paying." dispatches BOTH the real !regulars and !exempt handlers, resolving "them" back to the same names', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  store.setRegularPlayers(GROUP_ID, []);
+  store.setPaymentExempt(GROUP_ID, []);
+  setNextGeminiResponse({
+    actions: [
+      { command: 'regulars', argText: 'E2eExemptKeith, E2eExemptTu, E2eExemptBao', confidence: 'high' },
+      { command: 'exempt', argText: 'E2eExemptKeith, E2eExemptTu, E2eExemptBao', confidence: 'high' },
+    ],
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('regulars are E2eExemptKeith, E2eExemptTu and E2eExemptBao. Exempt them from paying.', {
+    from: 'admin@s.whatsapp.net',
+    type: 'notify',
+    mentions: [BOT_JID],
+  });
+
+  assert.deepEqual(store.getRegularPlayers(GROUP_ID), ['E2eExemptKeith', 'E2eExemptTu', 'E2eExemptBao']);
+  assert.deepEqual(store.getPaymentExempt(GROUP_ID), ['E2eExemptKeith', 'E2eExemptTu', 'E2eExemptBao']);
+});
+
 // --- !undo (store.js's before/after snapshot mechanism, wired in via
 // commands/index.js's dispatch wrapper - see its withUndoTracking() doc
 // comment) ---
