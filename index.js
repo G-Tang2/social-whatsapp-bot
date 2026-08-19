@@ -499,6 +499,17 @@ function messageMentionsBot(sock, msg) {
 // cases rather than sometimes staying silent.
 const AI_NOT_UNDERSTOOD_REPLY = `Sorry, I'm not capable of doing that - try again, or use ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) to see the exact commands I understand.`;
 
+// Shown instead of AI_NOT_UNDERSTOOD_REPLY specifically when
+// interpretMessage() (lib/geminiCommand.js) gave up because Gemini didn't
+// respond in time (see its own timedOut doc comment) - a genuinely
+// different situation from "not list-related"/"too uncertain to guess", so
+// it gets a genuinely different reply: this was likely a perfectly
+// understandable request, it just didn't get answered fast enough, and
+// simply trying again (the request itself, not necessarily right this
+// second) is real, actionable advice here in a way it isn't for the other
+// cases.
+const AI_TIMEOUT_REPLY = "Sorry, that took too long to process - try again.";
+
 // Shown when a command handler (typed or AI-dispatched) throws instead of
 // completing normally - a bug, a transient network failure talking to
 // WhatsApp/Gemini, whatever. Without this, the sender previously just got
@@ -528,10 +539,16 @@ const UNEXPECTED_ERROR_REPLY = "Sorry, something went wrong on my end handling t
 //    array has no action with command !== 'none' and confidence 'high':
 //    reply with the plain AI_NOT_UNDERSTOOD_REPLY above, rather than
 //    guessing, acting, or (a previous version of this feature) staying
-//    completely silent. Being @-mentioned always gets SOME reply now - the
-//    sender should never be left wondering whether the bot even saw their
-//    message, the same way an unrecognized "!command" would previously
-//    just vanish with no feedback at all.
+//    completely silent - EXCEPT when interpretMessage() gave up specifically
+//    because Gemini didn't respond in time (interpretation.timedOut - see
+//    that function's own doc comment), which gets AI_TIMEOUT_REPLY instead:
+//    a genuinely different situation ("might well have understood you, just
+//    didn't answer fast enough") deserves a genuinely different reply, not
+//    "I'm not capable of doing that" - which would wrongly suggest the
+//    request itself was the problem. Being @-mentioned always gets SOME
+//    reply now either way - the sender should never be left wondering
+//    whether the bot even saw their message, the same way an unrecognized
+//    "!command" would previously just vanish with no feedback at all.
 //  - Each action with command !== 'none' and confidence 'high' dispatches
 //    straight to the real command handler (commands/list.js or
 //    commands/admin.js/etc.), exactly as if that !command had been typed -
@@ -583,7 +600,7 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   const dispatchable = (actions || []).filter((a) => a.command !== 'none' && a.confidence === 'high');
 
   if (!dispatchable.length) {
-    await reply(AI_NOT_UNDERSTOOD_REPLY);
+    await reply(interpretation && interpretation.timedOut ? AI_TIMEOUT_REPLY : AI_NOT_UNDERSTOOD_REPLY);
     return;
   }
 

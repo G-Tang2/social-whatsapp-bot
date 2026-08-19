@@ -789,12 +789,17 @@ current state. Every group starts off - each one opts in individually.
   or use `!help`/`!admin`..." rather than showing a guessed `!command` or
   acting on one.
 - **Always replies to an @-mention - never silent, never a swallowed
-  error.** Every case that doesn't end in a dispatched command (low
-  confidence, not list-related, or the Gemini API call itself failing/
-  timing out/returning something unparseable) gets that same "I'm not
-  capable of doing that" reply. A failure is still logged to the console for the
-  operator, but the sender in the group always hears back rather than
-  being left wondering whether the bot even saw their message.
+  error.** Every case that doesn't end in a dispatched command gets some
+  reply, never silence - low confidence, not list-related, or the Gemini
+  API call itself failing/returning something unparseable all get that
+  same "I'm not capable of doing that" reply, but a call that specifically
+  took too long to respond gets its own, more accurate "Sorry, that took
+  too long to process - try again." instead - the request may well have
+  been perfectly understandable, it just didn't get answered in time, so
+  "I'm not capable of doing that" would be misleading there. A failure is
+  still logged to the console for the operator either way, but the sender
+  in the group always hears back rather than being left wondering whether
+  the bot even saw their message.
 
 See `lib/geminiCommand.js` for the actual prompt/schema if you want to
 tune its behavior, and `GEMINI_MODEL` in `.env.example` if you want to use
