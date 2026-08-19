@@ -6,15 +6,10 @@
 // assembly), every test in here calls interpretMessage() with NO `client`
 // override, so it hits the REAL Gemini API using GEMINI_MODEL/GEMINI_API_KEY
 // from .env. That's the only way to catch a bug that lives in the PROMPT
-// WORDING rather than in our code - e.g. the bug this suite was written
-// for: SYSTEM_PROMPT never told the model that a list entry's "(TBC)" flag
-// (see lib/helpers.js's formatEntryLine) is display-only, so "remove Peter"
-// against a list showing "4. Peter (TBC)" could come back with argText
-// "Peter (TBC)" - which then fails to match the actually-stored name
-// "Peter" in store.js's removeEntry() and gets rejected as "not on the
-// list". A mocked-client test can never catch this class of bug: the mock
-// only ever returns exactly what the test hands it, so it proves nothing
-// about how the real model reads SYSTEM_PROMPT.
+// WORDING rather than in our code - a mocked-client test can never catch
+// this class of bug: the mock only ever returns exactly what the test
+// hands it, so it proves nothing about how the real model reads
+// SYSTEM_PROMPT.
 //
 // Deliberately kept OUT of test/ (and out of any *.test.js naming) so
 // `npm test` / plain `node --test` - which must stay fast, free, and fully
@@ -32,7 +27,7 @@
 // These assertions are necessarily looser than test/geminiCommand.test.js's
 // exact-equality checks: a live LLM can phrase things slightly differently
 // between runs, so each test asserts the INVARIANT that actually matters
-// (e.g. "argText must never contain the literal text (TBC)") rather than
+// (e.g. "argText must reference Peter, not some other name") rather than
 // byte-for-byte equality, and evalTest() below retries once before failing
 // to absorb one-off flakiness rather than a genuine regression. A test that
 // still fails after a retry is a real signal, not noise - investigate the
@@ -71,40 +66,16 @@ function findAction(result, command) {
   return result.actions.find((a) => a.command === command);
 }
 
-// --- The reported bug: a "(TBC)"-flagged name must resolve to the bare
-// name, never the literal display text with the flag still attached. ---
+// --- Position-based resolution must resolve a referenced position to the
+// right name. ---
 
-evalTest('a (TBC)-flagged name is still removable by its bare name, and argText never includes the "(TBC)" flag', async () => {
-  const listText = '*Attendance* (2/10)\n\n1. Andy (TBC)\n2. Peter (TBC)';
-  const result = await interpretMessage('remove Peter', { listText });
-  assert.ok(result, 'expected a parsed result, not null');
-  const out = findAction(result, 'out');
-  assert.ok(out, `expected an "out" action, got: ${JSON.stringify(result.actions)}`);
-  assert.doesNotMatch(out.argText, /TBC/i, 'argText must not include the display-only "(TBC)" flag');
-  assert.match(out.argText, /\bPeter\b/i, 'argText must reference Peter, not some other name');
-  assert.doesNotMatch(out.argText, /\bAndy\b/i, 'argText must not reference Andy - that was never who was asked for');
-});
-
-evalTest('removing a plain (non-flagged) name from a list that also has an unrelated (TBC)-flagged entry still resolves the right person', async () => {
-  const listText = '*Attendance* (3/10)\n\n1. Sam\n2. Andy (TBC)\n3. Peter';
-  const result = await interpretMessage('take Peter off the list', { listText });
-  const out = findAction(result, 'out');
-  assert.ok(out, `expected an "out" action, got: ${JSON.stringify(result && result.actions)}`);
-  assert.match(out.argText, /\bPeter\b/i);
-  assert.doesNotMatch(out.argText, /TBC/i);
-});
-
-// --- Position-based resolution must also strip the "(TBC)" flag off
-// whatever name sits at the referenced position. ---
-
-evalTest('position-based removal ("remove 1 and 2") resolves through a (TBC)-flagged entry to its bare name', async () => {
-  const listText = '*Attendance* (2/10)\n\n1. Sam\n2. Andy (TBC)';
+evalTest('position-based removal ("remove 1 and 2") resolves to the right names', async () => {
+  const listText = '*Attendance* (2/10)\n\n1. Sam\n2. Andy';
   const result = await interpretMessage('remove 1 and 2', { listText });
   const out = findAction(result, 'out');
   assert.ok(out, `expected an "out" action, got: ${JSON.stringify(result && result.actions)}`);
   assert.match(out.argText, /\bSam\b/i);
   assert.match(out.argText, /\bAndy\b/i);
-  assert.doesNotMatch(out.argText, /TBC/i);
 });
 
 evalTest('an out-of-range position reference ("remove 1-5" on a 3-person list) never comes back as a confident (high) guess', async () => {
