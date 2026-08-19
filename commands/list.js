@@ -33,7 +33,7 @@ const {
 // Bare-self resolution against the payment-due list, shared by handleIn/
 // handleOut below when a leading "paid" keyword is present but no
 // explicit name was given (e.g. "!in paid", not "!in paid Alex"). Matches
-// by WhatsApp ID (addedBy), not display name, same reasoning as every
+// by WhatsApp ID (addedBy) FIRST, not display name, same reasoning as every
 // other bare-self lookup in this file: your current push name doesn't
 // always match whatever name ended up on a list - and here specifically,
 // it doesn't always match whatever name ended up on the SEPARATE
@@ -55,13 +55,30 @@ const {
 // a single go. Returns { names } on a clean match, or { noEntry: true } /
 // { ambiguous: [...] } otherwise - the same three shapes handlePaid's own
 // bare branch resolves to.
-function resolveOwnDue(groupId, senderId) {
+//
+// If the ID match comes up empty - e.g. the due entry was carried over
+// from a cycle recorded under a different WhatsApp identity (linked
+// device, number change) or was typed in for you by someone else (which
+// sets `self: false`, per store.js's addEntry/applyListUpdate) - falls
+// back to a plain text match against the sender's current push name
+// (`senderName`), exactly like an explicit "!paid <name>" would (see
+// markPaid()'s normalizeName comparison in store.js). Not restricted to
+// `self !== false` here: this is name-driven, not ID-driven, so it's no
+// more permissive than just typing your own name explicitly already is -
+// see handlePaid's doc comment ("anyone can mark any name paid").
+function resolveOwnDue(groupId, senderId, senderName) {
   const due = getCurrentEvent(groupId).duePayments || [];
   const own = due.filter((e) => e.addedBy === senderId && e.self !== false);
-  if (own.length === 0) return { noEntry: true };
-  const uniqueNames = [...new Set(own.map((e) => normalizeName(e.name)))];
-  if (uniqueNames.length > 1) return { ambiguous: own.map((e) => e.name) };
-  return { names: [own[0].name] };
+  if (own.length > 0) {
+    const uniqueNames = [...new Set(own.map((e) => normalizeName(e.name)))];
+    if (uniqueNames.length > 1) return { ambiguous: own.map((e) => e.name) };
+    return { names: [own[0].name] };
+  }
+  if (senderName) {
+    const byName = due.filter((e) => normalizeName(e.name) === normalizeName(senderName));
+    if (byName.length > 0) return { names: [byName[0].name] };
+  }
+  return { noEntry: true };
 }
 
 // Resolves "!in +N" (see PLUS_N_TOKEN in lib/helpers.js) into the actual
@@ -121,14 +138,14 @@ function resolveAdditiveGuestNames(groupId, senderId, senderName, guestCount) {
 // !in/!out half of the command did - "already on the list, but let me pay
 // what I owe" is a legitimate combo, so paying is attempted regardless of
 // whether the add/remove itself succeeded for a given name.
-async function runPaidIfFlagged(groupId, senderId, paidFlag, explicitNames) {
+async function runPaidIfFlagged(groupId, senderId, senderName, paidFlag, explicitNames) {
   if (!paidFlag) return { paid: [], paidRejected: [], paidAmbiguous: null };
 
   let names;
   if (explicitNames) {
     names = explicitNames;
   } else {
-    const resolved = resolveOwnDue(groupId, senderId);
+    const resolved = resolveOwnDue(groupId, senderId, senderName);
     if (resolved.noEntry) return { paid: [], paidRejected: [], paidAmbiguous: null };
     if (resolved.ambiguous) return { paid: [], paidRejected: [], paidAmbiguous: resolved.ambiguous };
     names = resolved.names;
@@ -230,7 +247,7 @@ async function handleIn(ctx) {
       (e) => e.addedBy === senderId && e.self !== false
     );
     if (own.length) {
-      const paidOutcome = await runPaidIfFlagged(groupId, senderId, paidFlag, null);
+      const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       // Only entries actually on `entries` (not the waitlist) can opt into
       // the tournament - see joinTournament()'s doc comment.
       const tournamentOutcome = await applyTournamentUpgradeIfFlagged(
@@ -371,7 +388,7 @@ async function handleIn(ctx) {
   // runPaidIfFlagged resolves the payer by identity instead - see its doc
   // comment for why that differs from just reusing `names` (which would
   // be [senderName] here).
-  const paidOutcome = await runPaidIfFlagged(groupId, senderId, paidFlag, rest ? names : null);
+  const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, rest ? names : null);
 
   if (!isCatchUp) {
     if (rejected.length) {
@@ -421,7 +438,7 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
     const event = getCurrentEvent(groupId);
     const own = event.entries.filter((e) => e.addedBy === senderId && e.self !== false);
     if (own.length === 0) {
-      const paidOutcome = await runPaidIfFlagged(groupId, senderId, paidFlag, null);
+      const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
           `You don't have an entry on the list. If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out tournament <name>.`
@@ -434,7 +451,7 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
       return { command: 'out', senderName, argText, noEntry: true, ...paidOutcome };
     }
     if (own.length > 1) {
-      const paidOutcome = await runPaidIfFlagged(groupId, senderId, paidFlag, null);
+      const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
           `You have more than one entry - say which one: ${COMMAND_PREFIX}out tournament <name>\nYours: ${own.map((e) => e.name).join(', ')}`
@@ -480,7 +497,7 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
 
   // Same independent-of-the-leave-outcome reasoning as handleIn/handleOut's
   // paid handling - see runPaidIfFlagged's doc comment.
-  const paidOutcome = await runPaidIfFlagged(groupId, senderId, paidFlag, rest ? names : null);
+  const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, rest ? names : null);
 
   if (!isCatchUp) {
     if (rejected.length) {
@@ -537,7 +554,7 @@ async function handleOut(ctx) {
       (e) => e.addedBy === senderId && e.self !== false
     );
     if (own.length === 0) {
-      const paidOutcome = await runPaidIfFlagged(groupId, senderId, paidFlag, null);
+      const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
           `You don't have an entry on the list. If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out <name>.`
@@ -550,7 +567,7 @@ async function handleOut(ctx) {
       return { command: 'out', senderName, argText, noEntry: true, ...paidOutcome };
     }
     if (own.length > 1) {
-      const paidOutcome = await runPaidIfFlagged(groupId, senderId, paidFlag, null);
+      const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
           `You have more than one entry - say which one: ${COMMAND_PREFIX}out <name>\nYours: ${own.map((e) => e.name).join(', ')}`
@@ -602,7 +619,7 @@ async function handleOut(ctx) {
 
   // Same independent-of-the-remove-outcome reasoning as handleIn's paid
   // handling - see its comment above.
-  const paidOutcome = await runPaidIfFlagged(groupId, senderId, paidFlag, rest ? names : null);
+  const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, rest ? names : null);
 
   if (!isCatchUp) {
     if (rejected.length) {
@@ -657,12 +674,12 @@ async function handlePaid(ctx) {
     // multiple entries under the SAME name aren't ambiguous anymore - only
     // different names are, since owing for two separate events is now
     // normal, not a sign something's wrong).
-    const resolved = resolveOwnDue(groupId, senderId);
+    const resolved = resolveOwnDue(groupId, senderId, senderName);
     const dueLabelForSelf = getDuePaymentsLabel(groupId);
     if (resolved.noEntry) {
       if (!isCatchUp) {
         await reply(
-          `You're not on the ${dueLabelForSelf} list. If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}paid <name>.`
+          `You're not on the payment list. If your WhatsApp name doesn't match what's on the list, mention @Snoopy with "paid <name>".`
         );
       }
       return { command: 'paid', senderName, argText, noEntry: true };
