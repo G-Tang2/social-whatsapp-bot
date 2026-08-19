@@ -38,6 +38,24 @@ function fakeClientThatThrows(message) {
   };
 }
 
+// Simulates the SDK's own per-attempt timeout (see TIMEOUT_MS/RETRY_OPTIONS
+// in lib/geminiCommand.js) - a real timed-out fetch() rejects with a
+// DOMException whose `.name` is the fetch spec's standard "AbortError", not
+// a plain Error, which is exactly what interpretMessage() checks for to
+// tell "took too long" apart from every other failure (see
+// fakeClientThatThrows above for the "every other failure" case).
+function fakeClientThatTimesOut() {
+  return {
+    models: {
+      generateContent: async () => {
+        const err = new Error('The operation was aborted');
+        err.name = 'AbortError';
+        throw err;
+      },
+    },
+  };
+}
+
 // Captures the `config` object interpretMessage() passed to
 // generateContent, so a test can assert on what WE asked the SDK for
 // (e.g. retryOptions) without needing to exercise the real SDK's actual
@@ -124,6 +142,12 @@ test('interpretMessage: returns null (not a throw) when the API call itself fail
   const client = fakeClientThatThrows('network error');
   const result = await interpretMessage('put me down', { client });
   assert.equal(result, null);
+});
+
+test('interpretMessage: returns { actions: [], timedOut: true } (not null, not a throw) when the call was aborted for taking too long, so callers can tell this apart from every other failure', async () => {
+  const client = fakeClientThatTimesOut();
+  const result = await interpretMessage('put me down', { client });
+  assert.deepEqual(result, { actions: [], timedOut: true });
 });
 
 test('interpretMessage: asks the SDK to retry transient failures (retryOptions.attempts > 1) rather than giving up on the first hiccup', async () => {
