@@ -233,14 +233,14 @@
 // parseListSections()) but isn't a real command and doesn't @-mention the
 // bot at all would otherwise be silently ignored - an understandable
 // mistake (it reads like editing a shared document and sending it back),
-// but nothing actually gets recorded. The bot replies with a heads-up and
-// points to !in/!out/!paid instead of !update - !update is admin-only and
-// bulk-replaces the whole roster, but most "I edited the list by hand"
-// mistakes are just someone trying to add/remove themselves or mark
-// themselves paid, which the everyday self-service commands already do
-// directly, open to everyone. Always a live ('notify') message only, and
-// only when the message doesn't @-mention the bot at all - a message that
-// DOES mention the bot is already handled by the branches above instead.
+// but nothing actually gets recorded. The bot replies with a short heads-up
+// pointing them to @-mention it instead, rather than naming !in/!out/!paid
+// explicitly - most "I edited the list by hand" mistakes are really just
+// someone trying to add/remove themselves or mark themselves paid, and an
+// @-mention lets them say that directly instead of picking the right
+// command themselves. Always a live ('notify') message only, and only when
+// the message doesn't @-mention the bot at all - a message that DOES
+// mention the bot is already handled by the branches above instead.
 //
 // "Last seen" status heartbeat: separate from all of the above, the bot
 // also keeps its own WhatsApp profile About text updated with the current
@@ -880,9 +880,7 @@ async function handleMessage(sock, msg, upsertType) {
       // "Only a group admin can..." refusal for something they could have
       // just done themselves with !in/!out/!paid.
       await reply(
-        `Looks like you pasted an edited copy of the list - that doesn't update anything on its own, so none of those changes were recorded. To add, remove, or mark yourself (or someone else) paid, use ${COMMAND_PREFIX}in, ${COMMAND_PREFIX}out, or ${COMMAND_PREFIX}paid instead`
-          + (ai.isEnabled(groupId) ? ' - or just tell me what you want, e.g. "@Snoopy add me"' : '')
-          + ` (see ${COMMAND_PREFIX}help for details).`
+        'Looks like you edited the list by hand - that doesn\'t actually update anything, so nothing was recorded! Just mention me with what you\'d like instead, e.g. "@Snoopy add me".'
       );
     }
     return;

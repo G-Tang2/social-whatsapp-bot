@@ -839,7 +839,7 @@ test('e2e: a message that does not @-mention the bot never triggers AI interpret
   assert.equal(fakeSockInstance.sentMessages.length, 0);
 });
 
-test('e2e: pasting an edited copy of the list as plain chat (no !update, no @-mention) is not silently ignored - the bot explains nothing was recorded and points to !in/!out/!paid, NOT !update, and mentions @-mentioning too when !ai is on', async () => {
+test('e2e: pasting an edited copy of the list as plain chat (no !update, no @-mention) is not silently ignored - the bot sends a short reply pointing to an @-mention, with an example, instead of naming !in/!out/!paid/!update', async () => {
   ai.setEnabled(GROUP_ID, true);
   fakeSockInstance.sentMessages.length = 0;
 
@@ -851,13 +851,13 @@ test('e2e: pasting an edited copy of the list as plain chat (no !update, no @-me
 
   assert.equal(fakeSockInstance.sentMessages.length, 1);
   const replyText = fakeSockInstance.sentMessages[0].content.text;
-  assert.match(replyText, /none of those changes were recorded/i);
-  assert.match(replyText, new RegExp(`${COMMAND_PREFIX}in.*${COMMAND_PREFIX}out.*${COMMAND_PREFIX}paid`));
-  assert.match(replyText, /@Snoopy/); // ai is on, so the @-mention option is also offered
-  assert.doesNotMatch(replyText, new RegExp(`${COMMAND_PREFIX}update`)); // never recommends !update - it's admin-only
+  assert.match(replyText, /nothing was recorded/i);
+  assert.match(replyText, /@Snoopy/); // points to an @-mention...
+  assert.match(replyText, /e\.g\./i); // ...with a worked example
+  assert.doesNotMatch(replyText, new RegExp(`${COMMAND_PREFIX}(in|out|paid|update)\\b`)); // never names a specific command
 });
 
-test('e2e: pasting an edited copy of the list as plain chat still points to !in/!out/!paid (never !update) when !ai is off for the group, and omits the @-mention option entirely', async () => {
+test('e2e: the same pasted-list reply is sent even when !ai is off for the group - it is a short static heads-up, not conditioned on whether an @-mention would actually be interpreted', async () => {
   ai.setEnabled(GROUP_ID, false);
   fakeSockInstance.sentMessages.length = 0;
 
@@ -865,11 +865,7 @@ test('e2e: pasting an edited copy of the list as plain chat still points to !in/
   await deliver(pastedEdit, { from: 'jordan@s.whatsapp.net', type: 'notify' });
 
   assert.equal(fakeSockInstance.sentMessages.length, 1);
-  const replyText = fakeSockInstance.sentMessages[0].content.text;
-  assert.match(replyText, /none of those changes were recorded/i);
-  assert.match(replyText, new RegExp(`${COMMAND_PREFIX}in.*${COMMAND_PREFIX}out.*${COMMAND_PREFIX}paid`));
-  assert.doesNotMatch(replyText, /@Snoopy/);
-  assert.doesNotMatch(replyText, new RegExp(`${COMMAND_PREFIX}update`));
+  assert.match(fakeSockInstance.sentMessages[0].content.text, /nothing was recorded/i);
 });
 
 test('e2e: an ordinary chat message that just happens to be numbered lines (not a real pasted list) triggers no reply at all', async () => {
