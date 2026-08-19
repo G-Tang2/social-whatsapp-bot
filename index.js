@@ -22,12 +22,8 @@
 //   !in [name]     - add [name] (or your own WhatsApp display name) to the list
 //                    add several at once with commas: !in Alex, Sam, Sam+1
 //   !out [name]    - remove [name] (or your own name) from the list
-//                    also accepts commas: !out Alex, Sam
-//                    If an admin added that entry, only that same admin can
-//                    remove it. Otherwise it's the person who added it, or
-//                    any current admin. An unauthorized attempt doesn't fail
-//                    silently - the entry gets moved to the bottom of the
-//                    list and tagged (TBC) for an admin to sort out.
+//                    also accepts commas: !out Alex, Sam. Anyone can remove
+//                    anyone's entry, no restriction.
 //                    Bare !in/!out/!paid (no name typed) resolve "you"
 //                    by WhatsApp ID, not display name - your WhatsApp push
 //                    name doesn't always match the name that ended up on

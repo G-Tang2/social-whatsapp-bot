@@ -57,7 +57,7 @@ test('addEntry waitlists once the limit is reached, and removal promotes the nex
   assert.equal(store.getCurrentEvent(groupId).entries.length, 1);
   assert.equal(store.getCurrentEvent(groupId).waitlist.length, 1);
 
-  const removed = store.removeEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  const removed = store.removeEntry(groupId, 'Alex');
   assert.equal(removed.ok, true);
   assert.equal(removed.promoted.length, 1);
   assert.equal(removed.promoted[0].name, 'Sam');
@@ -66,117 +66,20 @@ test('addEntry waitlists once the limit is reached, and removal promotes the nex
   assert.equal(store.getCurrentEvent(groupId).waitlist.length, 0);
 });
 
-test('removeEntry flags an unauthorized attempt as TBC (internal field name unchanged: `tbd`) instead of removing', () => {
-  const groupId = freshGroupId();
-  // Added by an admin - only a current admin (any admin) can remove it.
-  store.addEntry(groupId, 'Alex', 'admin@s.whatsapp.net', true);
-  const attempt = store.removeEntry(groupId, 'Alex', 'randomperson@s.whatsapp.net', false);
-  assert.equal(attempt.ok, false);
-  assert.equal(attempt.reason, 'not_authorized');
-  const event = store.getCurrentEvent(groupId);
-  assert.equal(event.entries.length, 1);
-  assert.equal(event.entries[0].tbd, true);
-});
-
-test('removeEntry: an entry added by a regular member can be removed by ANYONE, not just the person who added it or an admin', () => {
+test('removeEntry: anyone can remove any entry, regardless of who added it or whether they were an admin', () => {
   const groupId = freshGroupId();
   store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false); // regular member, self-added
   store.addEntry(groupId, 'Peter', 'gary@s.whatsapp.net', false); // regular member, added by Gary on Peter's behalf
+  store.addEntry(groupId, 'Sam', 'admin@s.whatsapp.net', true); // admin-added
 
-  // A totally unrelated non-admin can remove Alex's own entry.
-  const removeAlex = store.removeEntry(groupId, 'Alex', 'randomperson@s.whatsapp.net', false);
+  const removeAlex = store.removeEntry(groupId, 'Alex');
   assert.equal(removeAlex.ok, true);
-
-  // A totally unrelated non-admin can also remove the entry Gary added for Peter.
-  const removePeter = store.removeEntry(groupId, 'Peter', 'randomperson@s.whatsapp.net', false);
+  const removePeter = store.removeEntry(groupId, 'Peter');
   assert.equal(removePeter.ok, true);
+  const removeSam = store.removeEntry(groupId, 'Sam');
+  assert.equal(removeSam.ok, true);
 
   assert.equal(store.getCurrentEvent(groupId).entries.length, 0);
-});
-
-test('removeEntry: an entry added by an admin can be removed by any current admin, not just the specific admin who added it', () => {
-  const groupId = freshGroupId();
-  store.addEntry(groupId, 'Alex', 'admin1@s.whatsapp.net', true); // admin1 self-added
-  store.addEntry(groupId, 'Peter', 'admin1@s.whatsapp.net', true); // admin1 added Peter
-
-  // A DIFFERENT admin (admin2) can remove both, even though admin1 added them.
-  const removeAlex = store.removeEntry(groupId, 'Alex', 'admin2@s.whatsapp.net', true);
-  assert.equal(removeAlex.ok, true);
-  const removePeter = store.removeEntry(groupId, 'Peter', 'admin2@s.whatsapp.net', true);
-  assert.equal(removePeter.ok, true);
-
-  assert.equal(store.getCurrentEvent(groupId).entries.length, 0);
-});
-
-test('addEntry inserts a new person ABOVE a trailing (TBC) entry, not after it - flagged entries stay at the bottom', () => {
-  const groupId = freshGroupId();
-  store.addEntry(groupId, 'Alex', 'admin@s.whatsapp.net', true); // admin-added, so only an admin can remove it
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false);
-  const attempt = store.removeEntry(groupId, 'Alex', 'sam@s.whatsapp.net', false); // Sam isn't an admin, so isn't authorized
-  assert.equal(attempt.ok, false);
-  // Alex is now flagged (TBC) and moved to the bottom: [Sam, Alex(tbc)].
-  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Sam', 'Alex']);
-
-  store.addEntry(groupId, 'Jo', 'jo@s.whatsapp.net', false);
-  // Jo must land ABOVE the (TBC) entry, not after it (a plain push() would
-  // put Jo last, burying the flagged entry mid-list).
-  const names = store.getCurrentEvent(groupId).entries.map((e) => e.name);
-  assert.deepEqual(names, ['Sam', 'Jo', 'Alex']);
-  assert.equal(store.getCurrentEvent(groupId).entries[2].tbd, true);
-
-  // A second new arrival keeps landing just above the (TBC) entry too, in
-  // order - not stacking up in reverse or pushing Alex further down.
-  store.addEntry(groupId, 'Kim', 'kim@s.whatsapp.net', false);
-  assert.deepEqual(
-    store.getCurrentEvent(groupId).entries.map((e) => e.name),
-    ['Sam', 'Jo', 'Kim', 'Alex']
-  );
-});
-
-test('addEntry keeps a (TBC)-flagged waitlist entry at the bottom of the waitlist too, as more people join it', () => {
-  const groupId = freshGroupId();
-  store.setLimit(groupId, 0); // force everyone straight onto the waitlist
-  store.addEntry(groupId, 'Alex', 'admin@s.whatsapp.net', true);
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false);
-  const attempt = store.removeEntry(groupId, 'Alex', 'sam@s.whatsapp.net', false);
-  assert.equal(attempt.ok, false);
-  assert.deepEqual(store.getCurrentEvent(groupId).waitlist.map((e) => e.name), ['Sam', 'Alex']);
-
-  store.addEntry(groupId, 'Jo', 'jo@s.whatsapp.net', false);
-  assert.deepEqual(store.getCurrentEvent(groupId).waitlist.map((e) => e.name), ['Sam', 'Jo', 'Alex']);
-});
-
-test('promoteFromWaitlist (via removeEntry freeing a spot) inserts promoted people above a (TBC) entry already in the attendance list', () => {
-  const groupId = freshGroupId();
-  store.setLimit(groupId, 2);
-  store.addEntry(groupId, 'Alex', 'admin@s.whatsapp.net', true);
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Jo', 'jo@s.whatsapp.net', false); // over the limit of 2 - waitlisted
-  const attempt = store.removeEntry(groupId, 'Alex', 'sam@s.whatsapp.net', false); // unauthorized
-  assert.equal(attempt.ok, false);
-  // entries is now [Sam, Alex(tbc)] (still 2 - the unauthorized attempt didn't free a spot).
-  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Sam', 'Alex']);
-
-  // Sam leaves for real, freeing a spot - Jo should be promoted ABOVE Alex's (TBC) entry.
-  const removed = store.removeEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false);
-  assert.equal(removed.ok, true);
-  assert.deepEqual(removed.promoted.map((e) => e.name), ['Jo']);
-  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Jo', 'Alex']);
-});
-
-test('allowFromWaitlist inserts moved-up people above a (TBC) entry already on the attendance list', () => {
-  const groupId = freshGroupId();
-  store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Alex', 'admin@s.whatsapp.net', true);
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false); // waitlisted (over the limit of 1)
-  const attempt = store.removeEntry(groupId, 'Alex', 'sam@s.whatsapp.net', false); // unauthorized, flags Alex
-  assert.equal(attempt.ok, false);
-  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Alex']);
-
-  const result = store.allowFromWaitlist(groupId, 1);
-  assert.deepEqual(result.moved.map((e) => e.name), ['Sam']);
-  // Sam must land above Alex's (TBC) entry, not after it.
-  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Sam', 'Alex']);
 });
 
 test('allowFromWaitlist does NOT raise the limit, so attendance can sit over it and a later removal does not auto-promote until back under the limit', () => {
@@ -196,7 +99,7 @@ test('allowFromWaitlist does NOT raise the limit, so attendance can sit over it 
 
   // A leaves - attendance drops to 2, still AT the (unraised) limit, so D
   // should NOT be auto-promoted.
-  const removedA = store.removeEntry(groupId, 'A', 'a@s.whatsapp.net', false);
+  const removedA = store.removeEntry(groupId, 'A');
   assert.equal(removedA.ok, true);
   assert.deepEqual(removedA.promoted, []);
   assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['B', 'C']);
@@ -204,7 +107,7 @@ test('allowFromWaitlist does NOT raise the limit, so attendance can sit over it 
 
   // B also leaves - attendance drops to 1, now genuinely UNDER the limit of
   // 2, so normal auto-promotion resumes and D gets pulled in.
-  const removedB = store.removeEntry(groupId, 'B', 'b@s.whatsapp.net', false);
+  const removedB = store.removeEntry(groupId, 'B');
   assert.equal(removedB.ok, true);
   assert.deepEqual(removedB.promoted.map((e) => e.name), ['D']);
   assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['C', 'D']);
@@ -633,7 +536,7 @@ test('setDate corrects the current list\'s date in place, without touching entri
   assert.equal(after.duePayments[0].name, 'Alex');
 });
 
-test('applyListUpdate: kept names preserve their original addedBy/addedByIsAdmin/tbd metadata', () => {
+test('applyListUpdate: kept names preserve their original addedBy/addedByIsAdmin metadata', () => {
   const groupId = freshGroupId();
   store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
   store.addEntry(groupId, 'Sam', 'admin@s.whatsapp.net', true); // added by an admin, on Sam's behalf

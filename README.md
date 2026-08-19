@@ -10,7 +10,7 @@ every change.
 | Command | Who can use it | What it does |
 |---|---|---|
 | `!in [paid] [name]` | anyone, up to 8 names per command (no limit for group admins) | Adds `[name]` (or your own WhatsApp display name if omitted) to the current list. Lead with `paid` (e.g. `!in paid` or `!in paid Alex, Sam`) to also mark them paid in the same message - see "Joining/leaving and paying in one message" below |
-| `!out [paid] [name]` | see below | Removes that entry, or flags it `(TBC)` for admin review if you're not authorized to remove it. Same leading `paid` combo as `!in` |
+| `!out [paid] [name]` | anyone, up to 8 names per command (no limit for group admins) | Removes that entry - anyone can remove anyone's entry, no restriction. Same leading `paid` combo as `!in` |
 | `!list` | anyone | Posts the current list |
 | `!clear` | group admins only | Wipes the current list's entries, keeping its date/location/courts/time |
 | `!clearpayments` | group admins only | Wipes who currently owes payment, without touching the list's entries/waitlist or anything else - the mirror of `!clear` |
@@ -74,31 +74,12 @@ Linda`) are attributed to you for removal purposes (see below), but aren't
 mistaken for you - a later bare `!in`/`!out`/`!paid` from you still resolves
 to your own entry, not to Peter, Chris, or Linda.
 
-**Who can remove an entry, and what happens if you can't:** it comes down
-to who added the entry, not who's trying to remove it or who it's for. If
-a regular (non-admin) member added it - whether they signed themselves up
-or signed someone else up (e.g. `!in Peter`) - ANYONE can remove it with
-`!out`, no restriction at all. If a group admin added it - whether they
-signed themselves up or someone else up - only a current group admin can
-remove it (any admin, not necessarily the same one who added it). If you
-try `!out` on an admin-added entry and you're not an admin, the bot
-doesn't just refuse - it moves that person's entry to the bottom of the
-list and tags it `(TBC)`, so the group can see at a glance that removal is
-pending an admin's say-so. An authorized removal still removes a
-`(TBC)`-tagged entry outright. The same rule and the same `(TBC)`
-treatment apply to the waitlist, not just the main list. `!clear` is
-unaffected by any of this - an admin can always wipe the whole list (and
-its waitlist). (`!paid` is different again - anyone can mark anyone paid,
-admin-added or not; see "Tracking who owes payment" below.)
-
-**`(TBC)` entries always stay at the bottom of whichever list they're on**
-(Attendance or Waitlist), even as other people join afterward - `!in`,
-waitlist auto-promotion, and admin `!allow` all insert new/promoted people
-just above any `(TBC)`-tagged entries rather than after them, so a flagged
-entry never gets buried mid-list by later activity. The one exception is
-`!update` (see "Bulk-editing the roster" below): since that lets an admin
-explicitly retype the whole list, whatever position they put a name in -
-`(TBC)` or not - is exactly where it lands.
+**Who can remove an entry:** anyone can remove any entry with `!out`, no
+restriction at all - it doesn't matter who added it or whether they're an
+admin. `!clear` still works the same way it always did - an admin can
+wipe the whole list (and its waitlist). (`!paid` is different again -
+anyone can mark anyone paid, admin-added or not; see "Tracking who owes
+payment" below.)
 
 **Adding/removing multiple people at once:** both `!in` and `!out`
 accept a comma-separated list, e.g. `!in Alex, Sam, Sam+1` adds all three
@@ -452,9 +433,9 @@ own first line, followed by the pasted (edited) text underneath, e.g.:
 
 The bot re-reads just the three name lists from that text and reconciles
 them against the current roster: a name still there keeps everything about
-its original entry (who added it, whether they were an admin at the time,
-and its `(TBC)` status) even if it moved to a different section or a
-different position in the list - moving a name from `*Waitlist*` into
+its original entry (who added it, whether they were an admin at the time)
+even if it moved to a different section or a different position in the
+list - moving a name from `*Waitlist*` into
 `*Attendance*` this way genuinely promotes them, same as if a spot had
 freed up normally. The bold `*13th Aug Thu*`/`*No date*`-style group
 headers inside the payment section ARE read and applied to every name
