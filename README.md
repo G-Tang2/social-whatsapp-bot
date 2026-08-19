@@ -575,11 +575,11 @@ actual commands or a genuine @-mention - a bare paste like that would
 otherwise be silently ignored, leaving you thinking your change went
 through when nothing was recorded. Whenever a plain message (no `!update`,
 no @-mention) has a recognizable `*Attendance*`/`*Waitlist*`/payment-section
-shape, the bot replies explaining that and gives you the exact message to
-send instead, built from your own text so there's nothing to retype: an
-@-mention (`@Snoopy update the list to: ...`) if the group has `!ai` turned
-on, or `!update` typed in front of it otherwise (admins only, same as
-running `!update` normally).
+shape, the bot sends a short reply pointing you to @-mention it instead -
+most hand-edits like this are really just someone trying to add/remove
+themselves or mark themselves paid, and mentioning it directly lets it
+figure out which of those you meant, rather than you having to pick the
+right command yourself.
 
 ## Undoing the last change
 
