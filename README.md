@@ -567,6 +567,20 @@ A few things worth knowing:
 - If nothing in the pasted text actually differs from the current roster,
   the bot says so and doesn't repost the list again for no reason.
 
+**If you paste an edited copy of the list without `!update` or an @-mention,
+nothing happens on its own - and the bot tells you so.** It's an easy
+mistake: copying the list, adding/removing your name by hand, and sending
+it back feels like editing a shared document, but the bot only reacts to
+actual commands or a genuine @-mention - a bare paste like that would
+otherwise be silently ignored, leaving you thinking your change went
+through when nothing was recorded. Whenever a plain message (no `!update`,
+no @-mention) has a recognizable `*Attendance*`/`*Waitlist*`/payment-section
+shape, the bot replies explaining that and gives you the exact message to
+send instead, built from your own text so there's nothing to retype: an
+@-mention (`@Snoopy update the list to: ...`) if the group has `!ai` turned
+on, or `!update` typed in front of it otherwise (admins only, same as
+running `!update` normally).
+
 ## Undoing the last change
 
 A group admin can run `!undo` to reverse the single most recent change made

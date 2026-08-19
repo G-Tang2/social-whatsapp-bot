@@ -227,6 +227,22 @@
 // comment, lib/config.js, and the README's "Natural-language commands"
 // section.
 //
+// Pasted-list safety net (also separate from everything above): a plain
+// chat message that looks like an edited copy of the list (a recognizable
+// *Attendance*/*Waitlist*/payment-section shape - see lib/listParser.js's
+// parseListSections()) but ISN'T a real !update command and doesn't
+// @-mention the bot at all would otherwise be silently ignored - an
+// understandable mistake (it reads like editing a shared document and
+// sending it back), but nothing actually gets recorded. The bot replies
+// with a heads-up plus the exact message to send instead (built from their
+// own text, no retyping needed): "!update" followed by the paste if !ai is
+// off for the group (only admins can actually run it, same as always), or
+// an @-mention of the bot with it if !ai is on (handleAiMention above
+// already recognizes this same pasted-list shape and reroutes it to
+// !update). Always a live ('notify') message only, and only when the
+// message doesn't @-mention the bot at all - a message that DOES mention
+// the bot is already handled by the branches above instead.
+//
 // "Last seen" status heartbeat: separate from all of the above, the bot
 // also keeps its own WhatsApp profile About text updated with the current
 // date/time (e.g. "Last seen: 14 Aug 2026, 3:45 PM"), refreshed immediately
@@ -250,6 +266,7 @@ const qrcode = require('qrcode-terminal');
 
 const config = require('./lib/config');
 const { getMessageText, formatList, getMentionedJids, stripMentionTokens, normalizeJid } = require('./lib/helpers');
+const { parseListSections } = require('./lib/listParser');
 const { getRegularPlayers, getUndoableState, saveUndoSnapshot } = require('./store');
 const { isGroupAdmin } = require('./lib/adminCheck');
 const catchUpQueue = require('./lib/catchUpQueue');
@@ -844,6 +861,28 @@ async function handleMessage(sock, msg, upsertType) {
       // bury the signal instead of surfacing it.
       console.log(
         `[bot] Dropped an @-mention of me in ${groupId} (from ${senderId}) because ${COMMAND_PREFIX}ai is off for this group - natural-language commands only work once an admin turns it on with ${COMMAND_PREFIX}ai on.`
+      );
+    } else if (upsertType === 'notify' && !mentionsBot && parseListSections(text).sectionsFound > 0) {
+      // Someone pasted what looks like an edited copy of the list -
+      // recognizable *Attendance*/*Waitlist*/payment-section shape (see
+      // lib/listParser.js's parseListSections()) - as plain chat: no
+      // "!update" prefix, no @-mention of the bot at all. An understandable
+      // mistake (it reads like editing a shared document and sending it
+      // back), but the bot never reacts to plain chat, however list-shaped -
+      // without this, the message is silently ignored and whoever sent it
+      // has no way to tell their edits weren't recorded. Give them a
+      // concrete, actually-working next step instead of leaving them to
+      // guess: the exact message to send, built from their own text so they
+      // don't have to retype anything. Deliberately NOT gated on the
+      // sender's own admin status - !update itself already enforces that
+      // (see commands/admin.js's handleUpdate), so a non-admin gets that
+      // same "Only a group admin can..." refusal from actually trying it,
+      // which is more useful than a guess here about who's allowed to.
+      const recommended = ai.isEnabled(groupId)
+        ? `@Snoopy update the list to:\n${text}`
+        : `${COMMAND_PREFIX}update\n${text}`;
+      await reply(
+        `Looks like you pasted an edited copy of the list - that doesn't update anything on its own, so none of those changes were recorded. To apply them, send:\n\n${recommended}`
       );
     }
     return;
