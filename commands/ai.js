@@ -3,9 +3,8 @@
 // THIS group (see lib/geminiCommand.js for what that actually does, and
 // index.js for how a message gets routed there - only live messages that
 // @-mention the bot are ever considered). Modeled on commands/spamfilter.js
-// (same "always replies" on/off-toggle shape and, now, the same "on by
-// default" behavior) - except the default only actually takes effect when
-// GEMINI_API_KEY is configured at all; see ai.js's file comment for why.
+// (same "always replies" on/off-toggle shape), but OFF by default rather
+// than on - see ai.js's file comment for why.
 
 const ai = require('../ai');
 const { isGroupAdmin } = require('../lib/adminCheck');
@@ -19,7 +18,7 @@ async function handleAi(ctx) {
     const enabled = ai.isEnabled(groupId);
     await reply(
       enabled
-        ? `Natural-language commands are *ON* for this group - @-mention me with a plain request (e.g. "@Snoopy put me down", or an admin saying "@Snoopy clear the list") and I'll try to work out what you meant.\nTo turn it off (admins only): ${COMMAND_PREFIX}ai off`
+        ? `Natural-language commands are *ON* for this group - @-mention me with a plain request (e.g. "@Snoopy put me down", or an admin saying "@Snoopy clear the list") and I'll try to work out which command you meant, including admin ones (admin-only requests still need you to actually be an admin).\nTo turn it off (admins only): ${COMMAND_PREFIX}ai off`
         : `Natural-language commands are *OFF* for this group.\nTo turn it on (admins only): ${COMMAND_PREFIX}ai on`
     );
     return;
@@ -38,7 +37,9 @@ async function handleAi(ctx) {
     // can fix), so failing loudly here beats every future @-mention just
     // quietly doing nothing with no explanation.
     if (!GEMINI_API_KEY) {
-      await reply(`Can't turn this on yet - ask whoever set up Snoopy to finish setting up natural-language commands, then try ${COMMAND_PREFIX}ai on again.`);
+      await reply(
+        `Can't turn this on yet - whoever set up this bot still needs to finish setting up this feature.`
+      );
       return;
     }
     if (ai.isEnabled(groupId)) {
@@ -47,7 +48,7 @@ async function handleAi(ctx) {
     }
     ai.setEnabled(groupId, true);
     await reply(
-      `Natural-language commands turned *on* for this group. @-mention me with a plain request (e.g. "@Snoopy put me down for Saturday") and I'll try to work out what you meant.`
+      `Natural-language commands turned *on* for this group. @-mention me with a plain request (e.g. "@Snoopy put me down for Saturday") and I'll try to work out which command you meant - including admin ones like ${COMMAND_PREFIX}clear or ${COMMAND_PREFIX}limit for admins.`
     );
     return;
   }

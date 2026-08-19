@@ -8,8 +8,8 @@ const { COMMAND_PREFIX } = require('../lib/config');
 
 async function handleSpamfilter(ctx) {
   const { sock, groupId, senderId, argText, reply } = ctx;
-  // Same "always replies" exception as !inactivity, for the same
-  // reason - on/off is a state flip with no list to re-post as proof.
+  // Always replies, even on success - on/off is a state flip with no
+  // list to re-post as proof.
   const normalizedArg = (argText || '').trim().toLowerCase();
 
   if (!normalizedArg) {

@@ -49,8 +49,8 @@ function createFakeSock({ admins = [], participantIds = [], botJid = 'bot:7@s.wh
       })),
     }),
     // Lets a test add a participant (e.g. simulating someone joining)
-    // after the sock was created, so !inactivity-on-style group-metadata
-    // fetches pick them up.
+    // after the sock was created, so later group-metadata fetches pick
+    // them up.
     _addParticipant(id, isAdmin = false) {
       if (!allParticipantIds.includes(id)) allParticipantIds.push(id);
       if (isAdmin && !admins.includes(id)) admins.push(id);

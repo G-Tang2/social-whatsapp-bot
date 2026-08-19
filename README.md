@@ -9,8 +9,8 @@ every change.
 
 | Command | Who can use it | What it does |
 |---|---|---|
-| `!in [paid] [name]` | anyone, up to 8 names per command (no limit for group admins) | Adds `[name]` (or your own WhatsApp display name if omitted) to the current list. Lead with `paid` (e.g. `!in paid` or `!in paid Alex, Sam`) to also mark them paid in the same message - see "Joining/leaving and paying in one message" below |
-| `!out [paid] [name]` | see below | Removes that entry, or flags it `(TBC)` for admin review if you're not authorized to remove it. Same leading `paid` combo as `!in` |
+| `!in [paid] [tournament] [name]` | anyone, up to 8 names per command (no limit for group admins) | Adds `[name]` (or your own WhatsApp display name if omitted) to the current list. Lead with `paid` (e.g. `!in paid` or `!in paid Alex, Sam`) to also mark them paid in the same message - see "Joining/leaving and paying in one message" below. Lead with `tournament` (either order alongside `paid`) to also opt into the group's tournament, if it's on - see "Tournament" below |
+| `!out [paid] [name]` | see below | Removes that entry, or flags it `(TBC)` for admin review if you're not authorized to remove it. Same leading `paid` combo as `!in`. Lead with `tournament` instead (e.g. `!out tournament` or `!out tournament Garvin`) to move that entry to social only, WITHOUT removing them from the list at all - see "Tournament" below |
 | `!list` | anyone | Posts the current list |
 | `!clear` | group admins only | Wipes the current list's entries, keeping its date/location/courts/time |
 | `!clearpayments` | group admins only | Wipes who currently owes payment, without touching the list's entries/waitlist or anything else - the mirror of `!clear` |
@@ -25,20 +25,22 @@ every change.
 | `!paymentlabel [text]` | viewing: anyone; changing: group admins only | Sets the payment-due section's header (e.g. `!paymentlabel $20 please`). With no text, shows the current header without changing it |
 | `!regulars [name1, name2, ...]` | viewing: anyone; changing: group admins only | Manages a saved roster of "regular players" (see "Regular players" below), reusable later via the word `regular players` in place of names in `!in`/`!newlist`. A plain name list *replaces* the whole roster; `!regulars add <names>`/`!regulars remove <names>` tweak it instead; `!regulars clear` empties it. With no text, shows the current roster without changing it |
 | `!exempt [name1, name2, ...]` | viewing: anyone; changing: group admins only | Manages a saved roster of names who never need to pay (see "Tracking who owes payment" below) - the organizer, a sponsor, a coach, whoever. Same `add`/`remove`/`clear`/replace shape as `!regulars`. With no text, shows the current roster without changing it |
-| `!inactivity [on\|off]` | viewing: anyone; changing: group admins only | Turns inactivity reminders (see "Reminding inactive members" below) on or off for *this* group. Off by default everywhere. With no argument, shows the current on/off state without changing it |
-| `!stale` | group admins only | Lists who's currently been warned for inactivity, how long ago, and who's overdue for manual removal (see "Reminding inactive members" below) |
+| `!settournament [on\|off\|rules <text>]` | viewing: anyone; changing: group admins only | Turns the tournament sub-feature (see "Tournament" below) on or off for *this* group, and sets the rules text `!tournament` (below) shows. On by default everywhere. With no argument, shows who's currently opted in instead of changing anything. `!settournament rules <text>` sets the rules text (e.g. `!settournament rules Best of 3, single elimination`); `!settournament rules` with no text shows the current rules |
+| `!tournament` | anyone | Shows the tournament rules text set via `!settournament rules <text>` (see "Tournament" below) - does not show who's opted in (that's `!settournament`) |
+| `!tournamentlimit [number]` | viewing: anyone; changing: group admins only | Caps how many people can be opted into the tournament - separate from the main `!limit`. With no number, shows the current tournament limit without changing it. `!tournamentlimit off` removes the cap |
+| `!tournamentwinners [Name1, Name2]` | viewing: anyone; changing: group admins only | Sets the two-name "Congrats to Name1 and Name2 for winning last week's tournament" banner shown above the list while the tournament is on. With no text, shows the currently set winners without changing them |
 | `!spamfilter [on\|off]` | viewing: anyone; changing: group admins only | Turns auto-deletion of stock/crypto spam (see "Spam filtering" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
-| `!ai [on\|off]` | viewing: anyone; changing: group admins only | Turns natural-language command interpretation (see "Natural-language commands" below) on or off for *this* group. ON by default everywhere once `GEMINI_API_KEY` is configured (off everywhere until then). With no argument, shows the current on/off state without changing it |
+| `!ai [on\|off]` | viewing: anyone; changing: group admins only | Turns natural-language command interpretation (see "Natural-language commands" below) on or off for *this* group. OFF by default everywhere, and requires `GEMINI_API_KEY` to be configured. With no argument, shows the current on/off state without changing it |
 | `!update <paste the list, edited>` | group admins only | Bulk-edits Attendance/Waitlist/Payment by re-reading a copy-pasted, hand-edited list (see "Bulk-editing the roster" below) |
 | `!undo` | group admins only | Reverses the single most recent change made in the group, whatever command caused it (see "Undoing the last change" below) |
 | `!help` | anyone | Shows help for the everyday commands (`!in`, `!out`, `!list`, `!paid`) |
-| `!tips` | anyone | Tips and caveats for the everyday commands (comma lists, `+N` guests, and more) - split out of `!help` so it stays a quick reference |
+| `!tips` | anyone | Tips and caveats for the everyday commands (comma lists, `+N` guests, tournament opt-in, and more) - split out of `!help` so it stays a quick reference |
 | `!admin` | group admins only | Shows help for the admin-only commands |
-| `!admintips` | group admins only | Tips and caveats for the admin commands (`!update`'s header block, and more) - split out of `!admin` the same way |
+| `!admintips` | group admins only | Tips and caveats for the admin commands (`!update`'s header block, `!settournament`, and more) - split out of `!admin` the same way |
 
 **Quiet on success, vocal on denial:** for the admin-gated commands
 (`!clear`, `!clearpayments`, `!newlist`, `!location`, `!courts`, `!time`,
-`!paymentlabel`, `!limit`, `!allow`), if you're
+`!paymentlabel`, `!limit`, `!allow`, `!tournamentlimit`), if you're
 authorized the bot doesn't send a separate "done!" reply - it just makes
 the change and posts the updated list, which is proof enough. A reply only
 shows up when you're *not* authorized to do what you asked (e.g. "Only a
@@ -122,8 +124,8 @@ shorthand for yourself-and-2-more, not as three named people, and if you
 DO want to name the friends individually just list them normally instead
 (e.g. `!in Alex, Peter, Chris`).
 
-**Regular players:** save a group's regulars once with `!regulars Harry, Bonny,
-Ron` (admins only to change; anyone can run bare `!regulars` to see the
+**Regular players:** save a group's regulars once with `!regulars Peter, Chris,
+Linda` (admins only to change; anyone can run bare `!regulars` to see the
 current roster). From then on, anyone can sign the whole saved roster up
 by typing the words `regular players` in place of names - `!in regular
 players` adds them all in one command, and it can combine with an
@@ -159,9 +161,12 @@ still works exactly as before.
 
 **Starting a new dated list:** an admin runs `!newlist 20/08 EBC | 13-18 |
 8PM start` to close out the current list and start a fresh one for that
-date - handy for a recurring weekly signup. The old list isn't deleted, it's
-archived internally (there's no chat command to view past lists, but nothing
-is thrown away - see "Notes on the data" below). The date is typed as
+date - handy for a recurring weekly signup. Only the current list is ever
+kept - the old one isn't archived anywhere (see "Notes on the data" below)
+- though anyone on it who hadn't paid yet is still carried forward into the
+new list's payment-due section, same as always (see "Tracking who owes
+payment" below). If you clear a list by mistake, `!undo` (see "Undoing the
+last change" below) can still put it right back. The date is typed as
 `DD/MM` - day then month, no year (e.g. `20/08` for 20 August). The bot
 figures out the year itself: it picks the next upcoming occurrence of that
 day/month, so typing a date that's already passed this year rolls forward to
@@ -172,7 +177,7 @@ case of just wiping the current list without starting a new dated one.
 
 **Reusing the same day of the week:** type `same` instead of a `DD/MM`
 date, e.g. `!newlist same` or `!newlist same EBC | 13-18 | 8PM start with
-Harry, Bonny` - handy for a recurring weekly/biweekly game where the day
+Peter, Chris` - handy for a recurring weekly/biweekly game where the day
 never changes, and it's also what "@snoopy create a new list" (with no
 date mentioned at all) maps to via the natural-language `!ai` mention path
 (see "Natural-language commands" below). The bot works out the date itself
@@ -184,21 +189,22 @@ list never had a date set at all, there's nothing to reuse - it replies
 asking for an explicit `DD/MM` instead of guessing.
 
 **Typo'd the date, or the session moved to a different day?** `!date DD/MM`
-corrects just that one field on the *current* list - no archiving, and
-nothing else (entries, waitlist, location, courts, time, payments, limit)
-is touched. Same `DD/MM` format and "next upcoming occurrence" year
+corrects just that one field on the *current* list - it doesn't discard the
+list, and nothing else (entries, waitlist, location, courts, time,
+payments, limit) is touched. Same `DD/MM` format and "next upcoming
+occurrence" year
 inference as `!newlist`. Run bare `!date` to see the current date without
 changing it. Use this instead of `!newlist` when the date itself was wrong
 but everyone who already signed up should stay signed up - `!newlist`
-would archive the whole list and start over empty, which isn't what you
+would discard the whole list and start over empty, which isn't what you
 want for a simple correction.
 
 **Pre-populating a new list:** add `with name1, name2, ...` to the very end
 of `!newlist` (after everything else, including any `|` segments) to sign
 those people up on the brand new list in the same command, e.g. `!newlist
-20/08 EBC | 13-18 | 8PM start with Harry, Bonny, Ron` or, with no
-location/courts/time mentioned at all, just `!newlist 20/08 with Harry,
-Bonny, Ron`. Everyone listed is added in the exact order given, using the
+20/08 EBC | 13-18 | 8PM start with Peter, Chris, Linda` or, with no
+location/courts/time mentioned at all, just `!newlist 20/08 with Peter,
+Chris, Linda`. Everyone listed is added in the exact order given, using the
 same rules as `!in` (comma-separated, `Name+1`-style guest suffixes work,
 and so does the `regular players` word for the saved roster - see "Regular
 players" above, e.g. `!newlist 20/08 with regular players`) - and it still
@@ -224,7 +230,7 @@ match, so a `!newlist` that changes which courts are booked updates the
 capacity in the same step.
 
 **Changing location, courts, or time without starting a new list:** the
-`!newlist` fields are optional and only matter when you're archiving the
+`!newlist` fields are optional and only matter when you're discarding the
 old list and starting a fresh one. If you just want to update where it's
 happening, which courts, or what time, without starting a new list - the
 venue changed, the booking moved to different courts, whatever - an admin
@@ -405,8 +411,8 @@ entries/waitlist/date/location/courts/time untouched. Changed your mind?
 any other command.
 
 Some people never need to pay at all - the organizer themselves, a
-sponsor, a coach. A group admin can mark them exempt with `!exempt Harry`
-(or `!exempt Harry, Bonny` for several at once) - anyone on that saved
+sponsor, a coach. A group admin can mark them exempt with `!exempt Peter`
+(or `!exempt Peter, Chris` for several at once) - anyone on that saved
 roster is simply skipped every time `!newlist` carries the attendance list
 into payment-due, no matter how many lists they're on, so they never show
 up owing anything in the first place. Same shape as `!regulars`:
@@ -451,25 +457,30 @@ own first line, followed by the pasted (edited) text underneath, e.g.:
 The bot re-reads just the three name lists from that text and reconciles
 them against the current roster: a name still there keeps everything about
 its original entry (who added it, whether they were an admin at the time,
-its `(TBC)` status, and - for a payment-due name - the date group described
-above) even if it moved to a different section, a different date group, or
-a different position in the list - moving a name from `*Waitlist*` into
+and its `(TBC)` status) even if it moved to a different section or a
+different position in the list - moving a name from `*Waitlist*` into
 `*Attendance*` this way genuinely promotes them, same as if a spot had
-freed up normally. The `13th Aug Thu`/`No date`-style group headers inside
-the payment section are just read past, not treated as part of any name -
-so pasting the payment section back unedited (even with names shuffled
-between the printed groups, or a group's whole header line deleted) still
-keeps each name's REAL underlying date, since that's driven by the bot's
-own records, not by whichever group heading the name happened to be pasted
-back under. A brand-new name typed straight into the payment section has
-no old list to date it from, so it's added under `No date`. A name that
-appears MORE THAN ONCE in the paste (someone owing for two separate
-events, see "Tracking who owes payment" above) round-trips correctly too -
-each occurrence is matched, in order, against one of that name's real
-entries, so both keep their own individual date; pasting back fewer
+freed up normally. The bold `*13th Aug Thu*`/`*No date*`-style group
+headers inside the payment section ARE read and applied to every name
+listed under them - same "your edit is final" philosophy as the
+date/location/courts/time header block above: pasting the payment section
+back with names moved between groups (or a name typed fresh straight under
+one) actually changes that entry's date, `*No date*` clears it, and
+pasting the section back completely unedited is a no-op that leaves every
+name's existing date exactly where it was. A group header has to keep its
+bold asterisks to be recognized this way - a hand-edit that strips them
+(or a name pasted with no group header above it at all, e.g. directly
+under the payment label) is read past as plain stray text instead, leaving
+that name's existing date (if any) untouched, same as before this feature
+existed. A name that appears MORE THAN ONCE in the paste (someone owing
+for two separate events, see "Tracking who owes payment" above) round-trips
+correctly too - each occurrence is matched, in order, against one of that
+name's real entries, keeping its other metadata (who added it, etc.) while
+still picking up whichever group it's now listed under; pasting back fewer
 copies of a name than it actually has entries for clears the leftover
 one(s) (reported same as any other removal), and pasting back MORE copies
-than it has adds a fresh, no-date entry for the extra one(s).
+than it has adds a fresh entry for the extra one(s), dated from its group
+header if it has one.
 A name that's brand new gets added and attributed to whichever admin ran
 `!update` (there's no other WhatsApp identity to credit a hand-typed name
 to). A name that was on the list before but is missing from the pasted
@@ -478,6 +489,25 @@ of what it read - added/removed/moved names, plus the payment section's
 own additions/removals if that was edited too - and reposts the fresh list
 right after, so there's no guessing whether the parse matched what was
 intended.
+
+**While the tournament's on, this also works for tournament/social-only
+placement.** If the pasted `*Attendance*` block includes the `🏆
+*Tournament*`/`Social only` breakdown (see "Tournament" below) -
+which it will, automatically, if you just copied the bot's own posted list
+- moving a name between the two sections and sending it back actually
+changes their tournament status, exactly like cutting a name between
+`*Attendance*` and `*Waitlist*` promotes/demotes them. Swap Bao out for
+Garvin by moving Garvin's line up under `🏆 *Tournament*` and
+Bao's down under `Social only`, and the summary reply shows `Tournament:
+Garvin (social only → tournament), Bao (tournament → social only)`. Listing
+more names under the tournament header than `!tournamentlimit` allows caps
+it at the limit (in the order given) and queues the rest, tagged `(🏆 WL)`,
+same as the tournament filling up normally would. A `(🏆 WL)` tag already
+in the pasted text (on someone queued, under Social only) round-trips
+correctly if left alone - it's parsed back out, not treated as part of
+their name. A plain, non-tournament-formatted paste (or a group that's
+never turned the tournament on) leaves everyone's tournament status
+completely untouched, same as always.
 
 **The date/location/courts/time block above `*Attendance*` gets read too,
 if it's there.** Keep the header lines the bot itself posts above
@@ -493,9 +523,20 @@ philosophy as the roster's own overflow handling below. Drop the whole
 header block from your paste entirely (nothing above `*Attendance*` that
 looks like a date) and all four fields are left completely untouched, as
 `!update` always did before this existed - only a genuine header block
-triggers the "your edit is final" clearing behavior. The payment section's
-own header text (its custom `!paymentlabel`) is never read either way -
-use `!paymentlabel` for that.
+triggers the "your edit is final" clearing behavior.
+
+**The payment section's own header line gets read too, the same way.** Keep
+the plain (unbolded) line directly under the bold `*Payment*` header in
+your paste - the actual `!paymentlabel` text, e.g. `$16 payID:
+0413455423` - and editing it updates the payment-due header the same as
+running `!paymentlabel` would, summarized alongside everything else. Same
+"your edit is final" rule as date/location/courts/time: if your paste keeps
+the `*Payment*` line but drops the label line under it (or your paste is
+just formatList()'s own default, un-customized output, which never prints
+one to begin with), the header resets back to its default rather than
+being left alone. Leave the whole payment section out of your paste
+entirely and the header is untouched, same as any other field you don't
+mention.
 
 A few things worth knowing:
 
@@ -518,6 +559,11 @@ A few things worth knowing:
 - **A name listed twice** (e.g. accidentally left in both `*Attendance*`
   and `*Waitlist*`) keeps only its first placement - same "can't be in two
   places at once" rule the list already enforces everywhere else.
+- **Tournament/social-only placement is only touched if the pasted text
+  actually has that breakdown in it.** See the paragraph above - this
+  never silently resets everyone's tournament status just because a plain,
+  hand-typed `*Attendance*` list without the `🏆 Tournament`
+  header happened to be pasted instead.
 - If nothing in the pasted text actually differs from the current roster,
   the bot says so and doesn't repost the list again for no reason.
 
@@ -548,112 +594,177 @@ change and never overwrite the saved undo point, so checking the list in
 between doesn't cost you your one undo. If nothing has changed yet, or the
 last change was already undone, `!undo` says so rather than doing nothing
 silently. Like the other list-management commands, `!undo` is admin-only -
-given it can put back a whole cleared list or reinstate an archived one,
-it has a bigger blast radius than most commands.
+given it can put back a whole cleared list or an entire list a `!newlist`
+just discarded, it has a bigger blast radius than most commands.
 
-## Reminding inactive members
+## Tournament
 
-This is a separate feature from the signup list above - it's about general
-chat presence in the group, not list membership, and it's off by default
-for every group.
+A per-group, **on by default** sub-feature - unlike spam filtering/
+natural-language commands (opt-in, since those call an external service or
+take moderation action on someone else's message), there's no real
+downside to a group having this already available, so it starts on; an
+admin can turn it off with `!settournament off` if a group doesn't want it.
+While it's on, anyone joining (or already on) the social Attendance list
+can additionally opt into the tournament, on top of the regular social
+list - it's not a separate signup, just a flag on your existing entry.
 
-**It's a per-group setting, turned on/off live in chat - not an `.env`
-switch.** Run `!inactivity on` (group admins only) in whichever group you
-want it active in. This matters if the bot moderates more than one group
-via `ALLOWED_GROUPS`: turning it on in one group doesn't turn it on
-anywhere else, so a group that doesn't want this can just never run the
-command. Run bare `!inactivity` any time to see whether it's currently on
-or off for that group, and `!inactivity off` to turn it back off.
+There are two related commands, split by who they're for: `!settournament`
+(admins to turn the feature on/off, view who's currently opted in, and set
+the rules text) and `!tournament` (anyone, view-only - just shows whatever
+rules text an admin last set with `!settournament rules <text>`, e.g. match
+format, bracket times, or anything else worth pinning). `!tournament` isn't
+gated on the feature being on or off - rules can be posted ahead of time.
 
-Once on, the bot tracks the last time each group member sent *any*
-message - regular chat, images, stickers, voice notes, all count, not just
-bot commands. On a periodic background check (every
-`INACTIVITY_CHECK_INTERVAL_DAYS`, default 1), anyone who's gone quiet for
-`INACTIVITY_WARN_AFTER_DAYS` (default 1) gets tagged in the group with a
-one-time reminder that they'll be considered for removal if they stay
-quiet for another `INACTIVITY_REMOVE_AFTER_DAYS` (default 1). Sending any
-message - even just replying "here!" - clears the warning and resets their
-clock, exactly like the reminder promises. Those three timing settings
-live in `.env` (see `.env.example`), accept fractional values if you want
-finer control (e.g. `0.5` for 12 hours), and apply to every group that has
-the feature turned on - they're global tuning knobs, only the on/off
-switch itself is per group.
+**Opting in:** lead with the word `tournament` on `!in`, e.g. `!in
+tournament` for yourself, or `!in tournament Alex, Sam` to opt Alex and Sam
+in together (as brand new joiners, or any mix of new and existing names -
+see below). It combines with `paid` too, in either order - `!in
+tournament paid` and `!in paid tournament` both work (either flag word
+always goes before the name(s), e.g. `!in paid tournament Alex, Sam`).
 
-A few things worth knowing about how this works:
+**Moving to social only:** lead with the word `tournament` on `!out`
+instead, e.g. `!out tournament` for yourself, or `!out tournament Garvin`
+(or several names, comma-separated) for someone else - this takes them OUT
+of the tournament (or off its `(🏆 WL)` queue if they were only queued, not
+actually in) while leaving them right where they are on the social list. It
+is NOT the same as plain `!out`, which removes the entry from the list
+entirely - `!out tournament Garvin` just untags Garvin from `🏆 Tournament`
+and drops him back under `Social only`. Taking someone out of an
+actual tournament spot (not just the queue) frees one up, so the front of
+the `(🏆 WL)` queue gets promoted automatically, same as any other spot
+opening up (see below) - and it combines with `paid` too, same
+leading-keyword either-order rule as everywhere else (`!out tournament paid
+Garvin`).
 
-- **Warn-only, no auto-kick.** The bot never removes anyone itself, even
-  once someone's overdue. It just surfaces who's overdue via `!stale`
-  (group admins only) - actually removing someone from the group is a
-  manual step an admin takes from WhatsApp's own "Remove participant" UI,
-  same as always. This was a deliberate choice: getting flagged as
-  inactive and actually getting removed are different enough in
-  consequence that the second one should stay a human decision, not
-  something a script does unattended.
-- **Group admins are exempt.** They're never warned or counted as
-  candidates for removal, regardless of how long they've been quiet.
-- **No history before the bot started watching.** The bot can only track
-  activity from the moment a group ran `!inactivity on` (or the moment it
-  first sees a given member, if they join later) - there's no way to see
-  someone's message history from before that. So nobody is flagged purely
-  because the bot doesn't know their past; everyone starts with a clean
-  "just seen" baseline the moment the feature is turned on for their group.
-  Turning it off and back on later re-baselines everyone again, so time
-  spent with it off never counts against anyone.
-- **Requires `ALLOWED_GROUPS` to include the group.** The bot can only
-  track activity in groups it's actually configured to watch - see
-  "Configure the group and list name" below. `!inactivity on` still works
-  if you run it in an unconfigured group, but the periodic check never
-  reaches a group that isn't in `ALLOWED_GROUPS`, so nothing will actually
-  happen there.
-- **`!stale`** shows everyone currently warned, sorted most-overdue first,
-  tagged so it's obvious at a glance who needs a decision - and marks
-  anyone past `INACTIVITY_REMOVE_AFTER_DAYS` since their warning as
-  `OVERDUE`. It's admin-only and view-only; running it doesn't warn or
-  remove anyone by itself. If the feature is off for that group, it says so
-  instead of an empty report.
-- **Every sweep logs a one-line summary**, e.g. `[bot] Inactivity sweep for
-  1234...@g.us: 14 participant(s) tracked, 1 candidate(s) due for a
-  warning.`, printed unconditionally (not just with `DEBUG=true`) so a
-  "why didn't so-and-so get warned" question can be answered straight from
-  the logs (`pm2 logs`, or your terminal if running it directly) instead of
-  guessing - check for these lines around when a warning was expected. A
-  sweep that never logs at all for a group usually means that group isn't
-  in `ALLOWED_GROUPS`, or the bot's socket was disconnected right at that
-  tick (it just tries again on the next one).
-- **Resilient to a flaky/incomplete `groupMetadata()` response.** Each
-  sweep re-fetches the group's member list from WhatsApp to refresh
-  tracking. A fetch that comes back completely empty (0 participants,
-  which a real group never actually has) is treated as untrustworthy and
-  skipped entirely, logged as `groupMetadata() returned 0 participants -
-  skipping this cycle`. A fetch that's merely *missing some* previously-known
-  members - which has been observed transiently right after a reconnect,
-  while Baileys' own internal group-metadata cache is still catching up -
-  no longer drops them immediately either: someone missing from a single
-  snapshot is only marked as pending removal, and is actually dropped only
-  if they're still missing on the *next* sweep too. This matters because
-  the old immediate-drop behavior would silently reseed a fresh "just seen"
-  baseline for anyone wrongly dropped this way on their very next
-  appearance - quietly resetting their inactivity clock and making a
-  genuinely-long quiet period (even many hours) never actually trigger a
-  warning, with nothing wrong-looking in `!stale` to point at afterward.
+**Already on the list works too, one name or several.** Running `!in
+tournament` again with no other names upgrades your own existing entry
+instead of adding a duplicate one. The same works for multiple names at
+once: `!in tournament Alex, Sam` opts BOTH into the tournament whether
+they're brand new, already on the list, or one of each - nobody gets
+duplicated, and each name is judged independently against capacity (see
+below), so it's fine if one gets in and another gets queued. The one case
+this can't reach is someone only on the main *Waitlist* (not yet confirmed
+attendance) - they get a clear reply explaining why, and can be upgraded
+once `!allow` (or a freed-up spot) promotes them first.
+
+**Capacity is separate from the main list's.** An admin sets a cap with
+`!tournamentlimit <number>` (or `!tournamentlimit off` to remove it) -
+independent of the main `!limit`, since a tournament bracket is often
+smaller than the whole social turnout. If the tournament is full when
+someone opts in, they still join the social list as normal, but tagged
+`(🏆 WL)` and moved to the FRONT of the `Social only` block, ahead of
+everyone who never asked - that position IS the tournament waitlist queue,
+first come first served, no separate list to check. The moment a spot
+opens up - someone in the tournament leaves the list entirely via `!out`,
+or is moved to social only via `!out tournament` (see above), or an admin
+raises `!tournamentlimit` - whoever's at the front of that queue is promoted into
+`🏆 Tournament` automatically, and gets tagged in a chat message
+about it (same idea as the main list's own waitlist promotions). If the
+tournament isn't turned on at all, opting in gets an explicit reply saying
+so, since (unlike a full tournament) nothing about the posted list itself
+would otherwise explain why.
+
+**The posted list changes shape while it's on.** Instead of one flat
+numbered Attendance list, entries split into a `🏆 Tournament` block
+(numbered first, with its own `(n/limit)` count and an "Ask @Snoopy for
+details" pointer to the rules text) and a `Social only` block underneath
+(numbering continuing on from there) for everyone else on the social list,
+queued (🏆 WL) entries first. Names are never hidden - the roster stays
+fully visible and numbered exactly like the rest of the list, only the
+header text and the added pointer line change. For example:
+
+```
+🏆 *Tournament* (15/16)
+Ask @Snoopy for details
+
+1. Keith
+2. Bao
+...
+15. Han
+
+Social only
+
+16. Leo (🏆 WL)
+17. Bel
+...
+```
+
+Both headers are always shown while the tournament is on, even if a
+section is empty - a brand new list nobody's joined yet still posts both
+`🏆 Tournament` and `Social only`, each showing `(none yet)`
+underneath, rather than falling back to a plain "empty" message the way a
+non-tournament list does. Same if only one side is empty, e.g. everyone
+who's joined so far opted into the tournament - `Social only` still shows,
+with `(none yet)` underneath.
+
+Anyone can run bare `!settournament` any time to see just that breakdown on
+its own (including the current `🏆 WL` queue in order), without the rest
+of the list around it - and it explains how to turn the feature on if it's
+currently off.
+
+**Posting the rules:** an admin sets free-text rules with `!settournament
+rules <text>`, e.g. `!settournament rules Best of 3, single elimination,
+losers bracket at 1PM` - anyone can then read them back any time with bare
+`!tournament`:
+
+```
+🏆 *Tournament rules*
+
+Best of 3, single elimination, losers bracket at 1PM
+```
+
+Like `!tournamentwinners` below, it sticks around across `!newlist` until
+an admin sets it again - rules don't change just because a new cycle
+started. Before any rules are set, `!tournament` explains how to set them
+instead.
+
+**Announcing last week's winners:** `!tournamentwinners Name1, Name2` (admins
+only) sets a banner shown above the whole list while the tournament is on:
+
+```
+*Congrats to Irfan and Tu for winning last week's tournament*
+```
+
+It's always exactly two names - there's nothing to incrementally edit,
+just replace both names with the next result each time. Like
+`!tournamentlimit` and the location/courts/time/payment-header fields, it
+sticks around across `!newlist` until an admin sets it again, so it keeps
+announcing the same result until there's a new one to announce.
+
+Tournament winners don't have to pay for the social they won: setting
+`!tournamentwinners` also clears each named winner's payment debt for the
+most recent week they were charged for (i.e. whatever `!newlist` most
+recently carried their entry into `duePayments` for), if they had one. Any
+other debt they separately owe from an
+earlier missed week is left untouched - this is a one-off thank-you for
+that week's win, not blanket forgiveness. It's not retroactive either -
+running `!tournamentwinners` again later for a different week only waives
+that new week's debt, not the previous winners' again.
+
+**Turning it off doesn't forget who'd opted in** - it just hides the
+tournament breakdown (and the winners banner) from the posted list until
+an admin turns it back on, at which point everyone who'd opted in reappears
+under `🏆 Tournament` automatically. Plain `!out` removes an entry
+(tournament flag included) completely, same as always - though if that
+entry was IN the tournament, its spot is what triggers the (🏆 WL) queue's
+auto-promotion described above. To leave the tournament WITHOUT leaving the
+list, use `!out tournament` instead - see "Moving to social only" above.
 
 ## Spam filtering
 
-Another separate, per-group feature, but **ON by default** (unlike
-`!inactivity` below): the bot can automatically delete two kinds of
-message - WhatsApp group invite links, and messages that look like
-stock/crypto spam (the "make $10k/week trading Bitcoin, click this link"
-style messages that sometimes get dropped into group chats, often by a
-compromised or fake account). Every group the bot moderates gets this
-protection automatically, without an admin having to remember to turn it
-on.
+A separate, per-group feature, **ON by default**: the bot can automatically
+delete two kinds of message - WhatsApp group invite links, and messages
+that look like stock/crypto spam (the "make $10k/week trading Bitcoin,
+click this link" style messages that sometimes get dropped into group
+chats, often by a compromised or fake account). Every group the bot
+moderates gets this protection automatically, without an admin having to
+remember to turn it on.
 
 **A per-group setting, turned on/off live in chat.** Run `!spamfilter off`
 (group admins only) in a group that needs to allow something this would
 otherwise catch (e.g. its own invite link circulating), `!spamfilter on`
-to turn it back on, and bare `!spamfilter` to see the current state.
-Unlike `!inactivity`, which each group opts *into*, a group opts *out* of
-this one if it doesn't want it.
+to turn it back on, and bare `!spamfilter` to see the current state. A
+group opts *out* of this one if it doesn't want it, rather than opting in.
 
 **What counts as spam - two independent rules, either is enough on its
 own:**
@@ -707,10 +818,12 @@ English request - `@bot put me down for Saturday`, `@bot add me and 2
 friends`, `@bot take Peter and Chris off`, `@bot remove 1-3`, `@bot I
 paid`, `@bot what's the list look like`, an admin saying `@bot clear
 the list`, an admin saying `@bot create a new list for next Wednesday
-with Harry, Bonny, and Ron`, `@bot add the regular players`, an admin
-saying `@bot these people are regular players: Harry, Bonny, Ron`, an
-admin saying `@bot undo that` right after a mistake, or an admin saying
-`@bot I got extra courts 12-14` (adds those on top of whatever's already booked, rather than
+with Peter, Chris, and Linda`, `@bot add the regular players`, an admin
+saying `@bot these people are regular players: Peter, Chris, Linda`, an
+admin saying `@bot undo that` right after a mistake, `@bot sign me up for
+the tournament too`, an admin saying `@bot congrats to Irfan and Tu for
+winning the tournament`, or an admin saying `@bot I got extra courts
+12-14` (adds those on top of whatever's already booked, rather than
 replacing it - see "Adding MORE courts instead of replacing them" above) -
 gets interpreted via the
 [Gemini API](https://ai.google.dev/) and mapped to a real command, exactly
@@ -723,15 +836,23 @@ it calls an external paid API and can occasionally misread ordinary chat,
 so it's an explicit opt-in rather than a safety default every group gets
 automatically.
 
+**Just @-mentioning the bot with nothing else attached is a shortcut for
+signing yourself up.** `@bot` on its own - no request text at all - is
+treated the same as typing bare `!in`. Unlike everything else in this
+section, this doesn't need `!ai` turned on and never calls Gemini (there's
+no actual language to interpret in an empty message), so it works in every
+group regardless of the natural-language feature's on/off state.
+
 **One message can bundle several distinct requests, and all of them get
 done.** `@bot create a new list for next Sunday at Noble Park courts 1,2 at
-7pm-9pm. Cap it at 12. Add Keith, Tu and Bao` is really three separate
-requests in one message - starting a new list, capping it, and adding
-specific people to it - and each one is dispatched to its real command in
-turn (`!newlist ...`, then `!limit 12`, then `!in Keith, Tu, Bao`), in the
-order they need to happen (a brand new list has to exist before anyone can
-be added to it or its settings changed, so a `!newlist`-equivalent request
-always runs first if the message has one). Each dispatched part
+7pm-9pm. The tournament limit is 12. Add Keith, Tu and Bao to the
+tournament` is really three separate requests in one message - starting a
+new list, capping the tournament, and adding specific people to it - and
+each one is dispatched to its real command in turn (`!newlist ...`, then
+`!tournamentlimit 12`, then `!in tournament, Keith, Tu, Bao`), in the order
+they need to happen (a brand new list has to exist before anyone can be
+added to it or its tournament settings changed, so a `!newlist`-equivalent
+request always runs first if the message has one). Each dispatched part
 replies/reposts the list on its own, same as if you'd typed each command
 one after another yourself - there's no single combined reply. If part of a
 compound message is confident and another part isn't, only the confident
@@ -753,10 +874,10 @@ that exists right now).
 request given as a relative day - "next Wednesday", "this Friday",
 "tomorrow" - is resolved into the actual `DD/MM` using the real current
 date/day-of-week (in the group's configured `TIMEZONE`) as the reference
-point, so `@bot create a new list for next Wednesday with Harry, Bonny,
-Ron` both figures out the right date and pre-populates the list with
+point, so `@bot create a new list for next Wednesday with Peter, Chris,
+Linda` both figures out the right date and pre-populates the list with
 everyone named in one message - equivalent to typing `!newlist 20/08 with
-Harry, Bonny, Ron` by hand (see "Starting a new dated list" above for the
+Peter, Chris, Linda` by hand (see "Starting a new dated list" above for the
 `with ...` clause itself). If the date reference is ambiguous, it falls
 back to the same "I'm not capable of doing that" reply as any other
 uncertain request (see below) instead of guessing.
@@ -773,8 +894,8 @@ vague, is instead resolved normally as above.
 **Aware of the saved regular-players roster.** Whether the roster is set
 (and who's on it) is also included as context, so `@bot add the regular
 players` maps to `!in regular players` (uses the saved roster - see "Regular
-players" above) while `@bot these people are regular players: Harry, Bonny,
-Ron` maps to `!regulars Harry, Bonny, Ron` (redefines it) - the bot tells
+players" above) while `@bot these people are regular players: Peter, Chris,
+Linda` maps to `!regulars Peter, Chris, Linda` (redefines it) - the bot tells
 these apart rather than confusing "use the roster" with "change the
 roster". Bulk-removing or bulk-charging the whole roster via `!out`/
 `!paid` isn't supported this way (or via typed `!out`/`!paid` either) -
@@ -801,10 +922,7 @@ non-functional state.
 
 **A per-group setting, turned on/off live in chat.** `!ai on` (group
 admins only) turns it on, `!ai off` turns it off, and bare `!ai` shows the
-current state. Every group starts **on** once `GEMINI_API_KEY` is
-configured - opt a particular group out with `!ai off` if it's not wanted
-there. Until a key is configured at all, every group defaults to off
-regardless (there's nothing for it to do without one).
+current state. Every group starts off - each one opts in individually.
 
 **Deliberately narrow in scope, for safety:**
 
@@ -872,10 +990,9 @@ Everything else that arrived during the gap is intentionally ignored:
   imagine a `!newlist` or `!clear` firing minutes (or longer) later than
   the admin intended, possibly after other changes have already happened
   in between.
-- Plain chat during the gap isn't recorded as activity (for the
-  inactivity-reminders feature) and isn't checked for spam. Both of those
-  are about *when* something happened, and a message resurfacing well
-  after the fact would misrepresent that.
+- Plain chat during the gap isn't checked for spam - that's about *when*
+  something happened, and a message resurfacing well after the fact would
+  misrepresent that.
 
 This distinction comes from how WhatsApp/Baileys tag messages: a live,
 just-arrived message comes through as `'notify'`; a message the bot missed
@@ -1407,25 +1524,21 @@ set by `!location`/`!courts`/`!time`, its own `limit`/`waitlist` set by
 `!limit`/`!allow`, `duePayments` sub-list for `!paid` (each entry's
 `owedSince` field is the date of the list it was first carried over from -
 that's which date group it's shown under; see "Tracking who owes payment"
-above), and `duePaymentsLabel` set by `!paymentlabel`), and
-`history` holds everything archived by a past `!newlist`. There's no
+above), `duePaymentsLabel` set by `!paymentlabel`, and `tournamentEnabled`/
+`tournamentLimit`/`tournamentWinners`/`tournamentRules` set by
+`!settournament`/`!tournamentlimit`/`!tournamentwinners`/`!settournament
+rules` - see "Tournament" above). Only the current list is ever kept -
+`!newlist` doesn't archive the list it replaces anywhere, it's simply
+discarded (see "Starting a new dated list" above). There's no
 database to set up. Back up the
 `data/` and `auth_info/` folders occasionally if the list matters to you - a
 reinstalled/reset PC would lose both otherwise.
 
-There's a second, separate JSON file - `data/activity.json` (or alongside
-`lists.json` on the Fly volume) - for the inactivity-reminders feature (see
-"Reminding inactive members" above). It's keyed by group JID, and each
-group's entry stores whether `!inactivity` is currently on or off for that
-group plus a per-member last-seen time and warned status. It's unrelated to
-the signup list itself, and a group that's never run `!inactivity on` has
-no meaningful data in there beyond an `off` flag.
-
-There's a third JSON file, `data/spam.json`, for the spam-filtering feature
+There's a second JSON file, `data/spam.json`, for the spam-filtering feature
 (see "Spam filtering" above) - just a per-group on/off flag, no other data,
 since spam filtering doesn't need to remember anything between messages.
 
-There's a fourth JSON file, `data/catchup_queue.json`, for the "catching up
+There's a third JSON file, `data/catchup_queue.json`, for the "catching up
 after a network outage" feature (see below) - it holds whatever batch of
 `!in`/`!out`/`!paid` outcomes is currently waiting to be sent as a combined
 summary message, so a bot process restart at the wrong moment doesn't lose
@@ -1457,10 +1570,9 @@ location - titles and locations mean different things, so
 ## Code structure (for anyone maintaining a fork)
 
 `index.js` is a thin orchestrator: it owns the Baileys connection lifecycle
-and the top of the message pipeline (guards, spam filtering, activity
-tracking, catch-up gating), then looks up the right handler in a dispatch
-table instead of one giant switch statement. The actual work is split
-across two folders:
+and the top of the message pipeline (guards, spam filtering, catch-up
+gating), then looks up the right handler in a dispatch table instead of
+one giant switch statement. The actual work is split across two folders:
 
 - `lib/` - shared, non-command code: `config.js` (all `.env`-derived
   settings, in one place), `adminCheck.js` (`isGroupAdmin()`, with a
@@ -1468,22 +1580,20 @@ across two folders:
   like `formatList()`/`parseNames()`), `listParser.js` (`parseListSections()`
   - the reverse of `formatList()`, tolerantly re-reading a copy-pasted,
   edited list's name lists back out for `!update` - see "Bulk-editing the
-  roster" above), `inactivityCheck.js` (the periodic background sweep),
-  `catchUpQueue.js`/`catchUpSummary.js` (batches caught-up `!in`/`!out`/
-  `!paid` outcomes into one combined summary - see below), and
+  roster" above), `catchUpQueue.js`/`catchUpSummary.js` (batches caught-up
+  `!in`/`!out`/`!paid` outcomes into one combined summary - see below), and
   `lastSeenStatus.js` (the WhatsApp About/status heartbeat - see "Last seen
   status heartbeat" above).
 - `commands/` - one file per group of related commands (`list.js` for
   `!in`/`!out`/`!list`/`!paid`, `admin.js` for the list-management
-  commands, `inactivity.js`, `spamfilter.js`, `help.js`), plus
+  commands, `spamfilter.js`, `help.js`), plus
   `commands/index.js`, which aggregates them into the dispatch table
   the top-level `index.js` uses. Each handler takes a single `ctx` object
   (`{ sock, msg, groupId, senderId, senderName, argText, reply, postList,
   ... }`) rather than a long parameter list.
 
-`store.js`, `activity.js`, and `spam.js` (the three JSON-file-backed data
-modules) are unchanged by this split - they're already independent of
-`index.js`.
+`store.js` and `spam.js` (the JSON-file-backed data modules) are unchanged
+by this split - they're already independent of `index.js`.
 
 **Admin-status caching:** `sock.groupMetadata()` (needed to check if
 someone's a group admin) is a network call, and it used to be made fresh
@@ -1536,32 +1646,20 @@ follow this same pattern rather than sending directly, or it'll bypass the
 batching and
 spam the group like the old per-message behavior did.
 
-**Last seen heartbeat:** like the inactivity-check interval above, the
-heartbeat that keeps the bot's WhatsApp About text current lives as a single
-module-scope `setInterval` in `index.js` (not inside `start()`, for the same
-reconnect-stacking reason), reading whatever socket `start()` most recently
-assigned to `currentSock` on each tick - see `lib/lastSeenStatus.js`'s
-`updateLastSeenStatus()`, which no-ops safely if `currentSock` is briefly
-null (e.g. mid-reconnect) and catches/logs its own errors rather than
-letting a flaky `updateProfileStatus()` call reach the global
-`unhandledRejection` safety net. It's also called once directly (with the
-just-connected socket, not `currentSock`) inside the `connection === 'open'`
-branch, so the text refreshes immediately on connect instead of waiting for
-the next timer tick.
+**Last seen heartbeat:** the heartbeat that keeps the bot's WhatsApp About
+text current lives as a single module-scope `setInterval` in `index.js`
+(not inside `start()`, so a reconnect doesn't stack a duplicate timer),
+reading whatever socket `start()` most recently assigned to `currentSock`
+on each tick - see `lib/lastSeenStatus.js`'s `updateLastSeenStatus()`,
+which no-ops safely if `currentSock` is briefly null (e.g. mid-reconnect)
+and catches/logs its own errors rather than letting a flaky
+`updateProfileStatus()` call reach the global `unhandledRejection` safety
+net. It's also called once directly (with the just-connected socket, not
+`currentSock`) inside the `connection === 'open'` branch, so the text
+refreshes immediately on connect instead of waiting for the next timer
+tick.
 
-**Debounced pruning in `activity.js`:** `pruneParticipants()` doesn't drop a
-tracked participant the moment they're missing from a single
-`groupMetadata()` snapshot - it marks them `missingSince` and only actually
-deletes them if they're still missing on the *next* call too (cleared
-immediately if they reappear first). This exists specifically because a
-single metadata fetch can transiently come back incomplete (seen around
-reconnects) without throwing, and the old immediate-delete behavior would
-let `seedParticipants()` silently reseed a fresh "now" baseline for anyone
-wrongly dropped, resetting their inactivity clock with nothing visibly
-wrong afterward. See the comment above `pruneParticipants()` and
-`test/activity-spam.test.js`'s debounce tests.
-
-**Concurrency:** `store.js`/`activity.js`/`spam.js` are fully synchronous
+**Concurrency:** `store.js`/`spam.js` are fully synchronous
 (no `async`/`await` anywhere in them) and each exported function does a
 fresh read-modify-write of the JSON file in one uninterruptible block.
 Because Node runs JavaScript on a single thread, this means two commands
@@ -1573,11 +1671,10 @@ locking at the same time.
 
 **Tests:** `npm test` runs the automated test suite (Node's built-in test
 runner, `node --test` - no extra dependency to install) under `test/`:
-unit tests for `store.js`/`activity.js`/`spam.js`/`dates.js`/`lib/`
+unit tests for `store.js`/`spam.js`/`dates.js`/`lib/`
 (including `lib/catchUpSummary.js`/`lib/catchUpQueue.js` in
-`test/catchUp.test.js`, `lib/lastSeenStatus.js` in
-`test/lastSeenStatus.test.js`, and `lib/inactivityCheck.js` in
-`test/inactivityCheck.test.js`), direct handler tests for each
+`test/catchUp.test.js` and `lib/lastSeenStatus.js` in
+`test/lastSeenStatus.test.js`), direct handler tests for each
 `commands/*.js` file, and a small set of end-to-end tests that exercise
 `index.js`'s real message-handling pipeline against a mocked WhatsApp
 connection (`test/helpers/mockBaileys.js`) - covering catch-up gating and
@@ -1585,20 +1682,6 @@ batching, spam-deletion-before-dispatch, waitlist promotion tagging, and the
 last-seen heartbeat's immediate-on-connect + on-timer behavior. Worth
 running after any change, especially to `store.js` or the command dispatch
 wiring.
-
-`test/geminiCommand.test.js` covers `lib/geminiCommand.js`'s own plumbing
-(JSON parsing, schema validation, prompt assembly) against a fake Gemini
-client, so it's part of the regular `npm test` run - but it can never catch
-a bug that lives in the *prompt wording itself* (the model misreading
-`SYSTEM_PROMPT` and doing the wrong thing), since the fake client only ever
-returns exactly what each test tells it to. For that, `npm run test:eval`
-runs `test-eval/geminiCommand.eval.js` against the **real** Gemini API
-(needs a real `GEMINI_API_KEY` in `.env` - the checked-in `.env` only ships
-a blank placeholder) with realistic scenarios - e.g. a list entry flagged
-`(TBC)` must still resolve by its bare name, and `argText` must never
-include the `(TBC)` tag itself. It's opt-in and excluded from `npm test`
-on purpose (real API calls, real cost, a bit non-deterministic) - run it
-after changing `SYSTEM_PROMPT`/`COMMAND_ARG_GUIDE` in `lib/geminiCommand.js`.
 
 ## Customizing moderation
 

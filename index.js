@@ -9,7 +9,7 @@
 //
 // This file is a thin orchestrator: it owns the Baileys connection
 // lifecycle and the top of the message-handling pipeline (guards, spam
-// filtering, activity tracking, catch-up gating), then dispatches to the
+// filtering, catch-up gating), then dispatches to the
 // per-command handlers in commands/ via a lookup table (see commands/
 // index.js) instead of one giant switch statement. All the actual command
 // logic, config, and shared helpers live in commands/ and lib/ - see those
@@ -109,24 +109,12 @@
 //                    (@mention) to let them know. The limit is then
 //                    raised to match the new headcount, so it sticks as
 //                    the new normal rather than reverting.
-//   !inactivity [on|off] - admins only to change: turn inactivity
-//                    reminders (see below) on or off for THIS group. Off
-//                    by default everywhere - each group opts in
-//                    individually, so the bot can watch one group chat for
-//                    quiet members without doing the same in every other
-//                    group it's in. Run with no argument to see the
-//                    current on/off state without changing it.
-//   !stale         - admins only: list who's currently been warned for
-//                    inactivity (see below), how long ago, and whether
-//                    they're now overdue for manual removal. View-only -
-//                    doesn't remove anyone itself.
 //   !spamfilter [on|off] - admins only to change: turn auto-deletion of
 //                    stock/crypto spam (see below) on or off for THIS
-//                    group. ON by default everywhere - unlike !inactivity,
-//                    each group gets this protection automatically and
-//                    opts OUT per group instead of in. Run with no
-//                    argument to see the current on/off state without
-//                    changing it.
+//                    group. ON by default everywhere - every group gets
+//                    this protection automatically and opts OUT per group
+//                    instead of in. Run with no argument to see the
+//                    current on/off state without changing it.
 //   !ai [on|off]   - admins only to change: turn natural-language command
 //                    interpretation (see below) on or off for THIS group.
 //                    ON by default, same as !spamfilter - but only once
@@ -139,16 +127,16 @@
 //   !help          - show command help
 //
 // General rule for admin-gated commands (!clear, !newlist, !date, !location,
-// !courts, !time, !paymentlabel, !limit, !allow, !inactivity, !spamfilter,
+// !courts, !time, !paymentlabel, !limit, !allow, !spamfilter,
 // !ai): if you're authorized, the bot doesn't send a separate "done!" confirmation -
 // it just makes the change and posts the
 // updated list, which is proof enough. A reply is only sent when you're NOT
 // authorized to do what you asked, the command was malformed, or something
 // notable happened that isn't obvious from the list alone (e.g. !allow
 // couldn't fully satisfy the count you asked for), so the chat only gets
-// noisy when something actually needs your attention. !inactivity and
-// !spamfilter are a partial exception - see their own handlers in
-// commands/ for why they always reply. Getting waitlisted on !in is
+// noisy when something actually needs your attention. !spamfilter is a
+// partial exception - see its own handler in commands/ for why it always
+// replies. Getting waitlisted on !in is
 // NOT one of these notable cases - it's silent, just the posted list
 // showing the new Waitlist entry - but getting PROMOTED off the waitlist
 // (via !out, !limit, !courts, or !allow) always gets a tagged (@mention)
@@ -165,11 +153,11 @@
 // Deliberately conservative handling here: only !in, !out, and !paid are
 // honored for 'append' messages - the self-service commands where missing
 // one is most disruptive to someone trying to join, leave, or pay.
-// Everything else from that gap - other commands, plain chat/activity
-// tracking, spam filtering - is silently NOT replayed, since re-running an
-// admin command or backdating someone's activity/spam status against a
-// message that's no longer really "now" could do more harm than the
-// missed message itself. See commands/index.js's CATCH_UP_COMMANDS.
+// Everything else from that gap - other commands, plain chat, spam
+// filtering - is silently NOT replayed, since re-running an admin command
+// or backdating someone's spam status against a message that's no longer
+// really "now" could do more harm than the missed message itself. See
+// commands/index.js's CATCH_UP_COMMANDS.
 //
 // Rather than each caught-up !in/!out/!paid immediately posting its own
 // reply/updated list as it's processed (which would spam the group with a
@@ -189,21 +177,7 @@
 // the "here's what you missed" notification could previously go missing.
 // See lib/catchUpQueue.js and lib/catchUpSummary.js.
 //
-// Inactivity reminders (separate from the signup list above): the bot can
-// track the last time each group member sent ANY message (not just
-// commands) and use that to nudge people who've gone quiet. It's off by
-// default for every group - an admin turns it on per group with
-// !inactivity on. Once on, a background check runs periodically and, for
-// anyone who's gone quiet for INACTIVITY_WARN_AFTER_DAYS, tags them in
-// the group with a one-time reminder that they'll be considered for
-// removal after INACTIVITY_REMOVE_AFTER_DAYS if they stay quiet. Group
-// admins are always exempt. This is warn-only - the bot never removes
-// anyone itself; an admin has to do that by hand from WhatsApp's own
-// group-management UI once someone's overdue (!stale shows who that is).
-// Sending any message clears a person's warning and resets their clock.
-//
-// Spam filtering (also separate from the signup list, and from inactivity
-// reminders): the bot can auto-delete two kinds of message - (1) any
+// Spam filtering (also separate from the signup list above): the bot can auto-delete two kinds of message - (1) any
 // message containing a WhatsApp group invite link (chat.whatsapp.com/...),
 // flagged on its own, and (2) messages that look like stock/crypto spam,
 // which need BOTH a link AND a finance/crypto keyword (see spam.js's
@@ -278,11 +252,9 @@ const config = require('./lib/config');
 const { getMessageText, formatList, getMentionedJids, stripMentionTokens, normalizeJid } = require('./lib/helpers');
 const { getRegularPlayers, getUndoableState, saveUndoSnapshot } = require('./store');
 const { isGroupAdmin } = require('./lib/adminCheck');
-const { checkGroupInactivity } = require('./lib/inactivityCheck');
 const catchUpQueue = require('./lib/catchUpQueue');
 const { updateLastSeenStatus } = require('./lib/lastSeenStatus');
 const { interpretMessage, formatTodayForPrompt, formatRegularPlayersForPrompt } = require('./lib/geminiCommand');
-const activity = require('./activity');
 const spam = require('./spam');
 const ai = require('./ai');
 const { commands, rawCommands, CATCH_UP_COMMANDS } = require('./commands');
@@ -292,7 +264,6 @@ const {
   ALLOWED_GROUPS,
   COMMAND_PREFIX,
   DEBUG,
-  INACTIVITY_CHECK_INTERVAL_MS,
   LAST_SEEN_STATUS_ENABLED,
   LAST_SEEN_STATUS_INTERVAL_MS,
   TIMEZONE,
@@ -319,7 +290,7 @@ process.on('uncaughtException', (err) => {
 });
 
 // Holds whatever socket start() most recently created, so the module-scope
-// inactivity-check interval below (which lives outside start() so it isn't
+// last-seen-status interval below (which lives outside start() so it isn't
 // recreated - and stacked - on every reconnect) always has a live socket to
 // use. Guard against null in the interval callback: it's briefly null while
 // a fresh connection is being established after a reconnect.
@@ -437,7 +408,7 @@ async function start() {
 
     if (connection === 'close') {
       // Clear currentSock immediately - this socket is dead either way, and
-      // we'd rather the inactivity-check interval (see below) skip a beat
+      // we'd rather the last-seen-status interval (see below) skip a beat
       // than try to send through a closed connection.
       currentSock = null;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
@@ -693,6 +664,12 @@ async function handleMessage(sock, msg, upsertType) {
       upsertType,
       mentionedJid: getMentionedJids(msg),
       botJid: sock?.user?.id,
+      // messageMentionsBot() (below) checks BOTH of these against
+      // mentionedJid - a mention that only matches one form (e.g. the
+      // group sent the LID form but botLid is undefined/different) is
+      // exactly how a genuine @-mention silently fails to trigger !ai.
+      botLid: sock?.user?.lid,
+      mentionsBot: messageMentionsBot(sock, msg),
     });
   }
 
@@ -716,10 +693,10 @@ async function handleMessage(sock, msg, upsertType) {
     return; // not a group we're configured to moderate
   }
   if (!ALLOWED_GROUPS.length) {
-    // Not configured yet - stay fully passive (no activity tracking, no
-    // moderation), except logging a command's group JID so an admin can
-    // copy it into .env. Gated on an actual command (not every message) to
-    // keep the console usable while the bot is still unconfigured.
+    // Not configured yet - stay fully passive (no moderation), except
+    // logging a command's group JID so an admin can copy it into .env.
+    // Gated on an actual command (not every message) to keep the console
+    // usable while the bot is still unconfigured.
     if (text.startsWith(COMMAND_PREFIX)) {
       let subject = groupId;
       try {
@@ -753,11 +730,11 @@ async function handleMessage(sock, msg, upsertType) {
   // only !in, !out, and !paid are honored - the self-service commands
   // where missing one is most disruptive to someone trying to join,
   // leave, or pay. Everything else about a catch-up message - spam
-  // filtering, activity tracking, and every other command - is
-  // intentionally NOT processed: re-running an admin command like
-  // !newlist or !limit after an arbitrary delay, or backdating someone's
-  // activity/spam status against a message that's no longer really "now",
-  // would do more harm than the missed message itself.
+  // filtering and every other command - is intentionally NOT processed:
+  // re-running an admin command like !newlist or !limit after an
+  // arbitrary delay, or backdating someone's spam status against a
+  // message that's no longer really "now", would do more harm than the
+  // missed message itself.
   if (upsertType === 'append' && !CATCH_UP_COMMANDS.has(rawCmd)) {
     // Worth an operator-visible trace (not DEBUG-gated) whenever this drops
     // something that genuinely looked actionable - either a real, known
@@ -792,12 +769,12 @@ async function handleMessage(sock, msg, upsertType) {
   }
 
   // Spam filtering (link + stock/crypto keyword) - checked before anything
-  // else below, so a deleted spam message doesn't get counted as activity
-  // or accidentally parsed as a command. isSpamMessage() is a cheap
-  // synchronous regex check, so it runs first; isGroupAdmin() (which needs
-  // a network call, though a cached one - see lib/adminCheck.js) is only
-  // reached for messages that already look like spam, keeping the
-  // per-message overhead near zero for everyone else.
+  // else below, so a deleted spam message doesn't get accidentally parsed
+  // as a command. isSpamMessage() is a cheap synchronous regex check, so it
+  // runs first; isGroupAdmin() (which needs a network call, though a cached
+  // one - see lib/adminCheck.js) is only reached for messages that already
+  // look like spam, keeping the per-message overhead near zero for
+  // everyone else.
   if (spam.isEnabled(groupId) && spam.isSpamMessage(text)) {
     const senderIsAdmin = await isGroupAdmin(sock, groupId, senderId);
     if (!senderIsAdmin) {
@@ -810,26 +787,25 @@ async function handleMessage(sock, msg, upsertType) {
       } catch (err) {
         console.error(`[bot] Failed to delete a suspected-spam message in ${groupId} (is the bot a group admin?):`, err.message);
       }
-      return; // deleted (or tried to) - don't record activity or treat it as a command
+      return; // deleted (or tried to) - don't treat it as a command
     }
-  }
-
-  // Record activity for EVERY real message in a moderated group - not just
-  // bot commands - since the inactivity check (and !stale) needs to see
-  // regular chat presence, not just who's been running commands. Done
-  // before the command-prefix check below so it covers commands too, and
-  // deliberately before dispatch so no code path below can accidentally
-  // skip it. Gated on the group having inactivity checking turned on (see
-  // !inactivity) - a group that's never opted in shouldn't have
-  // activity.json growing on its behalf for no reason.
-  if (activity.isEnabled(groupId)) {
-    activity.recordActivity(groupId, senderId);
   }
 
   const reply = (body) => sock.sendMessage(groupId, { text: body }, { quoted: msg });
   const postList = () => sock.sendMessage(groupId, { text: formatList(groupId) });
 
   if (!text.startsWith(COMMAND_PREFIX)) {
+    const mentionsBot = messageMentionsBot(sock, msg);
+    // A message that mentions the bot and, once every @-mention token is
+    // stripped back out, has nothing else left at all - just "@Snoopy" on
+    // its own, no request text attached. Treated as the same quick "sign me
+    // up" shortcut as typing bare !in - see commands/list.js's handleIn.
+    // Deliberately independent of !ai (ai.isEnabled(groupId), checked
+    // below): there's no actual language to interpret here (an empty
+    // string isn't a request Gemini needs to read), so this works in every
+    // group regardless of whether natural-language commands are turned on.
+    const bareMention = mentionsBot && !stripMentionTokens(text, getMentionedJids(msg)).trim();
+
     // Natural-language command interpretation (see lib/geminiCommand.js
     // and handleAiMention above) - deliberately narrow trigger: only a
     // genuinely live message (never catch-up/'append' - re-running an
@@ -838,14 +814,21 @@ async function handleMessage(sock, msg, upsertType) {
     // too), only in a group that's explicitly opted in with !ai on, and
     // only when the message actually @-mentions the bot - never triggered
     // by ordinary chat, however list-related it might sound.
-    if (upsertType === 'notify' && ai.isEnabled(groupId) && messageMentionsBot(sock, msg)) {
+    if (upsertType === 'notify' && bareMention) {
+      try {
+        await commands[`${COMMAND_PREFIX}in`]({ sock, msg, groupId, senderId, senderName, argText: '', upsertType, reply, postList });
+      } catch (err) {
+        console.error(`[bot] Error handling a bare @-mention (treated as ${COMMAND_PREFIX}in) in ${groupId} (from ${senderId}):`, err);
+        await reply(UNEXPECTED_ERROR_REPLY);
+      }
+    } else if (upsertType === 'notify' && ai.isEnabled(groupId) && mentionsBot) {
       try {
         await handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList });
       } catch (err) {
         console.error(`[bot] Error handling an AI mention in ${groupId} (from ${senderId}):`, err);
         await reply(UNEXPECTED_ERROR_REPLY);
       }
-    } else if (upsertType === 'notify' && messageMentionsBot(sock, msg) && !ai.isEnabled(groupId)) {
+    } else if (upsertType === 'notify' && mentionsBot && !ai.isEnabled(groupId)) {
       // Same "a genuine @-mention that got silently dropped should leave
       // SOME trace" reasoning as the catch-up-gate log above - this is the
       // other precisely-detectable way it happens: the mention genuinely
@@ -903,29 +886,10 @@ async function handleMessage(sock, msg, upsertType) {
 // created there would stack a new duplicate timer on every reconnect.
 // Living here instead means exactly one interval exists for the whole
 // process lifetime, and it just reads whatever socket start() most
-// recently assigned to currentSock (see above) each time it fires. Runs
-// unconditionally over every configured group whenever ALLOWED_GROUPS is
-// non-empty - checkGroupInactivity() itself is the one that checks each
-// group's own !inactivity on/off state and skips (cheaply, before any
-// network call) groups that haven't opted in.
-if (ALLOWED_GROUPS.length) {
-  const inactivityTimer = setInterval(() => {
-    for (const groupId of ALLOWED_GROUPS) {
-      checkGroupInactivity(currentSock, groupId);
-    }
-  }, INACTIVITY_CHECK_INTERVAL_MS);
-  // unref() so this timer alone doesn't keep the process alive (e.g. in
-  // tests that require() this module and never open a real socket) - in
-  // normal operation the live Baileys connection keeps the event loop
-  // running regardless, so this has no effect on the deployed bot.
-  if (typeof inactivityTimer.unref === 'function') inactivityTimer.unref();
-}
-
-// Same module-scope-interval pattern as the inactivity check above (and for
-// the same reason: living inside start() would stack a duplicate timer on
-// every reconnect). Also fires once immediately on every 'open' event above
-// so the About text doesn't sit stale between reconnects and the first tick
-// here. currentSock is read fresh on every tick, and updateLastSeenStatus()
+// recently assigned to currentSock (see above) each time it fires. Also
+// fires once immediately on every 'open' event above so the About text
+// doesn't sit stale between reconnects and the first tick here.
+// currentSock is read fresh on every tick, and updateLastSeenStatus()
 // itself no-ops safely if it's briefly null (see lib/lastSeenStatus.js).
 if (LAST_SEEN_STATUS_ENABLED) {
   const lastSeenTimer = setInterval(() => {

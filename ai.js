@@ -18,7 +18,7 @@
 //   ...
 // }
 //
-// Concurrency note: same as spam.js/activity.js/store.js - every exported
+// Concurrency note: same as spam.js/store.js - every exported
 // function here is fully synchronous (readAll() -> mutate -> writeAll() in
 // one uninterruptible block), so concurrent callers can't produce a lost
 // update on Node's single-threaded event loop.
@@ -26,7 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 // Defensive: reads process.env.DATA_DIR at module-load time below, same
-// reasoning as spam.js/activity.js - loads .env itself rather than
+// reasoning as spam.js - loads .env itself rather than
 // depending on require order relative to lib/config.js.
 require('dotenv').config();
 
@@ -61,7 +61,7 @@ function readAll() {
 function writeAll(data) {
   ensureFile();
   // Atomic-ish write: write to temp file then rename - same pattern as
-  // spam.js/activity.js/store.js.
+  // spam.js/store.js.
   const tmpFile = `${DATA_FILE}.tmp`;
   fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2));
   fs.renameSync(tmpFile, DATA_FILE);
