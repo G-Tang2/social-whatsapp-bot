@@ -24,9 +24,8 @@
 // the next !newlist automatically if not respecified.
 //
 // Each entry also tracks `addedByIsAdmin` (was the adder a group admin at
-// add time?) and `tbd` (did an unauthorized !out attempt get bounced on
-// this entry?) - see removeEntry() for how those two combine to decide who
-// can remove someone and what happens when they're not allowed to. And, if
+// add time?) - historical, kept for existing data/tests; removeEntry() no
+// longer restricts who can remove an entry based on it. And, if
 // the group's tournament sub-feature is on (see `current.tournamentEnabled`
 // below), `tournament` (was this entry opted into the tournament, on top of
 // the regular social list? - see addEntry()/joinTournament() below and
@@ -100,9 +99,9 @@
 //       "courts": "13-18" | null,
 //       "courtCount": 6 | null,
 //       "time": "8PM start" | null,
-//       "entries": [ { name, addedBy, addedByIsAdmin, addedAt, tbd, tournament, tournamentWaitlisted }, ... ],
+//       "entries": [ { name, addedBy, addedByIsAdmin, addedAt, tournament, tournamentWaitlisted }, ... ],
 //       "limit": 20 | null,
-//       "waitlist": [ { name, addedBy, addedByIsAdmin, addedAt, tbd, tournament, tournamentWaitlisted }, ... ],
+//       "waitlist": [ { name, addedBy, addedByIsAdmin, addedAt, tournament, tournamentWaitlisted }, ... ],
 //       "duePayments": [ { name, addedBy, addedAt }, ... ],
 //       "duePaymentsLabel": "$18 please",
 //       "tournamentEnabled": false,
@@ -817,8 +816,8 @@ function joinTournament(groupId, name) {
  *
  * No authorization check, deliberately - same as joinTournament() above,
  * this is a low-stakes toggle on an entry that already exists and stays on
- * the list either way, not the bigger deal removeEntry()'s admin-added-
- * entry protection exists for (actually losing your spot on the list).
+ * the list either way, not the bigger deal actually losing your spot on
+ * the list would be.
  *
  * Taking someone OUT of the tournament (not just off the queue) frees a
  * spot, so this also promotes off the front of the (🏆 WL) queue to fill
@@ -1101,7 +1100,7 @@ function promoteFromWaitlist(current) {
     (current.limit === null || current.limit === undefined || current.entries.length < current.limit)
   ) {
     const next = current.waitlist.shift();
-    current.entries.splice(tbdSafeInsertIndex(current.entries), 0, next);
+    current.entries.push(next);
     promoted.push(next);
   }
   return promoted;
@@ -1182,31 +1181,12 @@ function allowFromWaitlist(groupId, count) {
   const moved = [];
   for (let i = 0; i < n; i++) {
     const next = current.waitlist.shift();
-    current.entries.splice(tbdSafeInsertIndex(current.entries), 0, next);
+    current.entries.push(next);
     moved.push(next);
   }
 
   writeAll(all);
   return { moved, limit: current.limit };
-}
-
-// removeEntry()'s unauthorized branch moves a flagged entry to the very end
-// of whichever list (entries or waitlist) it was on, and nothing since has
-// resorted it - so at any point, every `tbd: true` entry in a list is a
-// trailing run at the end of it. Rather than just push()ing a newly
-// added/promoted person onto the very end (which would land them AFTER that
-// trailing run, kicking the flagged entry off the bottom the moment anyone
-// else joins), every place that adds someone to `entries` or `waitlist`
-// inserts them at the position this returns instead: right past the last
-// non-tbd entry, i.e. before the trailing tbd run (or list.length, same as
-// a plain push, if there's no trailing run at all). Called fresh before
-// each individual insert (not just once for a batch) so repeated calls -
-// e.g. promoteFromWaitlist's while loop - keep landing new arrivals in
-// order just above the flagged entries, not push each other around.
-function tbdSafeInsertIndex(list) {
-  let idx = list.length;
-  while (idx > 0 && list[idx - 1].tbd) idx -= 1;
-  return idx;
 }
 
 /**
@@ -1215,8 +1195,8 @@ function tbdSafeInsertIndex(list) {
  * value). A name can't appear on both at once, so the duplicate check spans
  * both lists.
  * `addedByIsAdmin` records whether the adder was a group admin at the
- * moment they added this entry - it tightens who's allowed to remove it
- * later (see removeEntry).
+ * moment they added this entry - historical, kept for existing data/tests;
+ * no longer affects who's allowed to remove it (see removeEntry).
  * `selfAdded` records whether this entry IS the sender themselves (true
  * only for the bare `!in`/`!in paid` self-add path in commands/list.js -
  * false for every explicitly-typed name, even if it happens to equal the
@@ -1271,7 +1251,6 @@ function addEntry(groupId, name, addedBy, addedByIsAdmin, selfAdded, wantsTourna
     addedBy,
     addedByIsAdmin: !!addedByIsAdmin,
     addedAt: new Date().toISOString(),
-    tbd: false,
     self: !!selfAdded,
     tournament: false,
     tournamentWaitlisted: false,
@@ -1279,7 +1258,7 @@ function addEntry(groupId, name, addedBy, addedByIsAdmin, selfAdded, wantsTourna
 
   const atCapacity = current.limit !== null && current.limit !== undefined && current.entries.length >= current.limit;
   if (atCapacity) {
-    current.waitlist.splice(tbdSafeInsertIndex(current.waitlist), 0, entry);
+    current.waitlist.push(entry);
   } else {
     if (wantsTournament && current.tournamentEnabled) {
       const tournamentCount = current.entries.filter((e) => e.tournament).length;
@@ -1293,7 +1272,7 @@ function addEntry(groupId, name, addedBy, addedByIsAdmin, selfAdded, wantsTourna
       entry.tournament = hasRoom;
       entry.tournamentWaitlisted = !hasRoom;
     }
-    current.entries.splice(tbdSafeInsertIndex(current.entries), 0, entry);
+    current.entries.push(entry);
   }
   writeAll(all);
   return { ok: true, list: current.entries, waitlist: current.waitlist, waitlisted: atCapacity };
@@ -1301,23 +1280,9 @@ function addEntry(groupId, name, addedBy, addedByIsAdmin, selfAdded, wantsTourna
 
 /**
  * Removes an entry by (case-insensitive) name match from the current list
- * OR the waitlist (checked in that order).
- *
- * Authorization is entirely about who ADDED the entry, not who's trying to
- * remove it or who it's for:
- *  - Added by a regular (non-admin) member - whether that's someone
- *    signing themselves up or signing someone else up - can be removed by
- *    ANYONE, no restriction at all.
- *  - Added by a group admin (entry.addedByIsAdmin) - whether the admin
- *    signed themselves up or someone else up - can ONLY be removed by a
- *    current group admin (any admin, not necessarily the same one who
- *    added it).
- *
- * If the requester isn't authorized (i.e. a non-admin trying to remove an
- * admin-added entry), the entry is NOT removed - instead it's moved to the
- * bottom of whichever list it was on and flagged `tbd: true`, so the group
- * can see something needs an admin's attention rather than the request
- * just silently failing.
+ * OR the waitlist (checked in that order). Anyone can remove any entry -
+ * there's no restriction based on who added it or who's trying to remove
+ * it.
  *
  * Removing someone from the main list (not the waitlist) frees a spot, so
  * this also promotes off the front of the waitlist to fill it - the
@@ -1329,7 +1294,7 @@ function addEntry(groupId, name, addedBy, addedByIsAdmin, selfAdded, wantsTourna
  * waitlist, or when the removed entry wasn't in the tournament to begin
  * with).
  */
-function removeEntry(groupId, name, requesterId, isAdmin) {
+function removeEntry(groupId, name) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
   const current = all[groupId].current;
@@ -1346,16 +1311,6 @@ function removeEntry(groupId, name, requesterId, isAdmin) {
   }
   if (idx === -1) {
     return { ok: false, reason: 'not_found', list: current.entries, waitlist: current.waitlist };
-  }
-
-  const entry = list[idx];
-  const authorized = entry.addedByIsAdmin ? isAdmin : true;
-
-  if (!authorized) {
-    list.splice(idx, 1);
-    list.push({ ...entry, tbd: true });
-    writeAll(all);
-    return { ok: false, reason: 'not_authorized', list: current.entries, waitlist: current.waitlist };
   }
 
   list.splice(idx, 1);
@@ -1377,11 +1332,11 @@ function removeEntry(groupId, name, requesterId, isAdmin) {
  * For each of the three sections, independently:
  *  - a name that already exists somewhere in the CURRENT attendance/
  *    waitlist (for the first two) or duePayments (for the third) keeps its
- *    original entry object - `addedBy`/`addedByIsAdmin`/`addedAt`/`tbd` all
+ *    original entry object - `addedBy`/`addedByIsAdmin`/`addedAt` all
  *    preserved - but adopts its new section/position. This is what lets
  *    moving a name from Waitlist to Attendance in the edited text actually
- *    promote them, with their original authorization metadata intact
- *    rather than being reset.
+ *    promote them, with their original metadata intact rather than being
+ *    reset.
  *  - a name that's brand new (wasn't anywhere in the relevant current
  *    list(s) before) gets a fresh entry attributed to the editor
  *    (`editorId`/`editorIsAdmin`) - same as if the editor had typed
@@ -1405,12 +1360,7 @@ function removeEntry(groupId, name, requesterId, isAdmin) {
  * resulting attendance headcount ends up over or under `limit`. Callers
  * should surface that mismatch to the editor if it happens (see
  * handleUpdate in commands/admin.js), not have store.js silently correct
- * it out from under them. Same reasoning extends to ordering: unlike
- * addEntry()/promoteFromWaitlist()/allowFromWaitlist() (which all use
- * tbdSafeInsertIndex() to keep (TBC)-flagged entries pinned to the bottom
- * automatically), this function does NOT re-sort (TBC) entries to the end -
- * whatever position the editor put a name in the pasted text is where it
- * lands, (TBC) or not, same as everything else here.
+ * it out from under them.
  *
  * Tournament/social-only placement (new entries included) is reconciled
  * separately, AFTER the above, and ONLY when `parsed.tournamentPlayers`
@@ -1484,7 +1434,6 @@ function applyListUpdate(groupId, parsed, editorId, editorIsAdmin) {
           addedBy: editorId,
           addedByIsAdmin: !!editorIsAdmin,
           addedAt: new Date().toISOString(),
-          tbd: false,
           // Explicitly not-self: !update is the editor organizing the
           // whole roster, not signing themselves up - see addEntry's doc
           // comment on `self`. Otherwise the editor's own next bare !in
@@ -1622,7 +1571,6 @@ function applyListUpdate(groupId, parsed, editorId, editorIsAdmin) {
         addedBy: editorId,
         addedByIsAdmin: !!editorIsAdmin,
         addedAt: new Date().toISOString(),
-        tbd: false,
         self: false,
       };
       if (hasOwedSince && item.owedSince) newEntry.owedSince = item.owedSince;

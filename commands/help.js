@@ -63,8 +63,6 @@ const TIPS_TEXT = [
   '',
   '_• No [name] means yourself - matched by your WhatsApp account, not your display name_',
   '',
-  '_• Anyone can remove an entry a regular member added. An admin\'s entry needs an admin to remove - others just get flagged (TBC) for review instead_',
-  '',
   `_• Past the limit, ${COMMAND_PREFIX}in waitlists instead - auto-promoted (and tagged) when a spot opens_`,
   '',
   '*Payments*',

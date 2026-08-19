@@ -594,17 +594,14 @@ async function handleOut(ctx) {
 
   const removed = [];
   const rejected = [];
-  const flagged = [];
   const promoted = [];
   const tournamentPromoted = [];
 
   for (const name of names) {
-    const result = removeEntry(groupId, name, senderId, admin);
+    const result = removeEntry(groupId, name);
     if (!result.ok) {
       if (result.reason === 'not_found') {
         rejected.push(`${name.trim()} - not on the list`);
-      } else if (result.reason === 'not_authorized') {
-        flagged.push(`${name.trim()} - this request will be reviewed and decided by an admin (moved to the bottom of the list and tagged (TBC) in the meantime)`);
       }
     } else {
       removed.push(name.trim());
@@ -625,9 +622,6 @@ async function handleOut(ctx) {
     if (rejected.length) {
       await reply(`Couldn't remove:\n${rejected.join('\n')}`);
     }
-    if (flagged.length) {
-      await reply(`Pending admin review:\n${flagged.join('\n')}`);
-    }
     await replyPaidOutcome(reply, groupId, paidOutcome);
     if (promoted.length) {
       // A spot freed up, so someone was auto-promoted off the waitlist -
@@ -646,12 +640,12 @@ async function handleOut(ctx) {
       const { text, mentions } = formatTournamentPromotedMessage(tournamentPromoted);
       await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
     }
-    if (removed.length || flagged.length || promoted.length || tournamentPromoted.length || paidOutcome.paid.length) {
+    if (removed.length || promoted.length || tournamentPromoted.length || paidOutcome.paid.length) {
       await postList();
     }
   }
 
-  return { command: 'out', senderName, argText, removed, rejected, flagged, promoted, tournamentPromoted, ...paidOutcome };
+  return { command: 'out', senderName, argText, removed, rejected, promoted, tournamentPromoted, ...paidOutcome };
 }
 
 async function handleList(ctx) {
