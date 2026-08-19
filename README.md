@@ -977,9 +977,11 @@ current state. Every group starts off - each one opts in individually.
   API call itself failing/returning something unparseable all get that
   same "I'm not capable of doing that" reply, but a call that specifically
   took too long to respond gets its own, more accurate "Sorry, that took
-  too long to process - try again." instead - the request may well have
-  been perfectly understandable, it just didn't get answered in time, so
-  "I'm not capable of doing that" would be misleading there. A failure is
+  too long to process - try again, or use `!help`/`!admin` to see the exact
+  typed commands." instead - the request may well have been perfectly
+  understandable, it just didn't get answered in time, so "I'm not capable
+  of doing that" would be misleading there, and a typed command sidesteps
+  Gemini entirely if it's having a slow moment. A failure is
   still logged to the console for the operator either way, but the sender
   in the group always hears back rather than being left wondering whether
   the bot even saw their message.

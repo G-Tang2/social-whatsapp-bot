@@ -507,8 +507,10 @@ const AI_NOT_UNDERSTOOD_REPLY = `Sorry, I'm not capable of doing that - try agai
 // understandable request, it just didn't get answered fast enough, and
 // simply trying again (the request itself, not necessarily right this
 // second) is real, actionable advice here in a way it isn't for the other
-// cases.
-const AI_TIMEOUT_REPLY = "Sorry, that took too long to process - try again.";
+// cases. Also points to typed commands (!help) as a fallback, since those
+// never touch Gemini at all - a real way around it timing out again, not
+// just "hope it's faster this time".
+const AI_TIMEOUT_REPLY = `Sorry, that took too long to process - try again, or use ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) to see the exact typed commands.`;
 
 // Shown when a command handler (typed or AI-dispatched) throws instead of
 // completing normally - a bug, a transient network failure talking to
