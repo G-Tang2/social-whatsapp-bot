@@ -67,10 +67,6 @@ const rawCommands = {
   [`${COMMAND_PREFIX}paymentlabel`]: adminCommands.handlePaymentlabel,
   [`${COMMAND_PREFIX}regulars`]: adminCommands.handleRegulars,
   [`${COMMAND_PREFIX}exempt`]: adminCommands.handleExempt,
-  [`${COMMAND_PREFIX}tournament`]: adminCommands.handleTournament,
-  [`${COMMAND_PREFIX}settournament`]: adminCommands.handleSettournament,
-  [`${COMMAND_PREFIX}tournamentlimit`]: adminCommands.handleTournamentLimit,
-  [`${COMMAND_PREFIX}tournamentwinners`]: adminCommands.handleTournamentWinners,
   [`${COMMAND_PREFIX}undo`]: adminCommands.handleUndo,
   [`${COMMAND_PREFIX}update`]: adminCommands.handleUpdate,
 

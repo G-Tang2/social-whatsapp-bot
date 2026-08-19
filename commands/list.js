@@ -16,7 +16,7 @@
 // batches them into ONE combined summary message once the backlog settles.
 // See lib/catchUpSummary.js for how that summary is worded.
 
-const { getCurrentEvent, getDuePaymentsLabel, addEntry, removeEntry, markPaid, joinTournament, leaveTournament, normalizeName } = require('../store');
+const { getCurrentEvent, getDuePaymentsLabel, addEntry, removeEntry, markPaid, normalizeName } = require('../store');
 const { checkEntry } = require('../moderation');
 const { isGroupAdmin } = require('../lib/adminCheck');
 const { COMMAND_PREFIX, MAX_NAMES_PER_COMMAND } = require('../lib/config');
@@ -25,9 +25,8 @@ const {
   PLUS_N_TOKEN,
   expandRegularPlayersToken,
   maxNamesReply,
-  stripLeadingInKeywords,
+  stripLeadingPaidKeyword,
   formatPromotedMessage,
-  formatTournamentPromotedMessage,
 } = require('../lib/helpers');
 
 // Bare-self resolution against the payment-due list, shared by handleIn/
@@ -184,84 +183,36 @@ async function replyPaidOutcome(reply, groupId, paidOutcome) {
   }
 }
 
-// Applies a leading "tournament" keyword (see stripLeadingInKeywords) to a
-// list of names that are ALREADY on the attendance list - someone who
-// joined plain "!in" earlier (themselves, or someone else) and comes back
-// later with "!in tournament" (or "!in tournament Alex, Sam", naming people
-// already on the list) to additionally opt in, without re-adding anyone.
-// Deliberately separate from the brand-new-entry path below, which handles
-// its own tournament opt-in via addEntry()'s `wantsTournament` param -
-// this one instead upgrades entries that already exist, via
-// store.js's joinTournament() (by name - it doesn't need entry objects).
-// Returns { joined, disabled, full, notFound }: `joined` lists names newly
-// opted in (already-in entries are silently skipped, not re-counted, not an
-// error); `disabled`/`full` flag whether the request as a whole hit either
-// failure reason (for the caller's reply - see handleIn below); `notFound`
-// lists names joinTournament() couldn't find in `entries` at all (e.g.
-// someone on the WAITLIST rather than confirmed attendance - see
-// joinTournament()'s doc comment for why that's not eligible yet).
-async function applyTournamentUpgradeIfFlagged(groupId, names, tournamentFlag) {
-  if (!tournamentFlag) return { joined: [], disabled: false, full: false, notFound: [] };
-  const joined = [];
-  const notFound = [];
-  let disabled = false;
-  let full = false;
-  for (const name of names) {
-    const result = joinTournament(groupId, name);
-    if (result.ok && !result.alreadyIn) {
-      joined.push(name);
-    } else if (!result.ok && result.reason === 'disabled') {
-      disabled = true;
-    } else if (!result.ok && result.reason === 'full') {
-      full = true;
-    } else if (!result.ok && result.reason === 'not_found') {
-      notFound.push(name);
-    }
-  }
-  return { joined, disabled, full, notFound };
-}
-
 async function handleIn(ctx) {
   const { sock, msg, groupId, senderId, senderName, argText, upsertType, reply, postList } = ctx;
   const isCatchUp = upsertType === 'append';
-  // Leading "paid" and/or "tournament" keywords (either order, e.g. "!in
-  // paid", "!in tournament paid", "!in tournament Alex, Sam") let someone
-  // join, confirm payment, and/or opt into the tournament all in one
-  // message - see stripLeadingInKeywords' doc comment. `rest` (the
-  // argText with both keywords stripped off) is used everywhere below in
-  // place of the raw argText for name resolution.
-  const { rest, paid: paidFlag, tournament: tournamentFlag } = stripLeadingInKeywords(argText);
+  // A leading "paid" keyword (e.g. "!in paid", "!in paid Alex, Sam") lets
+  // someone join and confirm payment in one message - see
+  // stripLeadingPaidKeyword's doc comment. `rest` (the argText with the
+  // keyword stripped off) is used everywhere below in place of the raw
+  // argText for name resolution.
+  const { rest, paid: paidFlag } = stripLeadingPaidKeyword(argText);
 
   if (!rest) {
-    // Bare !in (optionally "!in paid"/"!in tournament") - add "myself."
-    // Your WhatsApp display name can differ from (or change since)
-    // whatever name you're already on the list (or waitlist) under, so
-    // check by WhatsApp ID first rather than blindly adding your current
-    // push name as a second, duplicate entry. Also requires
-    // `self !== false` - otherwise, having previously typed "!in Peter,
-    // Chris, Linda" (entries attributed to you via `addedBy` for removal
-    // purposes, but not YOU) would make the bot claim you're already on as
-    // "Peter, Chris, and Linda" - see store.js's addEntry doc comment.
+    // Bare !in (optionally "!in paid") - add "myself." Your WhatsApp
+    // display name can differ from (or change since) whatever name you're
+    // already on the list (or waitlist) under, so check by WhatsApp ID
+    // first rather than blindly adding your current push name as a second,
+    // duplicate entry. Also requires `self !== false` - otherwise, having
+    // previously typed "!in Peter, Chris, Linda" (entries attributed to you
+    // via `addedBy` for removal purposes, but not YOU) would make the bot
+    // claim you're already on as "Peter, Chris, and Linda" - see store.js's
+    // addEntry doc comment.
     const event = getCurrentEvent(groupId);
     const own = [...event.entries, ...(event.waitlist || [])].filter(
       (e) => e.addedBy === senderId && e.self !== false
     );
     if (own.length) {
       const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
-      // Only entries actually on `entries` (not the waitlist) can opt into
-      // the tournament - see joinTournament()'s doc comment.
-      const tournamentOutcome = await applyTournamentUpgradeIfFlagged(
-        groupId,
-        own.filter((e) => event.entries.includes(e)).map((e) => e.name),
-        tournamentFlag
-      );
       if (!isCatchUp) {
         await reply(`You're already on the list as "${own.map((e) => e.name).join('", "')}".`);
         await replyPaidOutcome(reply, groupId, paidOutcome);
-        if (tournamentOutcome.disabled) {
-          await reply(`Tournament isn't enabled for this group (see ${COMMAND_PREFIX}tournament).`);
-        }
-        if (paidOutcome.paid.length || tournamentOutcome.joined.length) {
+        if (paidOutcome.paid.length) {
           await postList();
         }
       }
@@ -271,7 +222,6 @@ async function handleIn(ctx) {
         argText,
         alreadyOn: own.map((e) => e.name),
         ...paidOutcome,
-        tournamentJoined: tournamentOutcome.joined,
       };
     }
   }
@@ -328,18 +278,9 @@ async function handleIn(ctx) {
   const added = [];
   const waitlisted = [];
   const rejected = [];
-  const tournamentJoined = []; // names already on the list, upgraded into the tournament below
   if (regularPlayersExpansion.usedEmptyRegularPlayers) {
     rejected.push(`regular players - none saved yet (see ${COMMAND_PREFIX}regulars to set them)`);
   }
-
-  // Checked once up front (not re-fetched per name) - whether tournament is
-  // actually on for this group right now, so a leading "tournament"
-  // keyword (see stripLeadingInKeywords above) knows whether it can take
-  // effect. Applies to EVERY name in this command, same as "paid" does -
-  // "!in tournament Alex, Sam" opts both Alex and Sam in.
-  const tournamentEnabled = getCurrentEvent(groupId).tournamentEnabled;
-  let tournamentRequestedButDisabled = false;
 
   for (const name of names) {
     const modResult = checkEntry(name);
@@ -348,34 +289,9 @@ async function handleIn(ctx) {
       continue;
     }
     const isSelfEntry = isBareSelfAdd || (isPlusNSelfAdd && name === senderName);
-    if (tournamentFlag && !tournamentEnabled) tournamentRequestedButDisabled = true;
-    const result = addEntry(groupId, name, senderId, senderIsAdmin, isSelfEntry, tournamentFlag);
+    const result = addEntry(groupId, name, senderId, senderIsAdmin, isSelfEntry);
     if (!result.ok) {
-      // A "duplicate" here just means this name is already on the list (or
-      // waitlist) - normally that's simply rejected. But with a leading
-      // "tournament" keyword (e.g. "!in tournament Alex, Sam" where Alex
-      // and Sam already joined earlier via plain "!in"), that's not a
-      // failure at all - it's a request to opt an EXISTING entry into the
-      // tournament, same as the bare-self "already on the list" branch
-      // above handles for a lone sender. See applyTournamentUpgradeIfFlagged
-      // (used by both).
-      if (tournamentFlag) {
-        const upgrade = await applyTournamentUpgradeIfFlagged(groupId, [name], true);
-        if (upgrade.joined.length) {
-          tournamentJoined.push(name.trim());
-        } else if (upgrade.notFound.length) {
-          // On the waitlist, not `entries` - joinTournament() can't reach
-          // them yet (see its doc comment); this genuinely IS a rejection.
-          rejected.push(`${name.trim()} - already on the waitlist, not eligible for the tournament until promoted (see ${COMMAND_PREFIX}allow)`);
-        }
-        // upgrade.disabled is already reflected in tournamentRequestedButDisabled above.
-        // upgrade.full and "already in the tournament, no-op" both need no
-        // rejection line - a full tournament tags them (🏆 WL) right on
-        // their existing entry (visible in the reposted list below), and
-        // "already in" isn't an error, just nothing new to do.
-      } else {
-        rejected.push(`${name.trim()} - already on the list`);
-      }
+      rejected.push(`${name.trim()} - already on the list`);
     } else if (result.waitlisted) {
       waitlisted.push(name.trim());
     } else {
@@ -395,133 +311,15 @@ async function handleIn(ctx) {
       await reply(`Couldn't add:\n${rejected.join('\n')}`);
     }
     await replyPaidOutcome(reply, groupId, paidOutcome);
-    // Unlike a full tournament (capacity reached) - which is quietly
-    // visible from the reposted list itself, tagged "(🏆 WL)" under
-    // "Social only" (see store.js's addEntry()/entry.tournamentWaitlisted
-    // and lib/helpers.js's formatList()) - tournament not being enabled AT
-    // ALL gets an explicit reply, since there'd be no tournament UI in the
-    // list at all to hint at why.
-    if (tournamentRequestedButDisabled) {
-      await reply(`Tournament isn't enabled for this group (see ${COMMAND_PREFIX}settournament) - joined the social list only.`);
-    }
-    // No separate "added to the waitlist" (or "tournament is full"/"joined
-    // the tournament") reply - the posted list below (with them shown in
-    // its Waitlist section, under 🏆 Tournament, or tagged
-    // "(🏆 WL)" under "Social only") is proof enough, same as any other
-    // successful, authorized change.
-    if (added.length || waitlisted.length || tournamentJoined.length || paidOutcome.paid.length) {
-      await postList();
-    }
-  }
-
-  return { command: 'in', senderName, argText, added, waitlisted, rejected, tournamentJoined, ...paidOutcome };
-}
-
-// Handles a leading "tournament" keyword on !out (see stripLeadingInKeywords
-// above) - takes someone OUT of the tournament (or off its (🏆 WL) queue)
-// while leaving them on the social list, via store.js's leaveTournament().
-// Deliberately separate from handleOut's own removeEntry() loop below, same
-// relationship as handleIn's applyTournamentUpgradeIfFlagged has to its own
-// add loop - this only flips a flag on an entry that stays right where it
-// is, it never removes anyone from the list (that's still plain "!out
-// <name>", handled below). Bare "!out tournament" resolves the sender's own
-// entry the same way handleOut's own bare-self path does, but only against
-// `entries` (not the waitlist) - the tournament flags only ever live on
-// confirmed entries, never a waitlist one - see joinTournament()'s doc
-// comment for why.
-async function handleLeaveTournament(ctx, rest, paidFlag) {
-  const { sock, msg, groupId, senderId, senderName, argText, upsertType, reply, postList } = ctx;
-  const isCatchUp = upsertType === 'append';
-
-  let names;
-  if (!rest) {
-    const event = getCurrentEvent(groupId);
-    const own = event.entries.filter((e) => e.addedBy === senderId && e.self !== false);
-    if (own.length === 0) {
-      const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
-      if (!isCatchUp) {
-        await reply(
-          `You don't have an entry on the list. If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out tournament <name>.`
-        );
-        await replyPaidOutcome(reply, groupId, paidOutcome);
-        if (paidOutcome.paid.length) {
-          await postList();
-        }
-      }
-      return { command: 'out', senderName, argText, noEntry: true, ...paidOutcome };
-    }
-    if (own.length > 1) {
-      const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
-      if (!isCatchUp) {
-        await reply(
-          `You have more than one entry - say which one: ${COMMAND_PREFIX}out tournament <name>\nYours: ${own.map((e) => e.name).join(', ')}`
-        );
-        await replyPaidOutcome(reply, groupId, paidOutcome);
-        if (paidOutcome.paid.length) {
-          await postList();
-        }
-      }
-      return { command: 'out', senderName, argText, ambiguous: own.map((e) => e.name), ...paidOutcome };
-    }
-    names = [own[0].name];
-  } else {
-    names = parseNames(rest, senderName);
-  }
-
-  const admin = await isGroupAdmin(sock, groupId, senderId);
-  if (!admin && names.length > MAX_NAMES_PER_COMMAND) {
-    if (!isCatchUp) {
-      await reply(maxNamesReply('remove'));
-    }
-    return { command: 'out', senderName, argText, tooMany: true };
-  }
-
-  const tournamentLeft = [];
-  const rejected = [];
-  const alreadyOut = [];
-  const tournamentPromoted = [];
-
-  for (const name of names) {
-    const result = leaveTournament(groupId, name);
-    if (!result.ok) {
-      rejected.push(`${name.trim()} - not on the list`);
-    } else if (result.alreadyOut) {
-      alreadyOut.push(name.trim());
-    } else {
-      tournamentLeft.push(name.trim());
-      if (result.promoted && result.promoted.length) {
-        tournamentPromoted.push(...result.promoted);
-      }
-    }
-  }
-
-  // Same independent-of-the-leave-outcome reasoning as handleIn/handleOut's
-  // paid handling - see runPaidIfFlagged's doc comment.
-  const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, rest ? names : null);
-
-  if (!isCatchUp) {
-    if (rejected.length) {
-      await reply(`Couldn't move to social only:\n${rejected.join('\n')}`);
-    }
-    await replyPaidOutcome(reply, groupId, paidOutcome);
-    if (tournamentPromoted.length) {
-      // A tournament spot just freed up, auto-promoting the front of the
-      // (🏆 WL) queue - see leaveTournament()'s doc comment. Sent directly
-      // (not via the `reply` helper) so we can pass `mentions` to actually
-      // notify them, not just print their name as plain text.
-      const { text, mentions } = formatTournamentPromotedMessage(tournamentPromoted);
-      await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
-    }
-    // No separate reply for a clean tournamentLeft/alreadyOut outcome - the
-    // reposted list (now showing them under "Social only" instead of "🏆
-    // Tournament", with no (🏆 WL) tag) is proof enough, same as
+    // No separate "added to the waitlist" reply - the posted list below
+    // (with them shown in its Waitlist section) is proof enough, same as
     // any other successful, authorized change.
-    if (tournamentLeft.length || tournamentPromoted.length || paidOutcome.paid.length) {
+    if (added.length || waitlisted.length || paidOutcome.paid.length) {
       await postList();
     }
   }
 
-  return { command: 'out', senderName, argText, tournamentLeft, rejected, alreadyOut, tournamentPromoted, ...paidOutcome };
+  return { command: 'in', senderName, argText, added, waitlisted, rejected, ...paidOutcome };
 }
 
 async function handleOut(ctx) {
@@ -529,15 +327,8 @@ async function handleOut(ctx) {
   const isCatchUp = upsertType === 'append';
   // See handleIn's matching comment - a leading "paid" keyword (e.g.
   // "!out paid" or "!out paid Alex, Sam") lets someone leave and confirm
-  // payment in one message. A leading "tournament" keyword (e.g. "!out
-  // tournament" or "!out tournament Garvin") instead branches off entirely
-  // to handleLeaveTournament above - taking someone OUT of the tournament
-  // only, NOT off the list - since that's a fundamentally different
-  // operation from the removeEntry() loop below.
-  const { rest, paid: paidFlag, tournament: tournamentFlag } = stripLeadingInKeywords(argText);
-  if (tournamentFlag) {
-    return handleLeaveTournament(ctx, rest, paidFlag);
-  }
+  // payment in one message.
+  const { rest, paid: paidFlag } = stripLeadingPaidKeyword(argText);
   let names;
 
   if (!rest) {
@@ -596,7 +387,6 @@ async function handleOut(ctx) {
   const rejected = [];
   const flagged = [];
   const promoted = [];
-  const tournamentPromoted = [];
 
   for (const name of names) {
     const result = removeEntry(groupId, name, senderId, admin);
@@ -610,9 +400,6 @@ async function handleOut(ctx) {
       removed.push(name.trim());
       if (result.promoted && result.promoted.length) {
         promoted.push(...result.promoted);
-      }
-      if (result.tournamentPromoted && result.tournamentPromoted.length) {
-        tournamentPromoted.push(...result.tournamentPromoted);
       }
     }
   }
@@ -638,20 +425,12 @@ async function handleOut(ctx) {
       const { text, mentions } = formatPromotedMessage(promoted);
       await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
     }
-    if (tournamentPromoted.length) {
-      // Same idea, but for whoever was leaving had entry.tournament: true -
-      // that frees a tournament spot, auto-promoting the front of the
-      // (🏆 WL) queue. Separate message from the main-waitlist one above
-      // since they're two different queues.
-      const { text, mentions } = formatTournamentPromotedMessage(tournamentPromoted);
-      await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
-    }
-    if (removed.length || flagged.length || promoted.length || tournamentPromoted.length || paidOutcome.paid.length) {
+    if (removed.length || flagged.length || promoted.length || paidOutcome.paid.length) {
       await postList();
     }
   }
 
-  return { command: 'out', senderName, argText, removed, rejected, flagged, promoted, tournamentPromoted, ...paidOutcome };
+  return { command: 'out', senderName, argText, removed, rejected, flagged, promoted, ...paidOutcome };
 }
 
 async function handleList(ctx) {

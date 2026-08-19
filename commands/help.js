@@ -70,11 +70,6 @@ const TIPS_TEXT = [
   '*Payments*',
   `_• Lead with "paid" on ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out to confirm payment in one message, e.g. ${COMMAND_PREFIX}in paid Alex, Sam_`,
   '',
-  '*Tournament*',
-  `_• If tournament's on, lead with "tournament" on ${COMMAND_PREFIX}in to opt in while joining (or upgrade an existing entry) - combines with "paid" in either order. ${COMMAND_PREFIX}settournament shows who's in; ${COMMAND_PREFIX}tournament shows the rules_`,
-  '',
-  `_• Lead with "tournament" on ${COMMAND_PREFIX}out to move someone to Social only without removing them - frees their spot for whoever's at the front of the (🏆 WL) queue_`,
-  '',
   '*Other*',
   `_• ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid sent while Snoopy's briefly offline still go through once it reconnects_`,
 ].join('\n');
@@ -104,12 +99,6 @@ const ADMIN_HELP_TEXT = [
   '*Rosters*',
   `• *${COMMAND_PREFIX}regulars [name1, name2, ...]* - saved roster of regular players, reusable later via "regular players" in ${COMMAND_PREFIX}in/${COMMAND_PREFIX}newlist (admins to change)`,
   '',
-  '*Tournament*',
-  `• *${COMMAND_PREFIX}settournament [on|off|rules <text>]* - tournament sub-feature for this group, ON by default; bare ${COMMAND_PREFIX}settournament shows who's currently in it (admins to change on/off, or set the rules text with ${COMMAND_PREFIX}settournament rules <text>)`,
-  `• *${COMMAND_PREFIX}tournament* - shows the tournament rules text an admin set via ${COMMAND_PREFIX}settournament rules <text> (anyone can view)`,
-  `• *${COMMAND_PREFIX}tournamentlimit [number]* - max people in the tournament, separate from the main ${COMMAND_PREFIX}limit (admins to change; ${COMMAND_PREFIX}tournamentlimit off removes it)`,
-  `• *${COMMAND_PREFIX}tournamentwinners [Name1, Name2]* - sets the "Congrats to Name1 and Name2 for winning last week's tournament" banner shown above the list (admins to change)`,
-  '',
   '*Group settings*',
   `• *${COMMAND_PREFIX}spamfilter [on|off]* - auto-delete stock/crypto spam in this group, ON by default (admins to change)`,
   `• *${COMMAND_PREFIX}ai [on|off]* - let people @-mention me with a plain-English request instead of exact commands, OFF by default until set up (admins to change)`,
@@ -117,7 +106,7 @@ const ADMIN_HELP_TEXT = [
   '*Other*',
   `• *${COMMAND_PREFIX}update <paste the list, edited>* - bulk-edit Attendance/Waitlist/Payment by pasting the list back with changes`,
   `• *${COMMAND_PREFIX}undo* - reverse the last change made in this group, whatever it was (admins only)`,
-  `• *${COMMAND_PREFIX}admintips* - tips and caveats for the admin commands above (${COMMAND_PREFIX}update's header block, ${COMMAND_PREFIX}settournament, and more)`,
+  `• *${COMMAND_PREFIX}admintips* - tips and caveats for the admin commands above (${COMMAND_PREFIX}update's header block, and more)`,
 ].join('\n');
 
 // The admin-side tips/caveats that used to be ADMIN_HELP_TEXT's own
@@ -137,12 +126,7 @@ const ADMIN_TIPS_TEXT = [
   `_• ${COMMAND_PREFIX}exempt works like ${COMMAND_PREFIX}regulars (set/add/remove/clear) but for who never owes money - skipped every time ${COMMAND_PREFIX}newlist carries attendance into payment-due. Forward-looking only - use ${COMMAND_PREFIX}paid <name> too to also clear an existing balance_`,
   '',
   '*Rosters*',
-  `_• Save your regulars once with ${COMMAND_PREFIX}regulars Peter, Chris, Linda (add/remove/clear to tweak). Every ${COMMAND_PREFIX}newlist automatically adds them and opts them straight into the tournament - no need to type "with regular players" (that still works too, e.g. to interleave them with extra guests); "regular players" also works in place of names elsewhere, e.g. ${COMMAND_PREFIX}in regular players. Sticks around across ${COMMAND_PREFIX}newlist/${COMMAND_PREFIX}clear until changed_`,
-  '',
-  '*Tournament*',
-  `_• ${COMMAND_PREFIX}settournament is on by default, per-group (turn it off with ${COMMAND_PREFIX}settournament off if a group doesn't want it). Add "tournament" to ${COMMAND_PREFIX}in to opt in - Attendance splits into "🏆 Tournament" (capped by ${COMMAND_PREFIX}tournamentlimit) and "Social only". Full when someone opts in? They join socially, queued (🏆 WL) at the front, and get auto-promoted the moment a spot frees up. ${COMMAND_PREFIX}tournamentwinners Name1, Name2 sets the "Congrats to..." banner, sticking around until changed. Turning it off just hides the breakdown - nobody's forgotten_`,
-  '',
-  `_• ${COMMAND_PREFIX}settournament rules <text> sets the rules anyone can read back with bare ${COMMAND_PREFIX}tournament - sticks around across ${COMMAND_PREFIX}newlist until changed, same as ${COMMAND_PREFIX}tournamentwinners_`,
+  `_• Save your regulars once with ${COMMAND_PREFIX}regulars Peter, Chris, Linda (add/remove/clear to tweak). Every ${COMMAND_PREFIX}newlist automatically adds them - no need to type "with regular players" (that still works too, e.g. to interleave them with extra guests); "regular players" also works in place of names elsewhere, e.g. ${COMMAND_PREFIX}in regular players. Sticks around across ${COMMAND_PREFIX}newlist/${COMMAND_PREFIX}clear until changed_`,
   '',
   '*Group settings*',
   `_• ${COMMAND_PREFIX}spamfilter is per-group, ON by default - deletes WhatsApp invite links and link+stock/crypto messages automatically (admins exempt); ${COMMAND_PREFIX}spamfilter off to allow them_`,
@@ -150,7 +134,7 @@ const ADMIN_TIPS_TEXT = [
   `_• ${COMMAND_PREFIX}ai is per-group, OFF by default - once on, @-mentioning me with a plain request maps to a command (including admin ones for admins, relative dates like "next Wednesday", and the saved ${COMMAND_PREFIX}regulars roster). One message can bundle several requests, done in order. Unsure or unrelated? I say so rather than guess - I always reply when tagged_`,
   '',
   '*Other*',
-  `_• ${COMMAND_PREFIX}update reads back a copy-pasted, edited list: type ${COMMAND_PREFIX}update on its own line, then paste the list with your edits underneath. Keep the date/location/courts/time block above *Attendance* to edit those too - any field left out of it gets cleared; leave the whole block out to leave them untouched. The payment header itself is never read this way - use ${COMMAND_PREFIX}paymentlabel. Moving a name between "🏆 Tournament"/"Social only" or Attendance/Waitlist updates their status accordingly_`,
+  `_• ${COMMAND_PREFIX}update reads back a copy-pasted, edited list: type ${COMMAND_PREFIX}update on its own line, then paste the list with your edits underneath. Keep the date/location/courts/time block above *Attendance* to edit those too - any field left out of it gets cleared; leave the whole block out to leave them untouched. The payment header itself is never read this way - use ${COMMAND_PREFIX}paymentlabel. Moving a name between Attendance/Waitlist updates their status accordingly_`,
   '',
   `_• ${COMMAND_PREFIX}undo reverses whatever the last change was - a join/leave, a ${COMMAND_PREFIX}clear, a whole ${COMMAND_PREFIX}newlist, anything. Only one step back is remembered, and running it twice flips back and forth (doubling as a redo)_`,
 ].join('\n');
@@ -174,8 +158,8 @@ async function handleAdminHelp(ctx) {
 }
 
 // Same admin gate as handleAdminHelp above - the admin tips reference
-// admin-only commands (!update's header-block behavior, !settournament,
-// etc.), so there's nothing useful in here for a non-admin anyway.
+// admin-only commands (!update's header-block behavior, etc.), so there's
+// nothing useful in here for a non-admin anyway.
 async function handleAdminTips(ctx) {
   const { sock, groupId, senderId, reply } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
