@@ -16,7 +16,6 @@ const {
   parseNames,
   maxNamesReply,
   stripLeadingPaidKeyword,
-  stripLeadingInKeywords,
   stripLeadingCourtsAddKeyword,
   stripTrailingWithNames,
   REGULAR_PLAYERS_TOKEN,
@@ -84,21 +83,6 @@ test('stripLeadingPaidKeyword does not strip "paid" as part of a longer word', (
   // "paid" counts, same as the module comment explains.
   assert.deepEqual(stripLeadingPaidKeyword('Paidence'), { rest: 'Paidence', paid: false });
   assert.deepEqual(stripLeadingPaidKeyword('Paidence, Alex'), { rest: 'Paidence, Alex', paid: false });
-});
-
-test('stripLeadingInKeywords strips a bare leading "paid", "tournament", or both, in either order', () => {
-  assert.deepEqual(stripLeadingInKeywords('Alex'), { rest: 'Alex', paid: false, tournament: false });
-  assert.deepEqual(stripLeadingInKeywords('paid Alex'), { rest: 'Alex', paid: true, tournament: false });
-  assert.deepEqual(stripLeadingInKeywords('tournament Alex'), { rest: 'Alex', paid: false, tournament: true });
-  assert.deepEqual(stripLeadingInKeywords('tournament paid Alex'), { rest: 'Alex', paid: true, tournament: true });
-  assert.deepEqual(stripLeadingInKeywords('paid tournament Alex'), { rest: 'Alex', paid: true, tournament: true });
-  assert.deepEqual(stripLeadingInKeywords('tournament'), { rest: '', paid: false, tournament: true });
-  assert.deepEqual(stripLeadingInKeywords(''), { rest: '', paid: false, tournament: false });
-  assert.deepEqual(stripLeadingInKeywords(null), { rest: '', paid: false, tournament: false });
-});
-
-test('stripLeadingInKeywords does not strip "tournament" as part of a longer word', () => {
-  assert.deepEqual(stripLeadingInKeywords('Tournamentina'), { rest: 'Tournamentina', paid: false, tournament: false });
 });
 
 test('stripLeadingCourtsAddKeyword recognizes a leading "add" or "extra" as the same additive flag', () => {
@@ -272,102 +256,20 @@ test('formatCount shows just the count, or count/limit when a limit is set', () 
   assert.equal(formatCount(5, 20), '(5/20)');
 });
 
-test('formatList: while tournament is enabled, splits Attendance into a "🏆 Tournament" block (numbered first, with an "Ask @Snoopy for details" pointer) and a "Social only" block (numbering continues)', () => {
+test('formatList: Attendance renders as one flat numbered list', () => {
   const groupId = freshRegularPlayersGroupId();
-  store.setTournamentEnabled(groupId, true);
-  store.setTournamentLimit(groupId, 2);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Wendy', 'wendy@s.whatsapp.net', false, true, false);
-
-  const text = formatList(groupId);
-  assert.match(text, /🏆 \*Tournament\* \(2\/2\)\nAsk @Snoopy for details\n\n1\. Keith\n2\. Bao/);
-  assert.match(text, /Social only\n\n3\. Wendy/);
-});
-
-test('formatList: someone who wanted the tournament but it was full is tagged (🏆 WL) in the Social only block', () => {
-  const groupId = freshRegularPlayersGroupId();
-  store.setTournamentEnabled(groupId, true);
-  store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // wanted in, but full
-
-  const text = formatList(groupId);
-  assert.match(text, /Social only\n\n2\. Bao \(🏆 WL\)/);
-
-  // Someone who never asked for the tournament at all gets no tag.
-  store.addEntry(groupId, 'Wendy', 'wendy@s.whatsapp.net', false, true, false);
-  const text2 = formatList(groupId);
-  assert.match(text2, /3\. Wendy$/);
-  assert.doesNotMatch(text2, /Wendy \(🏆 WL\)/);
-});
-
-test('formatList: (🏆 WL)-tagged entries are sorted to the FRONT of Social only, ahead of earlier joiners who never asked - that ordering IS the tournament queue', () => {
-  const groupId = freshRegularPlayersGroupId();
-  store.setTournamentEnabled(groupId, true);
-  store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // takes the only spot
-  store.addEntry(groupId, 'Wendy', 'wendy@s.whatsapp.net', false, true, false); // plain social, joined first
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // asked later, but full - WL'd
-
-  const text = formatList(groupId);
-  // Bao (WL'd) is listed BEFORE Wendy (never asked) despite joining after her.
-  assert.match(text, /Social only\n\n2\. Bao \(🏆 WL\)\n3\. Wendy/);
-});
-
-test('formatList: while tournament is enabled, both headers show even with ZERO entries at all - each gets a "(none yet)" placeholder instead of falling back to the generic empty-Attendance message', () => {
-  const groupId = freshRegularPlayersGroupId();
-  store.setTournamentEnabled(groupId, true);
-
-  const text = formatList(groupId);
-  assert.match(text, /\*Attendance\* \(0\/\d+\)/);
-  assert.match(text, /🏆 \*Tournament\* \(0\)\nAsk @Snoopy for details\n\n\(none yet\)/);
-  assert.match(text, /Social only\n\n\(none yet\)/);
-  assert.doesNotMatch(text, /@Snoopy to add your name/);
-});
-
-test('formatList: while tournament is enabled, the Social only header still shows (with a placeholder) even when everyone who\'s joined so far is in the tournament', () => {
-  const groupId = freshRegularPlayersGroupId();
-  store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // tournament only, nobody social-only yet
-
-  const text = formatList(groupId);
-  assert.match(text, /🏆 \*Tournament\* \(1\)\nAsk @Snoopy for details\n\n1\. Keith/);
-  assert.match(text, /Social only\n\n\(none yet\)/);
-});
-
-test('formatList: with tournament OFF, a totally empty list still renders the plain "empty" message, unaffected by the tournament-headers change', () => {
-  const groupId = freshRegularPlayersGroupId();
-  store.setTournamentEnabled(groupId, false); // tournament is ON by default now
-
-  const text = formatList(groupId);
-  assert.doesNotMatch(text, /🏆 \*Tournament\*/);
-  assert.doesNotMatch(text, /Social only/);
-  assert.match(text, /\*Attendance\*\n\n\(empty, limit \d+ - @Snoopy to add your name\)/);
-});
-
-test('formatList: the winners banner only shows while tournament is enabled, and disappears (without forgetting the winners) once turned off', () => {
-  const groupId = freshRegularPlayersGroupId();
-  store.setTournamentEnabled(groupId, true);
-  store.setTournamentWinners(groupId, ['Irfan', 'Tu']);
-
-  assert.match(formatList(groupId), /🎉 \*Congrats to Irfan and Tu for winning last week's tournament\*/);
-
-  store.setTournamentEnabled(groupId, false);
-  assert.doesNotMatch(formatList(groupId), /Congrats to/);
-  assert.deepEqual(store.getTournamentWinners(groupId), ['Irfan', 'Tu']); // still remembered
-});
-
-test('formatList: with tournament off, Attendance renders as one flat numbered list, same as before this feature existed', () => {
-  const groupId = freshRegularPlayersGroupId();
-  store.setTournamentEnabled(groupId, false); // tournament is ON by default now
   store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true);
   store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true);
 
   const text = formatList(groupId);
-  assert.doesNotMatch(text, /🏆 \*Tournament\*/);
-  assert.doesNotMatch(text, /Social only/);
   assert.match(text, /\*Attendance\* \(2\/\d+\)\n\n1\. Keith\n2\. Bao/);
+});
+
+test('formatList: an empty list renders the plain "empty" message', () => {
+  const groupId = freshRegularPlayersGroupId();
+
+  const text = formatList(groupId);
+  assert.match(text, /\*Attendance\*\n\n\(empty, limit \d+ - @Snoopy to add your name\)/);
 });
 
 // --- formatList: payment-due entries grouped by owed-since date ----------
