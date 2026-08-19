@@ -839,6 +839,55 @@ test('e2e: a message that does not @-mention the bot never triggers AI interpret
   assert.equal(fakeSockInstance.sentMessages.length, 0);
 });
 
+test('e2e: pasting an edited copy of the list as plain chat (no !update, no @-mention) is not silently ignored - the bot explains nothing was recorded and recommends "@Snoopy update the list to:" (with !ai on)', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  fakeSockInstance.sentMessages.length = 0;
+
+  const pastedEdit = '*Attendance*\n\n1. PastedNoMentionProbe';
+  await deliver(pastedEdit, { from: 'jordan@s.whatsapp.net', type: 'notify' }); // no @-mention at all
+
+  // Nothing was actually applied - PastedNoMentionProbe never really joined.
+  assert.equal(store.getCurrentEvent(GROUP_ID).entries.find((e) => e.name === 'PastedNoMentionProbe'), undefined);
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  const replyText = fakeSockInstance.sentMessages[0].content.text;
+  assert.match(replyText, /none of those changes were recorded/i);
+  assert.match(replyText, /@Snoopy update the list to:/);
+  assert.match(replyText, /PastedNoMentionProbe/); // their own text is echoed back, ready to resend
+});
+
+test('e2e: pasting an edited copy of the list as plain chat recommends "!update" (not an @-mention) when !ai is off for the group', async () => {
+  ai.setEnabled(GROUP_ID, false);
+  fakeSockInstance.sentMessages.length = 0;
+
+  const pastedEdit = '*Attendance*\n\n1. PastedNoAiProbe';
+  await deliver(pastedEdit, { from: 'jordan@s.whatsapp.net', type: 'notify' });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  const replyText = fakeSockInstance.sentMessages[0].content.text;
+  assert.match(replyText, /none of those changes were recorded/i);
+  assert.match(replyText, new RegExp(`^${COMMAND_PREFIX}update\\n`, 'm'));
+  assert.doesNotMatch(replyText, /@Snoopy/);
+});
+
+test('e2e: an ordinary chat message that just happens to be numbered lines (not a real pasted list) triggers no reply at all', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('grocery list for tonight:\n1. milk\n2. eggs', { from: 'jordan@s.whatsapp.net', type: 'notify' });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 0);
+});
+
+test('e2e: pasting an edited copy of the list as plain chat during a catch-up (append) redelivery triggers no reply - only live messages get the heads-up', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('*Attendance*\n\n1. PastedCatchUpProbe', { from: 'jordan@s.whatsapp.net', type: 'append' });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 0);
+});
+
 test('e2e: an AI-eligible mention in a catch-up (append) message is never interpreted', async () => {
   ai.setEnabled(GROUP_ID, true);
   const callsBefore = geminiCallCount;
