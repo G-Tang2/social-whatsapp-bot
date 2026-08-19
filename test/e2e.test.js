@@ -129,6 +129,16 @@ const fakeGenaiModule = {
           geminiCallCount += 1;
           lastGeminiCallArgs = args;
           const next = geminiResponseQueue.shift();
+          if (next && next.timeout) {
+            // Real timed-out fetch() rejects with a DOMException whose
+            // `.name` is the fetch spec's standard "AbortError" - see
+            // lib/geminiCommand.js's interpretMessage(), which checks
+            // exactly this to tell "took too long" apart from every other
+            // failure (see setNextGeminiError below for that case).
+            const err = new Error('The operation was aborted');
+            err.name = 'AbortError';
+            throw err;
+          }
           if (next && next.error) throw new Error(next.error);
           return { text: next ? next.text : JSON.stringify({ actions: [{ command: 'none', argText: '', confidence: 'high' }] }) };
         },
@@ -154,6 +164,9 @@ function setNextGeminiResponse(objOrActions) {
 }
 function setNextGeminiError(message) {
   geminiResponseQueue.push({ error: message });
+}
+function setNextGeminiTimeout() {
+  geminiResponseQueue.push({ timeout: true });
 }
 // The exact prompt text index.js sent Gemini for the most recent AI-mention
 // call - used to confirm the current (numbered) list was actually included,
@@ -1107,6 +1120,20 @@ test('e2e: a Gemini API failure does not crash, but still gets the same "I don\'
 
   assert.equal(fakeSockInstance.sentMessages.length, 1);
   assert.match(fakeSockInstance.sentMessages[0].content.text, /not capable of doing that/i);
+});
+
+test('e2e: a Gemini call that times out gets a "took too long, try again" reply, NOT the generic "not capable of doing that" one', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiTimeout();
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('put me down please', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  const replyText = fakeSockInstance.sentMessages[0].content.text;
+  assert.match(replyText, /took too long/i);
+  assert.match(replyText, /try again/i);
+  assert.doesNotMatch(replyText, /not capable of doing that/i);
 });
 
 // Regression coverage for the "last seen" About/status heartbeat
