@@ -34,7 +34,7 @@ test('buildCatchUpSummary returns null for an empty batch', () => {
 test('buildCatchUpSummary describes a successful !in, !out, and !paid', () => {
   const summary = buildCatchUpSummary([
     { command: 'in', senderName: 'alex', added: ['Alex'], waitlisted: [], rejected: [] },
-    { command: 'out', senderName: 'sam', removed: ['Sam'], rejected: [], flagged: [], promoted: [] },
+    { command: 'out', senderName: 'sam', removed: ['Sam'], rejected: [], promoted: [] },
     { command: 'paid', senderName: 'jo', paid: ['Jo'], rejected: [] },
   ]);
   assert.match(summary.text, /Caught up on 3 messages sent while I was offline/);
@@ -51,7 +51,7 @@ test('buildCatchUpSummary describes a successful !in, !out, and !paid', () => {
 test('buildCatchUpSummary produces the exact bulleted, bold-command text layout', () => {
   const summary = buildCatchUpSummary([
     { command: 'in', senderName: 'alex', added: ['Alex'], waitlisted: [], rejected: [] },
-    { command: 'out', senderName: 'sam', removed: ['Sam'], rejected: [], flagged: [], promoted: [] },
+    { command: 'out', senderName: 'sam', removed: ['Sam'], rejected: [], promoted: [] },
   ]);
   assert.equal(
     summary.text,
@@ -82,7 +82,7 @@ test('buildCatchUpSummary covers the no-op branches (already on list, no entry, 
 test('buildCatchUpSummary reflects a trailing "paid" keyword caught up on !in/!out (see commands/list.js runPaidIfFlagged)', () => {
   const summary = buildCatchUpSummary([
     { command: 'in', senderName: 'alex', added: ['Alex'], waitlisted: [], rejected: [], paid: ['Alex'], paidRejected: [], paidAmbiguous: null },
-    { command: 'out', senderName: 'sam', removed: ['Sam'], rejected: [], flagged: [], promoted: [], paid: [], paidRejected: ['Sam - not on the payment-due list'], paidAmbiguous: null },
+    { command: 'out', senderName: 'sam', removed: ['Sam'], rejected: [], promoted: [], paid: [], paidRejected: ['Sam - not on the payment-due list'], paidAmbiguous: null },
   ]);
   assert.match(summary.text, /• \*!in\* \(alex\): added Alex; marked paid: Alex/);
   assert.match(summary.text, /• \*!out\* \(sam\): removed Sam; couldn't mark paid: Sam - not on the payment-due list/);
@@ -110,7 +110,6 @@ test('buildCatchUpSummary collects mentions from promoted entries, deduped, with
       senderName: 'admin',
       removed: ['Alex'],
       rejected: [],
-      flagged: [],
       promoted: [
         { name: 'Sam', addedBy: 'sam@s.whatsapp.net' },
         { name: 'Jo', addedBy: 'sam@s.whatsapp.net' }, // same adder as above - addedBy should only appear once in mentions
