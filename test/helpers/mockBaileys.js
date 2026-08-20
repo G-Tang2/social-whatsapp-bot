@@ -74,15 +74,21 @@ let fakeMsgCounter = 0;
 // Builds a minimal Baileys-shaped message object for `text` sent by `from`
 // in `groupId`. `pushName` defaults to the local part of `from`.
 //
-// `mentions`, if given (an array of JIDs), shapes this as an
-// extendedTextMessage with contextInfo.mentionedJid instead of a plain
+// `mentions`, if given (an array of JIDs), and/or `quotedParticipant`, if
+// given (a single JID), shape this as an extendedTextMessage with
+// contextInfo.mentionedJid/contextInfo.participant instead of a plain
 // `conversation` message - matching how real WhatsApp/Baileys represents
-// an @-mention (see lib/helpers.js's getMentionedJids doc comment for why
-// a plain `conversation` message can never carry mentions at all). Used
-// by the natural-language command feature's tests (lib/geminiCommand.js,
-// index.js's messageMentionsBot()).
-function makeTextMessage({ from, groupId, text, pushName, fromMe = false, mentions }) {
+// an @-mention or a "Reply" to someone's message respectively (see
+// lib/helpers.js's getMentionedJids/getQuotedParticipant doc comments for
+// why a plain `conversation` message can never carry either - typing "@"
+// or tapping Reply is what causes the client to send an extendedTextMessage
+// with contextInfo instead). Used by the natural-language command
+// feature's tests (lib/geminiCommand.js, index.js's messageMentionsBot()).
+function makeTextMessage({ from, groupId, text, pushName, fromMe = false, mentions, quotedParticipant }) {
   fakeMsgCounter += 1;
+  const contextInfo = {};
+  if (mentions && mentions.length) contextInfo.mentionedJid = mentions;
+  if (quotedParticipant) contextInfo.participant = quotedParticipant;
   return {
     key: {
       remoteJid: groupId,
@@ -91,10 +97,7 @@ function makeTextMessage({ from, groupId, text, pushName, fromMe = false, mentio
       id: `FAKE${fakeMsgCounter}`,
     },
     pushName: pushName || (from ? from.split('@')[0] : undefined),
-    message:
-      mentions && mentions.length
-        ? { extendedTextMessage: { text, contextInfo: { mentionedJid: mentions } } }
-        : { conversation: text },
+    message: Object.keys(contextInfo).length ? { extendedTextMessage: { text, contextInfo } } : { conversation: text },
   };
 }
 

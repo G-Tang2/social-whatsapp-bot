@@ -260,7 +260,7 @@ const P = require('pino');
 const qrcode = require('qrcode-terminal');
 
 const config = require('./lib/config');
-const { getMessageText, formatList, getMentionedJids, stripMentionTokens, normalizeJid } = require('./lib/helpers');
+const { getMessageText, formatList, getMentionedJids, getQuotedParticipant, stripMentionTokens, normalizeJid } = require('./lib/helpers');
 const { parseListSections } = require('./lib/listParser');
 const { getRegularPlayers, getUndoableState, saveUndoSnapshot } = require('./store');
 const { isGroupAdmin } = require('./lib/adminCheck');
@@ -458,29 +458,39 @@ async function start() {
   });
 }
 
-// Whether `msg` @-mentions the bot's own WhatsApp account - the trigger
-// condition for natural-language command interpretation (see
-// lib/geminiCommand.js). sock.user.id includes a device-id suffix (e.g.
-// "1234567890:12@s.whatsapp.net") that mentionedJid entries never do,
-// hence the normalizeJid() on both sides.
+// Whether `msg` either @-mentions the bot's own WhatsApp account OR is a
+// WhatsApp "reply" (the quote-reply feature, not a mention token) to a
+// message the bot itself previously sent - both count as the sender
+// directly addressing the bot, and are the trigger condition for
+// natural-language command interpretation (see lib/geminiCommand.js). A
+// reply naturally follows on from whatever the bot just said, with no
+// "@Snoopy" typed anywhere in it, so treating it as equivalent to an
+// explicit mention lets a back-and-forth conversation (bot replies, sender
+// taps Reply and types "remove me instead") work without re-mentioning the
+// bot every single time - see getQuotedParticipant() (lib/helpers.js) for
+// how the reply's original-sender JID is read. sock.user.id includes a
+// device-id suffix (e.g. "1234567890:12@s.whatsapp.net") that neither
+// mentionedJid nor a reply's quoted participant ever carry, hence the
+// normalizeJid() on both sides.
 //
 // WhatsApp has two parallel addressing formats for the same account:
 // the classic phone-number JID ("...@s.whatsapp.net", what sock.user.id
 // always is) and the newer privacy "LID" JID ("...@lid", a different
 // numeric ID for the same account). Which one a client puts in
-// contextInfo.mentionedJid when someone @-mentions the bot depends on
-// that group's/that sender's settings - some groups send the classic
-// JID, others send the LID one. Baileys exposes the bot's own LID as
+// contextInfo.mentionedJid/contextInfo.participant depends on that
+// group's/that sender's settings - some groups send the classic JID,
+// others send the LID one. Baileys exposes the bot's own LID as
 // sock.user.lid (populated after connecting, alongside sock.user.id), so
 // both are checked here - comparing only sock.user.id would silently
-// never match in LID-addressed groups, making the bot look mentioned but
+// never match in LID-addressed groups, making the bot look unaddressed but
 // never actually trigger.
 function messageMentionsBot(sock, msg) {
   const candidates = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
   if (!candidates.length) return false;
   const mentioned = getMentionedJids(msg);
-  if (!mentioned.length) return false;
-  return mentioned.some((jid) => candidates.includes(normalizeJid(jid)));
+  if (mentioned.some((jid) => candidates.includes(normalizeJid(jid)))) return true;
+  const quotedParticipant = getQuotedParticipant(msg);
+  return !!quotedParticipant && candidates.includes(normalizeJid(quotedParticipant));
 }
 
 // Shown for every @-mention that DOESN'T end in a confident, dispatched
@@ -694,11 +704,13 @@ async function handleMessage(sock, msg, upsertType) {
       text: getMessageText(msg),
       upsertType,
       mentionedJid: getMentionedJids(msg),
+      quotedParticipant: getQuotedParticipant(msg),
       botJid: sock?.user?.id,
       // messageMentionsBot() (below) checks BOTH of these against
-      // mentionedJid - a mention that only matches one form (e.g. the
-      // group sent the LID form but botLid is undefined/different) is
-      // exactly how a genuine @-mention silently fails to trigger !ai.
+      // mentionedJid/quotedParticipant - a mention or reply that only
+      // matches one form (e.g. the group sent the LID form but botLid is
+      // undefined/different) is exactly how a genuine @-mention or reply
+      // silently fails to trigger !ai.
       botLid: sock?.user?.lid,
       mentionsBot: messageMentionsBot(sock, msg),
     });
@@ -793,7 +805,7 @@ async function handleMessage(sock, msg, upsertType) {
       );
     } else if (!text.startsWith(COMMAND_PREFIX) && ai.isEnabled(groupId) && messageMentionsBot(sock, msg)) {
       console.log(
-        `[bot] Dropped an @-mention of me in ${groupId} (from ${senderId}) because it arrived as a catch-up ('append') redelivery, not live - natural-language commands only ever act on live messages. If this was a genuine request, the sender needs to send it again.`
+        `[bot] Dropped an @-mention or reply to me in ${groupId} (from ${senderId}) because it arrived as a catch-up ('append') redelivery, not live - natural-language commands only ever act on live messages. If this was a genuine request, the sender needs to send it again.`
       );
     }
     return;
@@ -897,7 +909,7 @@ async function handleMessage(sock, msg, upsertType) {
       // ordinary chat once !ai is on; logging every such message would
       // bury the signal instead of surfacing it.
       console.log(
-        `[bot] Dropped an @-mention of me in ${groupId} (from ${senderId}) because ${COMMAND_PREFIX}ai is off for this group - natural-language commands only work once an admin turns it on with ${COMMAND_PREFIX}ai on.`
+        `[bot] Dropped an @-mention or reply to me in ${groupId} (from ${senderId}) because ${COMMAND_PREFIX}ai is off for this group - natural-language commands only work once an admin turns it on with ${COMMAND_PREFIX}ai on.`
       );
     } else if (upsertType === 'notify' && !mentionsBot && parseListSections(text).sectionsFound > 0) {
       // Someone pasted what looks like an edited copy of the list -
