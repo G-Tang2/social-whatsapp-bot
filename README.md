@@ -31,6 +31,7 @@ every change.
 | `!tournamentwinners [Name1, Name2]` | viewing: anyone; changing: group admins only | Sets the two-name "Congrats to Name1 and Name2 for winning last week's tournament" banner shown above the list while the tournament is on. With no text, shows the currently set winners without changing them |
 | `!spamfilter [on\|off]` | viewing: anyone; changing: group admins only | Turns auto-deletion of stock/crypto spam (see "Spam filtering" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!ai [on\|off]` | viewing: anyone; changing: group admins only | Turns natural-language command interpretation (see "Natural-language commands" below) on or off for *this* group. OFF by default everywhere, and requires `GEMINI_API_KEY` to be configured. With no argument, shows the current on/off state without changing it |
+| `!courtcanceller [@name]` | viewing: anyone; changing: group admins only | Sets who gets tagged with a reminder to cancel the courts if the list is still well short of people close to the start time (see "Vacancy warnings" below). Must be a real `@`-mention, not a typed name. `!courtcanceller off` turns it off. With no `@`-mention, shows who's currently set without changing it |
 | `!update <paste the list, edited>` | group admins only | Bulk-edits Attendance/Waitlist/Payment by re-reading a copy-pasted, hand-edited list (see "Bulk-editing the roster" below) |
 | `!undo` | group admins only | Reverses the single most recent change made in the group, whatever command caused it (see "Undoing the last change" below) |
 | `!help` | anyone | Shows help for the everyday commands (`!in`, `!out`, `!list`, `!paid`) |
@@ -1113,6 +1114,50 @@ A failed update (e.g. a brief network hiccup) is logged and skipped rather
 than treated as fatal - it doesn't crash the bot or affect anything else it
 does.
 
+## Vacancy warnings
+
+If a group's current list is still 6 or more spots short of its limit as
+the social's start time closes in, the bot sends two escalating warnings:
+
+- **48 hours before start:** `@`-mentions the WHOLE group, e.g. "6 spots
+  still open with 48 hours to go! Plenty of room - sign up now or courts
+  may be cancelled."
+- **26 hours before start**, if there's *still* 6+ spots open: `@`-mentions
+  whoever `!courtcanceller` names (see the command table above), as a
+  direct heads-up to actually go cancel the courts if nobody fills in by
+  then.
+
+Each warning fires **at most once** per list - it won't repeat every time
+the periodic check runs, and a fresh `!newlist` resets both, so a new cycle
+gets its own fresh pair of warnings. If no `!courtcanceller` is set, the
+26-hour warning simply never goes out (the 48-hour one still does).
+
+**This needs a real, computable start time**, not just a limit and a date -
+`!time` has always been pure freeform display text (e.g. "8pm - 10pm", "8PM
+start"), and the bot best-effort-parses whatever's typed into it to find
+the actual start-of-social time. It reads the *first* recognizable
+`H[:MM] am/pm` (or, failing that, a bare 24-hour `HH:MM`) it finds in the
+text - which works for the common ways people phrase it ("8PM start", "8pm
+- 10pm"), but a `!time` with no recognizable time in it at all (e.g. just
+"TBC") means vacancy warnings are silently skipped for that list until an
+admin re-sets `!time` with an actual time in it.
+
+Configurable in `.env` (see `.env.example`):
+
+- `VACANCY_REMINDER_INTERVAL_MINUTES` controls how often every configured
+  group is checked. Defaults to 30 if unset - warnings aren't
+  second-precise, they fire on the next check after crossing each
+  threshold.
+- `TIMEZONE` (same setting as the last-seen heartbeat above) is what the
+  list's date/time are interpreted in when computing the real start
+  instant.
+
+There's no on/off toggle for this feature specifically (unlike spam
+filtering, `!ai`, or the tournament sub-feature) - it only ever does
+anything for a list that's both under the vacancy threshold and close
+enough to its own start time, so there's nothing to needlessly turn off for
+a group that never hits either condition.
+
 ## Important: how this connects to WhatsApp, and the risk involved
 
 This bot uses **Baileys**, an unofficial library that talks to WhatsApp the
@@ -1593,7 +1638,8 @@ one giant switch statement. The actual work is split across two folders:
   roster" above), `catchUpQueue.js`/`catchUpSummary.js` (batches caught-up
   `!in`/`!out`/`!paid` outcomes into one combined summary - see below), and
   `lastSeenStatus.js` (the WhatsApp About/status heartbeat - see "Last seen
-  status heartbeat" above).
+  status heartbeat" above), and `vacancyReminder.js` (the low-signup
+  48-hour/26-hour warnings - see "Vacancy warnings" above).
 - `commands/` - one file per group of related commands (`list.js` for
   `!in`/`!out`/`!list`/`!paid`, `admin.js` for the list-management
   commands, `spamfilter.js`, `help.js`), plus

@@ -551,6 +551,92 @@ test('newList exemption is case/whitespace-insensitive, same normalizeName() mat
   assert.deepEqual(store.getCurrentEvent(groupId).duePayments, []);
 });
 
+// getCourtCanceller/setCourtCanceller persist a per-group court-
+// cancellation contact - see !courtcanceller (commands/admin.js) and
+// lib/vacancyReminder.js's 26-hours-before check.
+
+test('getCourtCanceller starts unset for a brand-new group', () => {
+  const groupId = freshGroupId();
+  assert.equal(store.getCourtCanceller(groupId), null);
+});
+
+test('setCourtCanceller stores the JID and getCourtCanceller reads it back', () => {
+  const groupId = freshGroupId();
+  const result = store.setCourtCanceller(groupId, { jid: 'alex@s.whatsapp.net' });
+  assert.deepEqual(result, { jid: 'alex@s.whatsapp.net' });
+  assert.deepEqual(store.getCourtCanceller(groupId), { jid: 'alex@s.whatsapp.net' });
+});
+
+test('setCourtCanceller(groupId, null) clears a previously-set contact', () => {
+  const groupId = freshGroupId();
+  store.setCourtCanceller(groupId, { jid: 'alex@s.whatsapp.net' });
+  store.setCourtCanceller(groupId, null);
+  assert.equal(store.getCourtCanceller(groupId), null);
+});
+
+test('setCourtCanceller persists across newList/clearList, same lifecycle as regularPlayers/paymentExempt', () => {
+  const groupId = freshGroupId();
+  store.setCourtCanceller(groupId, { jid: 'alex@s.whatsapp.net' });
+  store.newList(groupId, '2026-08-20', {});
+  assert.deepEqual(store.getCourtCanceller(groupId), { jid: 'alex@s.whatsapp.net' });
+  store.clearList(groupId);
+  assert.deepEqual(store.getCourtCanceller(groupId), { jid: 'alex@s.whatsapp.net' });
+});
+
+// markVacancy48hNotified/markVacancyCancelWarningNotified - the one-shot-
+// per-list-cycle flags lib/vacancyReminder.js checks before sending each
+// of its two escalating warnings.
+
+test('a brand-new list has neither vacancy warning marked as sent', () => {
+  const groupId = freshGroupId();
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.notifiedVacancy48h, false);
+  assert.equal(event.notifiedVacancyCancelWarning, false);
+});
+
+test('markVacancy48hNotified/markVacancyCancelWarningNotified flip only their own flag on the current event', () => {
+  const groupId = freshGroupId();
+  store.markVacancy48hNotified(groupId);
+  let event = store.getCurrentEvent(groupId);
+  assert.equal(event.notifiedVacancy48h, true);
+  assert.equal(event.notifiedVacancyCancelWarning, false);
+
+  store.markVacancyCancelWarningNotified(groupId);
+  event = store.getCurrentEvent(groupId);
+  assert.equal(event.notifiedVacancy48h, true);
+  assert.equal(event.notifiedVacancyCancelWarning, true);
+});
+
+test('newList resets both vacancy-notified flags for the fresh cycle', () => {
+  const groupId = freshGroupId();
+  store.markVacancy48hNotified(groupId);
+  store.markVacancyCancelWarningNotified(groupId);
+  store.newList(groupId, '2026-08-20', {});
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.notifiedVacancy48h, false);
+  assert.equal(event.notifiedVacancyCancelWarning, false);
+});
+
+test('clearList does NOT reset the vacancy-notified flags - same list cycle, still only warn once', () => {
+  const groupId = freshGroupId();
+  store.markVacancy48hNotified(groupId);
+  store.clearList(groupId);
+
+  assert.equal(store.getCurrentEvent(groupId).notifiedVacancy48h, true);
+});
+
+test('getUndoableState/restoreUndoableState round-trip courtCanceller alongside regularPlayers/paymentExempt', () => {
+  const groupId = freshGroupId();
+  store.setCourtCanceller(groupId, { jid: 'alex@s.whatsapp.net' });
+  const snapshot = store.getUndoableState(groupId);
+  assert.deepEqual(snapshot.courtCanceller, { jid: 'alex@s.whatsapp.net' });
+
+  store.setCourtCanceller(groupId, { jid: 'sam@s.whatsapp.net' });
+  store.restoreUndoableState(groupId, snapshot);
+  assert.deepEqual(store.getCourtCanceller(groupId), { jid: 'alex@s.whatsapp.net' });
+});
+
 test('setDate corrects the current list\'s date in place, without touching entries/waitlist/location/courts/time/limit/duePayments', () => {
   const groupId = freshGroupId();
   store.setLocation(groupId, 'EBC');

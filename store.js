@@ -325,6 +325,14 @@ function emptyGroupState() {
       // Persists across !newlist (unlike tournamentWinners above) - rules
       // don't change just because a new cycle started.
       tournamentRules: null,
+      // Whether lib/vacancyReminder.js's two escalating low-signup
+      // warnings have already fired for THIS list cycle - each is a
+      // one-shot per list (not re-sent every time the periodic check
+      // runs), and both reset to false whenever a fresh cycle starts (see
+      // newList() below) - a new list is a fresh chance to fill up, so it
+      // deserves its own fresh warning too.
+      notifiedVacancy48h: false,
+      notifiedVacancyCancelWarning: false,
     },
     history: [],
     // A saved roster of "regular players" for the group - see
@@ -349,6 +357,16 @@ function emptyGroupState() {
     // remove any debt they already owe from before - see newList()'s own
     // doc comment for why.
     paymentExempt: [],
+    // The specific person to @-mention if the group is still well short of
+    // vacant spots as the social's start time closes in - see
+    // !courtcanceller (commands/admin.js) and lib/vacancyReminder.js's
+    // 26-hours-before check. `{ jid }` or null - same top-level,
+    // persist-until-explicitly-changed lifecycle as regularPlayers/
+    // paymentExempt above (a court-booking contact doesn't change every
+    // list cycle), but a WhatsApp ID rather than a name: only ever set via
+    // a genuine @-mention in the !courtcanceller message itself, never a
+    // typed name - see that handler's own doc comment for why.
+    courtCanceller: null,
     // A single-level "undo the last edit" slot - see getUndoableState/
     // restoreUndoableState/saveUndoSnapshot/getUndoSnapshot below and
     // commands/admin.js's !undo. Also a sibling of `current`/`history`
@@ -455,6 +473,14 @@ function migrateIfNeeded(data) {
       }
       if (data[groupId].current.tournamentRules === undefined) {
         data[groupId].current.tournamentRules = null;
+        migrated = true;
+      }
+      if (data[groupId].current.notifiedVacancy48h === undefined) {
+        data[groupId].current.notifiedVacancy48h = false;
+        migrated = true;
+      }
+      if (data[groupId].current.notifiedVacancyCancelWarning === undefined) {
+        data[groupId].current.notifiedVacancyCancelWarning = false;
         migrated = true;
       }
     }
@@ -854,6 +880,49 @@ function leaveTournament(groupId, name) {
   return { ok: true, promoted };
 }
 
+// The group's saved court-cancellation contact - see !courtcanceller
+// (commands/admin.js) and lib/vacancyReminder.js. `|| null` defensively
+// covers a group whose data predates this field, same convention as
+// getRegularPlayers/getPaymentExempt above. Returns `{ jid }` or null.
+function getCourtCanceller(groupId) {
+  const all = readAll();
+  return (all[groupId] || emptyGroupState()).courtCanceller || null;
+}
+
+// Sets (or clears, with `canceller: null`) the group's court-cancellation
+// contact - see !courtcanceller (commands/admin.js), which is also where
+// the @-mention is turned into `{ jid }` in the first place.
+function setCourtCanceller(groupId, canceller) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  all[groupId].courtCanceller = canceller;
+  writeAll(all);
+  return all[groupId].courtCanceller;
+}
+
+// Marks the CURRENT list's 48-hours-before "plenty of spots, sign up or
+// courts may be cancelled" group-wide warning as sent - see
+// lib/vacancyReminder.js, which checks this (via getCurrentEvent's
+// notifiedVacancy48h) before sending, so the warning fires AT MOST ONCE
+// per list cycle regardless of how often the periodic check runs. Reset
+// back to false by newList() below, same as
+// markVacancyCancelWarningNotified.
+function markVacancy48hNotified(groupId) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  all[groupId].current.notifiedVacancy48h = true;
+  writeAll(all);
+}
+
+// Same as markVacancy48hNotified above, for the 26-hours-before
+// court-cancellation warning sent to whoever !courtcanceller designates.
+function markVacancyCancelWarningNotified(groupId) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  all[groupId].current.notifiedVacancyCancelWarning = true;
+  writeAll(all);
+}
+
 // --- Undo support (see commands/admin.js's !undo) ---
 //
 // The general approach: BEFORE any command that might mutate a group's
@@ -901,16 +970,17 @@ function getUndoableState(groupId) {
     history: state.history,
     regularPlayers: state.regularPlayers || [],
     paymentExempt: state.paymentExempt || [],
+    courtCanceller: state.courtCanceller || null,
   };
 }
 
-// Overwrites the group's current/history/regularPlayers/paymentExempt
-// wholesale from a snapshot previously returned by getUndoableState() -
-// the actual "restore" half of !undo. Leaves `undo` itself untouched - the
-// dispatch wrapper (commands/index.js) is what updates that, generically,
-// exactly as it would for any other command that changes something (see
-// the file-level comment above for why running !undo again then acts as a
-// redo).
+// Overwrites the group's current/history/regularPlayers/paymentExempt/
+// courtCanceller wholesale from a snapshot previously returned by
+// getUndoableState() - the actual "restore" half of !undo. Leaves `undo`
+// itself untouched - the dispatch wrapper (commands/index.js) is what
+// updates that, generically, exactly as it would for any other command
+// that changes something (see the file-level comment above for why
+// running !undo again then acts as a redo).
 function restoreUndoableState(groupId, snapshot) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
@@ -918,6 +988,7 @@ function restoreUndoableState(groupId, snapshot) {
   all[groupId].history = snapshot.history;
   all[groupId].regularPlayers = snapshot.regularPlayers;
   all[groupId].paymentExempt = snapshot.paymentExempt !== undefined ? snapshot.paymentExempt : [];
+  all[groupId].courtCanceller = snapshot.courtCanceller !== undefined ? snapshot.courtCanceller : null;
   writeAll(all);
 }
 
@@ -1794,6 +1865,10 @@ function newList(groupId, date, details = {}) {
     // a fresh result to show.
     tournamentWinners: null,
     tournamentRules: outgoing.tournamentRules || null,
+    // A fresh cycle, a fresh chance to fill up - see
+    // markVacancy48hNotified/markVacancyCancelWarningNotified above.
+    notifiedVacancy48h: false,
+    notifiedVacancyCancelWarning: false,
   };
 
   writeAll(all);
@@ -1821,6 +1896,10 @@ module.exports = {
   setTournamentRules,
   joinTournament,
   leaveTournament,
+  getCourtCanceller,
+  setCourtCanceller,
+  markVacancy48hNotified,
+  markVacancyCancelWarningNotified,
   getUndoableState,
   restoreUndoableState,
   saveUndoSnapshot,

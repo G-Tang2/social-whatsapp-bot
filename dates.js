@@ -273,6 +273,96 @@ function formatDisplayDate(isoDate) {
   return `${d}${ordinalSuffix(d)} ${month} ${weekday}`;
 }
 
+// Best-effort extraction of a START time-of-day from `str` - the CURRENT
+// list's freeform `time` text (e.g. "8PM start", "8pm - 10pm", "20:00"),
+// which nothing else in this codebase parses (see lib/vacancyReminder.js,
+// the one feature that actually needs a real computable start instant,
+// not just display text). Returns { hour, minute } (24-hour) or null if no
+// recognizable time is found anywhere in the string - callers must treat
+// null as "can't compute a start time for this list", not "starts at
+// midnight".
+//
+// Tries a 12-hour "H[:MM] am/pm" form FIRST (e.g. "8pm", "8:30 PM",
+// "8.30p.m.") - matches the FIRST such token in the string, which is
+// always the START of a range like "8pm - 10pm" since people write ranges
+// start-first. Falls back to a bare 24-hour "HH:MM" form (e.g. "20:00")
+// ONLY if no am/pm time was found - requires a colon, so an unrelated bare
+// number elsewhere in the text (a court number, a headcount) is never
+// misread as a time.
+function parseTimeOfDay(str) {
+  if (typeof str !== 'string') return null;
+
+  const ampmMatch = str.match(/\b(\d{1,2})(?:[:.]([0-5]\d))?\s*([ap])\.?\s*m\b\.?/i);
+  if (ampmMatch) {
+    let hour = Number(ampmMatch[1]);
+    if (hour < 1 || hour > 12) return null;
+    const minute = ampmMatch[2] ? Number(ampmMatch[2]) : 0;
+    const isPM = ampmMatch[3].toLowerCase() === 'p';
+    if (isPM && hour !== 12) hour += 12;
+    if (!isPM && hour === 12) hour = 0;
+    return { hour, minute };
+  }
+
+  const militaryMatch = str.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+  if (militaryMatch) {
+    return { hour: Number(militaryMatch[1]), minute: Number(militaryMatch[2]) };
+  }
+
+  return null;
+}
+
+// The UTC offset (in minutes, e.g. 600 for UTC+10) `timeZone` is actually
+// at the instant `date` - computed by formatting `date` (an absolute
+// instant) as its wall-clock components IN `timeZone` via Intl, then
+// diffing those components (reinterpreted as if they WERE UTC) against
+// `date`'s own real UTC time. DST-correct because it's evaluated at a
+// specific instant, not a fixed year-round offset - shared by
+// zonedDateTimeToUtc below.
+function getTimeZoneOffsetMinutes(date, timeZone) {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const parts = Object.fromEntries(dtf.formatToParts(date).map((p) => [p.type, p.value]));
+  const asUtcMs = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  return (asUtcMs - date.getTime()) / 60000;
+}
+
+// Resolves a wall-clock date+time (`isoDate` "YYYY-MM-DD", `hour`/`minute`
+// 24-hour) AS SEEN IN `timeZone` into the real absolute instant (a `Date`)
+// it actually refers to - e.g. "2026-08-26" 20:00 in "Australia/Melbourne"
+// (UTC+10 in August) resolves to 2026-08-26T10:00:00Z. Used by
+// lib/vacancyReminder.js to turn a list's date + parseTimeOfDay() result
+// into a real instant it can diff against `new Date()`. Returns null for
+// an invalid `isoDate`.
+//
+// Two-pass: first guesses the instant by treating the wall-clock time AS
+// IF it were UTC, looks up `timeZone`'s real offset at roughly that
+// instant (close enough - the offset only actually changes at a DST
+// transition, and the social starting exactly ON one is a vanishingly
+// rare edge case not worth a second correction pass for), then subtracts
+// that offset to get the real instant.
+function zonedDateTimeToUtc(isoDate, hour, minute, timeZone) {
+  if (!isValidDateString(isoDate)) return null;
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const guessUtcMs = Date.UTC(y, m - 1, d, hour, minute);
+  const offsetMinutes = getTimeZoneOffsetMinutes(new Date(guessUtcMs), timeZone);
+  return new Date(guessUtcMs - offsetMinutes * 60000);
+}
+
 module.exports = {
   isValidDateString,
   formatDisplayDate,
@@ -281,4 +371,6 @@ module.exports = {
   parseDisplayDateForUpdate,
   parseOwedSinceDisplayDate,
   nextOccurrenceOfSameWeekday,
+  parseTimeOfDay,
+  zonedDateTimeToUtc,
 };
