@@ -337,10 +337,10 @@ test('handleOut: "tournament" combines with "paid", either order, same as !in - 
   // dropped - not the payment-tracking mechanics themselves (covered
   // elsewhere).
   assert.deepEqual(aOutcome.paidRejected, [
-    'A is not on the payment list, perhaps you signed up under a different name or someone already marked you as paid',
+    'A is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid',
   ]);
   assert.deepEqual(bOutcome.paidRejected, [
-    'B is not on the payment list, perhaps you signed up under a different name or someone already marked you as paid',
+    'B is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid',
   ]);
 });
 
