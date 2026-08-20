@@ -198,22 +198,22 @@ const { COMMAND_PREFIX } = require('../lib/config');
 const { formatList } = require('../lib/helpers');
 
 let fakeMsgCounter = 0;
-function makeMsg({ from, text, fromMe = false, mentions }) {
+function makeMsg({ from, text, fromMe = false, mentions, quotedParticipant }) {
   fakeMsgCounter += 1;
+  const contextInfo = {};
+  if (mentions && mentions.length) contextInfo.mentionedJid = mentions;
+  if (quotedParticipant) contextInfo.participant = quotedParticipant;
   return {
     key: { remoteJid: GROUP_ID, participant: from, fromMe, id: `E2E${fakeMsgCounter}` },
     pushName: from ? from.split('@')[0] : undefined,
-    message:
-      mentions && mentions.length
-        ? { extendedTextMessage: { text, contextInfo: { mentionedJid: mentions } } }
-        : { conversation: text },
+    message: Object.keys(contextInfo).length ? { extendedTextMessage: { text, contextInfo } } : { conversation: text },
   };
 }
 
-async function deliver(text, { from = 'alex@s.whatsapp.net', type = 'notify', mentions } = {}) {
+async function deliver(text, { from = 'alex@s.whatsapp.net', type = 'notify', mentions, quotedParticipant } = {}) {
   const upsertHandler = capturedHandlers['messages.upsert'];
   assert.ok(upsertHandler, 'expected index.js to have registered a messages.upsert handler');
-  await upsertHandler({ messages: [makeMsg({ from, text, mentions })], type });
+  await upsertHandler({ messages: [makeMsg({ from, text, mentions, quotedParticipant })], type });
 }
 
 test('e2e: a live !in command is processed and posts the updated list', async () => {
@@ -362,6 +362,49 @@ test('e2e: AI mention still triggers when WhatsApp sends the bot\'s LID (not its
 
   const posted = fakeSockInstance.sentMessages.find((m) => /jordan/i.test(m.content.text || ''));
   assert.ok(posted, 'expected the LID-form mention to still be recognized as mentioning the bot');
+});
+
+test('e2e: replying to one of the bot\'s own messages (no "@Snoopy" typed at all) triggers AI interpretation, same as an explicit @-mention', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'in', argText: '', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  // No `mentions` at all here - just `quotedParticipant: BOT_JID`, exactly
+  // what WhatsApp sends when someone taps "Reply" on a message the bot
+  // sent and types a plain follow-up with no "@" anywhere in it.
+  await deliver('put me down for Saturday', { from: 'jordan@s.whatsapp.net', type: 'notify', quotedParticipant: BOT_JID });
+
+  const posted = fakeSockInstance.sentMessages.find((m) => /jordan/i.test(m.content.text || ''));
+  assert.ok(posted, 'expected a reply to the bot\'s own message to be recognized as addressing the bot');
+});
+
+test('e2e: replying to the bot still triggers when WhatsApp sends its LID (not its phone-number JID) as the quoted participant', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'in', argText: '', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('put me down for Saturday', { from: 'jordan@s.whatsapp.net', type: 'notify', quotedParticipant: BOT_LID });
+
+  const posted = fakeSockInstance.sentMessages.find((m) => /jordan/i.test(m.content.text || ''));
+  assert.ok(posted, 'expected the LID-form quoted participant to still be recognized as a reply to the bot');
+});
+
+test('e2e: replying to someone OTHER than the bot does not trigger AI interpretation (Gemini never even called)', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  // Deliberately does NOT queue a fake Gemini response - Gemini must never
+  // be called at all here, and queuing one anyway would leave it stranded
+  // in geminiResponseQueue (never shifted off), silently misattributed to
+  // whichever LATER test calls interpretMessage next. Assert on
+  // geminiCallCount instead, same pattern as the "!ai off" test above.
+  const callsBefore = geminiCallCount;
+  fakeSockInstance.sentMessages.length = 0;
+
+  // Quotes a real group member (alex), not the bot - must be treated as
+  // ordinary chat, never as though the bot itself were addressed.
+  await deliver('put me down for Saturday', { from: 'jordan@s.whatsapp.net', type: 'notify', quotedParticipant: 'alex@s.whatsapp.net' });
+
+  assert.equal(geminiCallCount, callsBefore, 'Gemini should never be called for a reply to someone other than the bot');
+  assert.equal(fakeSockInstance.sentMessages.length, 0);
 });
 
 test('e2e: "@bot add me and 2 friends" (mapped to argText "+2") adds the sender plus 2 guest entries via the real handler', async () => {
