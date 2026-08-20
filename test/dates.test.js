@@ -11,6 +11,8 @@ const {
   parseDisplayDate,
   parseDisplayDateForUpdate,
   nextOccurrenceOfSameWeekday,
+  parseTimeOfDay,
+  zonedDateTimeToUtc,
 } = require('../dates');
 
 test('isValidDateString accepts real calendar dates and rejects rollovers', () => {
@@ -142,4 +144,61 @@ test('nextOccurrenceOfSameWeekday: no current date to go off of returns null', (
   assert.equal(nextOccurrenceOfSameWeekday(null, reference), null);
   assert.equal(nextOccurrenceOfSameWeekday('', reference), null);
   assert.equal(nextOccurrenceOfSameWeekday('not-a-date', reference), null);
+});
+
+// --- parseTimeOfDay (lib/vacancyReminder.js's real-world use case) ---
+
+test('parseTimeOfDay: reads the FIRST 12-hour am/pm time in the string as the start time', () => {
+  assert.deepEqual(parseTimeOfDay('8PM start'), { hour: 20, minute: 0 });
+  assert.deepEqual(parseTimeOfDay('8pm - 10pm'), { hour: 20, minute: 0 });
+  assert.deepEqual(parseTimeOfDay('7pm-9pm'), { hour: 19, minute: 0 });
+  assert.deepEqual(parseTimeOfDay('8 PM'), { hour: 20, minute: 0 });
+});
+
+test('parseTimeOfDay: handles minutes and punctuated am/pm', () => {
+  assert.deepEqual(parseTimeOfDay('8:30pm'), { hour: 20, minute: 30 });
+  assert.deepEqual(parseTimeOfDay('8.30 p.m.'), { hour: 20, minute: 30 });
+});
+
+test('parseTimeOfDay: 12am is midnight (hour 0), 12pm is noon (hour 12)', () => {
+  assert.deepEqual(parseTimeOfDay('12am'), { hour: 0, minute: 0 });
+  assert.deepEqual(parseTimeOfDay('12pm'), { hour: 12, minute: 0 });
+});
+
+test('parseTimeOfDay: falls back to a bare 24-hour "HH:MM" only when no am/pm time is found', () => {
+  assert.deepEqual(parseTimeOfDay('20:00 start'), { hour: 20, minute: 0 });
+  assert.deepEqual(parseTimeOfDay('18:30'), { hour: 18, minute: 30 });
+});
+
+test('parseTimeOfDay: returns null when there is no recognizable time at all - never guesses midnight', () => {
+  assert.equal(parseTimeOfDay('start time TBC'), null);
+  assert.equal(parseTimeOfDay(''), null);
+  assert.equal(parseTimeOfDay(null), null);
+  // A bare number with no am/pm and no colon (e.g. a court count leaking
+  // in) must not be misread as an hour.
+  assert.equal(parseTimeOfDay('6 courts'), null);
+});
+
+// --- zonedDateTimeToUtc (lib/vacancyReminder.js's real-world use case) ---
+
+test('zonedDateTimeToUtc: resolves a wall-clock date+time in a non-UTC timezone to the correct absolute instant', () => {
+  // Melbourne is UTC+10 in August (southern-hemisphere winter, no DST) -
+  // 20:00 local on 26/08 is 10:00 UTC.
+  const winter = zonedDateTimeToUtc('2026-08-26', 20, 0, 'Australia/Melbourne');
+  assert.equal(winter.toISOString(), '2026-08-26T10:00:00.000Z');
+});
+
+test('zonedDateTimeToUtc: correctly accounts for DST (Melbourne is UTC+11 in January)', () => {
+  const summer = zonedDateTimeToUtc('2026-01-26', 20, 0, 'Australia/Melbourne');
+  assert.equal(summer.toISOString(), '2026-01-26T09:00:00.000Z');
+});
+
+test('zonedDateTimeToUtc: a plain UTC timezone needs no adjustment', () => {
+  const result = zonedDateTimeToUtc('2026-08-26', 20, 0, 'UTC');
+  assert.equal(result.toISOString(), '2026-08-26T20:00:00.000Z');
+});
+
+test('zonedDateTimeToUtc: returns null for an invalid date string', () => {
+  assert.equal(zonedDateTimeToUtc('not-a-date', 20, 0, 'UTC'), null);
+  assert.equal(zonedDateTimeToUtc(null, 20, 0, 'UTC'), null);
 });

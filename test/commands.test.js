@@ -40,8 +40,8 @@ function freshGroupId() {
 
 // Builds a fake ctx matching the shape every command handler expects,
 // backed by a real (temp-dir-isolated) store/spam and a fake sock.
-function makeCtx({ sock, groupId, senderId = 'sender@s.whatsapp.net', senderName = 'Sender', argText = '' }) {
-  const msg = makeTextMessage({ from: senderId, groupId, text: `!test ${argText}`.trim() });
+function makeCtx({ sock, groupId, senderId = 'sender@s.whatsapp.net', senderName = 'Sender', argText = '', mentions }) {
+  const msg = makeTextMessage({ from: senderId, groupId, text: `!test ${argText}`.trim(), mentions });
   const replies = [];
   const reply = async (body) => {
     replies.push(body);
@@ -782,6 +782,84 @@ test('handleExempt: an exempt name never ends up owing anything, even after atte
 
   const due = store.getCurrentEvent(groupId).duePayments;
   assert.deepEqual(due.map((e) => e.name), ['Alex']);
+});
+
+// --- !courtcanceller (who to tag for the 26-hours-before court-
+// cancellation warning) - see lib/vacancyReminder.js.
+
+test('handleCourtCanceller: bare command says nothing is set for a brand new group', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
+  await adminCommands.handleCourtCanceller(ctx);
+  assert.match(replies[0], /no court-cancellation reminder set/i);
+});
+
+test('handleCourtCanceller: bare command tags whoever is currently set', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setCourtCanceller(groupId, { jid: 'alex@s.whatsapp.net' });
+
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
+  await adminCommands.handleCourtCanceller(ctx);
+
+  const sent = sock.sentMessages.find((m) => /currently goes to/i.test(m.content.text || ''));
+  assert.ok(sent, 'expected a reply naming the current court-canceller');
+  assert.deepEqual(sent.content.mentions, ['alex@s.whatsapp.net']);
+});
+
+test('handleCourtCanceller: only an admin can change it - a non-admin\'s attempt is refused', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  const { ctx, replies } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'jordan@s.whatsapp.net',
+    argText: '@Alex',
+    mentions: ['alex@s.whatsapp.net'],
+  });
+  await adminCommands.handleCourtCanceller(ctx);
+  assert.match(replies[0], /only a group admin/i);
+  assert.equal(store.getCourtCanceller(groupId), null);
+});
+
+test('handleCourtCanceller: requires a genuine @-mention - a typed name alone is refused', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Alex' });
+  await adminCommands.handleCourtCanceller(ctx);
+  assert.match(replies[0], /@-mention/i);
+  assert.equal(store.getCourtCanceller(groupId), null);
+});
+
+test('handleCourtCanceller: an admin @-mentioning someone sets them, and confirms by tagging them', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'admin@s.whatsapp.net',
+    argText: '@Alex',
+    mentions: ['alex@s.whatsapp.net'],
+  });
+  await adminCommands.handleCourtCanceller(ctx);
+
+  assert.deepEqual(store.getCourtCanceller(groupId), { jid: 'alex@s.whatsapp.net' });
+  const sent = sock.sentMessages.find((m) => /set to/i.test(m.content.text || ''));
+  assert.ok(sent, 'expected a confirmation reply');
+  assert.deepEqual(sent.content.mentions, ['alex@s.whatsapp.net']);
+});
+
+test('handleCourtCanceller: "off" clears a previously-set contact', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setCourtCanceller(groupId, { jid: 'alex@s.whatsapp.net' });
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'off' });
+  await adminCommands.handleCourtCanceller(ctx);
+
+  assert.equal(store.getCourtCanceller(groupId), null);
+  assert.match(replies[0], /turned off/i);
 });
 
 // --- !paid with multiple entries per name (owing for 2+ separate events) --

@@ -33,6 +33,8 @@ const {
   setRegularPlayers,
   getPaymentExempt,
   setPaymentExempt,
+  getCourtCanceller,
+  setCourtCanceller,
   getUndoSnapshot,
   restoreUndoableState,
   normalizeName,
@@ -55,6 +57,7 @@ const {
   stripLeadingCourtsAddKeyword,
   expandRegularPlayersToken,
   formatPromotedMessage,
+  getMentionedJids,
 } = require('../lib/helpers');
 
 async function handleClear(ctx) {
@@ -708,6 +711,82 @@ async function handleExempt(ctx) {
   await reply(`*Payment exempt*\n${formatPaymentExempt(updated)}`);
 }
 
+// !courtcanceller sets (or views) the specific person lib/vacancyReminder.js
+// @-mentions if the group's current list is still 6+ spots short with only
+// 26 hours left before the social's start time - typically whoever
+// actually books/pays for the courts, so they get a direct heads-up to go
+// cancel them rather than eating the cost of an empty booking. Persistent
+// across !newlist/!clear (see store.js's getCourtCanceller/
+// setCourtCanceller) - same "sticks until an admin explicitly changes it"
+// lifecycle as !regulars/!exempt above, since who books the courts doesn't
+// usually change week to week.
+//
+// Requires a genuine @-mention in the message itself (e.g.
+// "!courtcanceller @Alex"), never a typed name - a typed name has no
+// reliable WhatsApp ID to actually tag later, and this bot's own
+// convention throughout (see e.g. resolveOwnDue's doc comment in
+// commands/list.js) is to match people by WhatsApp ID wherever it
+// matters, not by whatever display text happens to be typed. If more than
+// one person is @-mentioned, only the first is used.
+//
+// Bare !courtcanceller (no argument) just shows who's currently set -
+// anyone can do this, same "viewing: anyone, changing: admins" pattern as
+// !regulars/!exempt/!location. "!courtcanceller off" (or "clear"/"none")
+// turns it off - the 26-hour warning is then simply never sent (see
+// lib/vacancyReminder.js's own handling of a missing court-canceller)
+// rather than falling back to some default.
+async function handleCourtCanceller(ctx) {
+  const { sock, msg, groupId, senderId, argText, reply } = ctx;
+
+  if (!argText) {
+    const current = getCourtCanceller(groupId);
+    if (current && current.jid) {
+      await sock.sendMessage(
+        groupId,
+        {
+          text: `Court-cancellation reminder currently goes to @${current.jid.split('@')[0]}.\nTo change it (admins only): ${COMMAND_PREFIX}courtcanceller @name, or ${COMMAND_PREFIX}courtcanceller off to turn it off.`,
+          mentions: [current.jid],
+        },
+        { quoted: msg }
+      );
+    } else {
+      await reply(
+        `No court-cancellation reminder set - nobody gets tagged if the social's still well short on people close to the start time.\nTo set one (admins only): ${COMMAND_PREFIX}courtcanceller @name`
+      );
+    }
+    return;
+  }
+
+  const admin = await isGroupAdmin(sock, groupId, senderId);
+  if (!admin) {
+    await reply('Only a group admin can change the court-cancellation reminder.');
+    return;
+  }
+
+  if (/^(off|clear|none)$/i.test(argText.trim())) {
+    setCourtCanceller(groupId, null);
+    await reply('Court-cancellation reminder turned off.');
+    return;
+  }
+
+  const mentioned = getMentionedJids(msg);
+  if (!mentioned.length) {
+    await reply(`@-mention the person directly, e.g. ${COMMAND_PREFIX}courtcanceller @Alex - a typed name alone can't be reliably tagged.`);
+    return;
+  }
+
+  const jid = mentioned[0];
+  setCourtCanceller(groupId, { jid });
+  await sock.sendMessage(
+    groupId,
+    {
+      text: `Court-cancellation reminder set to @${jid.split('@')[0]} - they'll be tagged if the list's still 6+ spots short with 26 hours to go.`,
+      mentions: [jid],
+    },
+    { quoted: msg }
+  );
+}
+
 // !undo reverses the LAST mutating command run in the group - typed or
 // AI-mapped, self-service or admin-gated, anything from a single !in to a
 // whole !newlist or !clear. It doesn't know or care WHAT that command
@@ -1003,6 +1082,7 @@ module.exports = {
   handlePaymentlabel,
   handleRegulars,
   handleExempt,
+  handleCourtCanceller,
   handleUndo,
   handleUpdate,
 };
