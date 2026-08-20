@@ -19,6 +19,7 @@ const {
   COMMAND_PREFIX,
   PAYMENT_LABEL,
   MAX_NAMES_PER_COMMAND,
+  AUTO_NEWLIST_DELAY_HOURS,
 } = require('../lib/config');
 const { isGroupAdmin } = require('../lib/adminCheck');
 
@@ -103,6 +104,7 @@ const ADMIN_HELP_TEXT = [
   `• *${COMMAND_PREFIX}spamfilter [on|off]* - auto-delete stock/crypto spam in this group, ON by default (admins to change)`,
   `• *${COMMAND_PREFIX}ai [on|off]* - let people @-mention me with a plain-English request instead of exact commands, OFF by default until set up (admins to change)`,
   `• *${COMMAND_PREFIX}courtcanceller [@name]* - who I tag if there's still 6+ spots open 26 hours before the social starts, as a reminder to cancel the courts (admins to change - see ${COMMAND_PREFIX}admintips for the full vacancy-warning behavior)`,
+  `• *${COMMAND_PREFIX}autonewlist [on|off]* - automatically starts next week's list once this one's social has ended, OFF by default (admins to change - see ${COMMAND_PREFIX}admintips for how "ended" is worked out)`,
   '',
   '*Other*',
   `• *${COMMAND_PREFIX}update <paste the list, edited>* - bulk-edit Attendance/Waitlist/Payment by pasting the list back with changes`,
@@ -135,6 +137,8 @@ const ADMIN_TIPS_TEXT = [
   `_• ${COMMAND_PREFIX}ai is per-group, OFF by default - once on, @-mentioning me with a plain request maps to a command (including admin ones for admins, relative dates like "next Wednesday", and the saved ${COMMAND_PREFIX}regulars roster). One message can bundle several requests, done in order. Unsure or unrelated? I say so rather than guess - I always reply when tagged_`,
   '',
   `_• Vacancy warnings need a real start time to work from - set ${COMMAND_PREFIX}time to something with an actual time in it (e.g. "8PM start"), not just a description. With 6+ spots still open: I @-mention the WHOLE group once, 48 hours before start ("sign up or courts may be cancelled"); then, if still 6+ open, I @-mention whoever ${COMMAND_PREFIX}courtcanceller names once more, 26 hours before start, as their own reminder to actually go cancel. Each only fires once per list - a fresh ${COMMAND_PREFIX}newlist resets both. No ${COMMAND_PREFIX}courtcanceller set means that second reminder just never goes out_`,
+  '',
+  `_• ${COMMAND_PREFIX}autonewlist is per-group, OFF by default, and also needs a real ${COMMAND_PREFIX}time to work from (same reasoning as vacancy warnings above) - there's no separate "end time," so I treat the social as over ${AUTO_NEWLIST_DELAY_HOURS} hours after its start. Once that passes, I automatically run the equivalent of ${COMMAND_PREFIX}newlist same - same day of the week, location/courts/time carried forward, the saved ${COMMAND_PREFIX}regulars roster added - and post the fresh list here, exactly once per cycle_`,
   '',
   '*Other*',
   `_• ${COMMAND_PREFIX}update reads back a copy-pasted, edited list: type ${COMMAND_PREFIX}update on its own line, then paste the list with your edits underneath. Keep the date/location/courts/time block above *Attendance* to edit those too - any field left out of it gets cleared; leave the whole block out to leave them untouched. The payment header itself is never read this way - use ${COMMAND_PREFIX}paymentlabel. Moving a name between Attendance/Waitlist updates their status accordingly_`,

@@ -267,6 +267,7 @@ const { isGroupAdmin } = require('./lib/adminCheck');
 const catchUpQueue = require('./lib/catchUpQueue');
 const { updateLastSeenStatus } = require('./lib/lastSeenStatus');
 const { checkVacancyReminders } = require('./lib/vacancyReminder');
+const { checkAutoNewlist } = require('./lib/autoNewlistScheduler');
 const { interpretMessage, formatTodayForPrompt, formatRegularPlayersForPrompt } = require('./lib/geminiCommand');
 const spam = require('./spam');
 const ai = require('./ai');
@@ -1009,6 +1010,19 @@ const vacancyReminderTimer = setInterval(() => {
   checkVacancyReminders(currentSock);
 }, VACANCY_REMINDER_INTERVAL_MS);
 if (typeof vacancyReminderTimer.unref === 'function') vacancyReminderTimer.unref();
+
+// Same "single module-scope interval, read currentSock fresh each tick"
+// pattern as the two timers above - see lib/autoNewlistScheduler.js for
+// what this actually checks (each configured group with !autonewlist on,
+// for a real risk its social has "ended") and why it's unconditional (the
+// per-group !autonewlist toggle - default off - already gates all the
+// real work, so there's no "wasted" cost to guard against for everyone
+// else). Reuses the same tick cadence as the vacancy reminder - a social
+// "ending" doesn't need second-precision checks either.
+const autoNewlistTimer = setInterval(() => {
+  checkAutoNewlist(currentSock);
+}, VACANCY_REMINDER_INTERVAL_MS);
+if (typeof autoNewlistTimer.unref === 'function') autoNewlistTimer.unref();
 
 start().catch((err) => {
   console.error('[bot] Fatal error on startup:', err);
