@@ -32,6 +32,7 @@ every change.
 | `!spamfilter [on\|off]` | viewing: anyone; changing: group admins only | Turns auto-deletion of stock/crypto spam (see "Spam filtering" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!ai [on\|off]` | viewing: anyone; changing: group admins only | Turns natural-language command interpretation (see "Natural-language commands" below) on or off for *this* group. OFF by default everywhere, and requires `GEMINI_API_KEY` to be configured. With no argument, shows the current on/off state without changing it |
 | `!courtcanceller [@name]` | viewing: anyone; changing: group admins only | Sets who gets tagged with a reminder to cancel the courts if the list is still well short of people close to the start time (see "Vacancy warnings" below). Must be a real `@`-mention, not a typed name. `!courtcanceller off` turns it off. With no `@`-mention, shows who's currently set without changing it |
+| `!autonewlist [on\|off]` | viewing: anyone; changing: group admins only | Turns automatic "start next week's list once this one's social has ended" (see "Auto-starting next week's list" below) on or off for *this* group. OFF by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!update <paste the list, edited>` | group admins only | Bulk-edits Attendance/Waitlist/Payment by re-reading a copy-pasted, hand-edited list (see "Bulk-editing the roster" below) |
 | `!undo` | group admins only | Reverses the single most recent change made in the group, whatever command caused it (see "Undoing the last change" below) |
 | `!help` | anyone | Shows help for the everyday commands (`!in`, `!out`, `!list`, `!paid`) |
@@ -1158,6 +1159,37 @@ anything for a list that's both under the vacancy threshold and close
 enough to its own start time, so there's nothing to needlessly turn off for
 a group that never hits either condition.
 
+## Auto-starting next week's list
+
+Turn `!autonewlist on` for a group and the bot will automatically start
+next week's list on its own, as soon as this one's social is assumed to
+have ended - no admin needed to type `!newlist` every week.
+
+There's no separate "end time" field anywhere - `!time` is the same
+freeform, best-effort-parsed start time "Vacancy warnings" above relies on,
+and nothing else tracks how long a social actually runs. So "ended" here is
+an approximation: the computed start instant, plus a fixed assumed
+duration (`AUTO_NEWLIST_DELAY_HOURS`, default 2 - see below). Once that
+passes, the bot runs the equivalent of `!newlist same`:
+
+- Same day of the week as the outgoing list, one week later.
+- Location/courts/time all carried forward unchanged.
+- The saved `!regulars` roster added, same as any `!newlist`.
+- The fresh list posted to the group, exactly like a manual `!newlist`.
+
+This fires **at most once** per list cycle, same "won't repeat every check"
+guarantee as vacancy warnings. **OFF by default**, and - same caveat as
+vacancy warnings - needs a real, computable start time: a `!time` with no
+recognizable time in it (e.g. just "TBC") means the list is simply skipped
+until an admin re-sets `!time` with an actual time in it.
+
+Configurable in `.env` (see `.env.example`):
+
+- `AUTO_NEWLIST_DELAY_HOURS` - how many hours after the computed start time
+  the social is assumed to have ended. Defaults to 2 if unset.
+- Checked on the same `VACANCY_REMINDER_INTERVAL_MINUTES` cadence as
+  vacancy warnings above - no separate interval setting.
+
 ## Important: how this connects to WhatsApp, and the risk involved
 
 This bot uses **Baileys**, an unofficial library that talks to WhatsApp the
@@ -1638,8 +1670,10 @@ one giant switch statement. The actual work is split across two folders:
   roster" above), `catchUpQueue.js`/`catchUpSummary.js` (batches caught-up
   `!in`/`!out`/`!paid` outcomes into one combined summary - see below), and
   `lastSeenStatus.js` (the WhatsApp About/status heartbeat - see "Last seen
-  status heartbeat" above), and `vacancyReminder.js` (the low-signup
-  48-hour/26-hour warnings - see "Vacancy warnings" above).
+  status heartbeat" above), `vacancyReminder.js` (the low-signup
+  48-hour/26-hour warnings - see "Vacancy warnings" above), and
+  `autoNewlistScheduler.js` (auto-starting next week's list - see
+  "Auto-starting next week's list" above).
 - `commands/` - one file per group of related commands (`list.js` for
   `!in`/`!out`/`!list`/`!paid`, `admin.js` for the list-management
   commands, `spamfilter.js`, `help.js`), plus

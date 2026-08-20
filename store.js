@@ -333,6 +333,12 @@ function emptyGroupState() {
       // deserves its own fresh warning too.
       notifiedVacancy48h: false,
       notifiedVacancyCancelWarning: false,
+      // Whether lib/autoNewlistScheduler.js's !autonewlist feature has
+      // already started next week's list for THIS cycle - one-shot per
+      // list, same reasoning/lifecycle as notifiedVacancy48h above (reset
+      // to false whenever a fresh cycle starts via newList() below). See
+      // markAutoNewlistCreated below.
+      autoNewlistCreated: false,
     },
     history: [],
     // A saved roster of "regular players" for the group - see
@@ -481,6 +487,10 @@ function migrateIfNeeded(data) {
       }
       if (data[groupId].current.notifiedVacancyCancelWarning === undefined) {
         data[groupId].current.notifiedVacancyCancelWarning = false;
+        migrated = true;
+      }
+      if (data[groupId].current.autoNewlistCreated === undefined) {
+        data[groupId].current.autoNewlistCreated = false;
         migrated = true;
       }
     }
@@ -920,6 +930,18 @@ function markVacancyCancelWarningNotified(groupId) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
   all[groupId].current.notifiedVacancyCancelWarning = true;
+  writeAll(all);
+}
+
+// Marks the CURRENT list as having already had next week's list
+// auto-started - see lib/autoNewlistScheduler.js, which checks this (via
+// getCurrentEvent's autoNewlistCreated) before acting, so it fires AT MOST
+// ONCE per list cycle regardless of how often the periodic check runs.
+// Reset back to false by newList() below, same as markVacancy48hNotified.
+function markAutoNewlistCreated(groupId) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  all[groupId].current.autoNewlistCreated = true;
   writeAll(all);
 }
 
@@ -1869,6 +1891,9 @@ function newList(groupId, date, details = {}) {
     // markVacancy48hNotified/markVacancyCancelWarningNotified above.
     notifiedVacancy48h: false,
     notifiedVacancyCancelWarning: false,
+    // A fresh cycle hasn't had its own auto-newlist fire yet - see
+    // markAutoNewlistCreated above.
+    autoNewlistCreated: false,
   };
 
   writeAll(all);
@@ -1900,6 +1925,7 @@ module.exports = {
   setCourtCanceller,
   markVacancy48hNotified,
   markVacancyCancelWarningNotified,
+  markAutoNewlistCreated,
   getUndoableState,
   restoreUndoableState,
   saveUndoSnapshot,

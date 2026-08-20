@@ -106,6 +106,66 @@ async function handleClearpayments(ctx) {
   await postList();
 }
 
+// Merges the saved !regulars roster (plus any extra `names` already given,
+// e.g. !newlist's own "with ..." clause) onto whatever list is CURRENT for
+// `groupId` right now - shared by handleNewlist below and
+// lib/autoNewlistScheduler.js's !autonewlist feature, which needs the exact
+// same "regulars always get added" behavior for the list it starts on its
+// own. `addedBy`/`addedByIsAdmin` are attributed to whoever/whatever
+// triggered the add (the admin running !newlist, or null/true for an
+// automatic add - see store.js's addEntry doc comment for what these
+// fields are for). Respects whatever limit/waitlist the list ends up with,
+// exactly like !in. Returns `{ rejected }`, a list of human-readable
+// "name - reason" strings for anyone moderation blocked or who was already
+// on the list - callers decide what (if anything) to do with them, since
+// an automatic add has no message to reply to.
+//
+// Anyone who's actually on the saved !regulars roster is opted straight
+// into the tournament too (wantsTournament: true on addEntry - a no-op per
+// addEntry's own doc comment if the group's tournament isn't enabled or is
+// already full, same as any other tournament add); an explicitly-passed
+// `names` entry keeps its own (non-tournament) treatment unless it happens
+// to literally match a saved regular's name, exactly like !newlist's old
+// inline behavior this was extracted from.
+//
+// "regular players" (see REGULAR_PLAYERS_TOKEN/expandRegularPlayersToken in
+// lib/helpers.js, and !regulars below for how that roster is set) still
+// works as an explicit placeholder inside `names` too, e.g. to interleave
+// regulars at a specific position alongside extra guests - harmless now
+// that regulars are merged in automatically anyway, since the dedupe below
+// just skips them the second time.
+function addRegularsToCurrentList(groupId, addedBy, addedByIsAdmin, names = []) {
+  const regularPlayersExpansion = expandRegularPlayersToken(names, groupId);
+  const expandedNames = regularPlayersExpansion.names;
+
+  const rejected = [];
+  if (regularPlayersExpansion.usedEmptyRegularPlayers) {
+    rejected.push(`regular players - none saved yet (see ${COMMAND_PREFIX}regulars to set them)`);
+  }
+
+  const regulars = getRegularPlayers(groupId);
+  const regularNamesNormalized = new Set(regulars.map(normalizeName));
+  const seen = new Set(expandedNames.map(normalizeName));
+  for (const name of regulars) {
+    if (seen.has(normalizeName(name))) continue;
+    seen.add(normalizeName(name));
+    expandedNames.push(name);
+  }
+
+  for (const name of expandedNames) {
+    const modResult = checkEntry(name);
+    if (!modResult.ok) {
+      rejected.push(`${name} - ${modResult.reason}`);
+      continue;
+    }
+    const result = addEntry(groupId, name, addedBy, addedByIsAdmin, false, regularNamesNormalized.has(normalizeName(name)));
+    if (!result.ok) {
+      rejected.push(`${name.trim()} - already on the list`);
+    }
+  }
+  return { rejected };
+}
+
 async function handleNewlist(ctx) {
   const { sock, groupId, senderId, argText, reply, postList } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
@@ -189,49 +249,11 @@ async function handleNewlist(ctx) {
   // policy, since !newlist is already admin-only.
   //
   // The saved regulars roster (see !regulars) is ALSO always merged in
-  // here, every time - not just when "with regular players" is typed -
-  // and always opted straight into the tournament (wantsTournament: true
-  // below; a no-op per addEntry's doc comment if the group's tournament
-  // isn't enabled or is already full, same as any other tournament add).
-  // Deduped against the explicit "with <names>" list (by name) so a
-  // regular who's also explicitly named isn't rejected as a duplicate of
-  // themselves - explicit names keep their own (non-tournament) treatment
-  // either way.
-  let names = namesText ? namesText.split(',').map((n) => n.trim()).filter(Boolean) : [];
-  // "regular players" (see REGULAR_PLAYERS_TOKEN/expandRegularPlayersToken in
-  // lib/helpers.js, and !regulars below for how that roster is set) still
-  // works as an explicit placeholder inside "with ..." too, e.g. to
-  // interleave regulars at a specific position alongside extra guests -
-  // harmless now that regulars are merged in automatically anyway, since
-  // the dedupe below just skips them the second time.
-  const regularPlayersExpansion = expandRegularPlayersToken(names, groupId);
-  names = regularPlayersExpansion.names;
-
-  const rejected = [];
-  if (regularPlayersExpansion.usedEmptyRegularPlayers) {
-    rejected.push(`regular players - none saved yet (see ${COMMAND_PREFIX}regulars to set them)`);
-  }
-
-  const regulars = getRegularPlayers(groupId);
-  const regularNamesNormalized = new Set(regulars.map(normalizeName));
-  const seen = new Set(names.map(normalizeName));
-  for (const name of regulars) {
-    if (seen.has(normalizeName(name))) continue;
-    seen.add(normalizeName(name));
-    names.push(name);
-  }
-
-  for (const name of names) {
-    const modResult = checkEntry(name);
-    if (!modResult.ok) {
-      rejected.push(`${name} - ${modResult.reason}`);
-      continue;
-    }
-    const result = addEntry(groupId, name, senderId, true, false, regularNamesNormalized.has(normalizeName(name)));
-    if (!result.ok) {
-      rejected.push(`${name.trim()} - already on the list`);
-    }
-  }
+  // here, every time - not just when "with regular players" is typed - via
+  // the shared addRegularsToCurrentList helper above (see its own doc
+  // comment for the tournament opt-in and dedupe behavior).
+  const names = namesText ? namesText.split(',').map((n) => n.trim()).filter(Boolean) : [];
+  const { rejected } = addRegularsToCurrentList(groupId, senderId, true, names);
   if (rejected.length) {
     await reply(`New list started. Couldn't add:\n${rejected.join('\n')}`);
   }
@@ -1362,4 +1384,5 @@ module.exports = {
   handleCourtCanceller,
   handleUndo,
   handleUpdate,
+  addRegularsToCurrentList,
 };

@@ -22,12 +22,14 @@ process.env.GEMINI_API_KEY = 'test-key-not-real';
 const store = require('../store');
 const spam = require('../spam');
 const ai = require('../ai');
+const autoNewlist = require('../autoNewlist');
 const adminCheck = require('../lib/adminCheck');
 const { formatList } = require('../lib/helpers');
 const listCommands = require('../commands/list');
 const adminCommands = require('../commands/admin');
 const { handleSpamfilter } = require('../commands/spamfilter');
 const { handleAi } = require('../commands/ai');
+const { handleAutonewlist } = require('../commands/autonewlist');
 const { handleHelp, handleTips, handleAdminHelp, handleAdminTips } = require('../commands/help');
 const { commands } = require('../commands'); // the real, undo-tracking-wrapped dispatch table - see the "!undo" tests below
 const { createFakeSock, makeTextMessage } = require('./helpers/mockBaileys');
@@ -2172,6 +2174,36 @@ test('handleAi: off by default (unlike !spamfilter), off/on toggle requires admi
   const adminTurnOff = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'off' });
   await handleAi(adminTurnOff.ctx);
   assert.equal(ai.isEnabled(groupId), false);
+  assert.match(adminTurnOff.replies[0], /turned \*off\*/);
+});
+
+test('handleAutonewlist: off by default, off/on toggle requires admin and always replies', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  // A fresh group - never touched !autonewlist - is off.
+  const status = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
+  await handleAutonewlist(status.ctx);
+  assert.match(status.replies[0], /OFF/);
+  assert.equal(autoNewlist.isEnabled(groupId), false);
+
+  const nonAdminTry = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: 'on' });
+  await handleAutonewlist(nonAdminTry.ctx);
+  assert.match(nonAdminTry.replies[0], /Only a group admin/);
+  assert.equal(autoNewlist.isEnabled(groupId), false);
+
+  const adminTurnOn = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'on' });
+  await handleAutonewlist(adminTurnOn.ctx);
+  assert.equal(autoNewlist.isEnabled(groupId), true);
+  assert.match(adminTurnOn.replies[0], /turned \*on\*/);
+
+  const alreadyOn = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'on' });
+  await handleAutonewlist(alreadyOn.ctx);
+  assert.match(alreadyOn.replies[0], /already on/);
+
+  const adminTurnOff = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'off' });
+  await handleAutonewlist(adminTurnOff.ctx);
+  assert.equal(autoNewlist.isEnabled(groupId), false);
   assert.match(adminTurnOff.replies[0], /turned \*off\*/);
 });
 

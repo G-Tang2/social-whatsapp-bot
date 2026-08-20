@@ -11,6 +11,7 @@ const listCommands = require('./list');
 const adminCommands = require('./admin');
 const { handleSpamfilter } = require('./spamfilter');
 const { handleAi } = require('./ai');
+const { handleAutonewlist } = require('./autonewlist');
 const { handleHelp, handleTips, handleAdminHelp, handleAdminTips } = require('./help');
 
 // Wraps every command handler so that ANY command which actually mutates
@@ -77,6 +78,7 @@ const rawCommands = {
 
   [`${COMMAND_PREFIX}spamfilter`]: handleSpamfilter,
   [`${COMMAND_PREFIX}ai`]: handleAi,
+  [`${COMMAND_PREFIX}autonewlist`]: handleAutonewlist,
 
   [`${COMMAND_PREFIX}help`]: handleHelp,
   [`${COMMAND_PREFIX}tips`]: handleTips,
