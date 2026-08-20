@@ -12,7 +12,10 @@
 
 // Creates a fake `sock` object matching the subset of the real Baileys
 // socket surface this bot actually uses: sendMessage() (recording every
-// call, and honoring `content.delete` as a deletion rather than a send),
+// call, and honoring `content.delete`/`content.react` as a deletion/reaction
+// rather than a send - each collected into its own array instead of
+// `sentMessages`, so existing assertions against `sentMessages` don't have
+// to account for the bot's incidental reactions on every @-mention),
 // groupMetadata() (returning fake participants, admins flagged via the
 // `admins` option), and `user.id` - the bot's own JID, used by
 // index.js's messageMentionsBot() (see the natural-language command
@@ -24,17 +27,23 @@
 function createFakeSock({ admins = [], participantIds = [], botJid = 'bot:7@s.whatsapp.net' } = {}) {
   const sentMessages = [];
   const deleted = [];
+  const reactions = [];
 
   const allParticipantIds = Array.from(new Set([...admins, ...participantIds]));
 
   const sock = {
     sentMessages,
     deleted,
+    reactions,
     user: { id: botJid },
     sendMessage: async (jid, content, options) => {
       if (content && content.delete) {
         deleted.push({ jid, key: content.delete });
         return { key: content.delete };
+      }
+      if (content && content.react) {
+        reactions.push({ jid, emoji: content.react.text, key: content.react.key });
+        return { key: content.react.key };
       }
       const entry = { jid, content, options };
       sentMessages.push(entry);

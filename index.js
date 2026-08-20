@@ -824,9 +824,30 @@ async function handleMessage(sock, msg, upsertType) {
 
   const reply = (body) => sock.sendMessage(groupId, { text: body }, { quoted: msg });
   const postList = () => sock.sendMessage(groupId, { text: formatList(groupId) });
+  // Best-effort reaction on the mentioning message itself - a failure here
+  // (e.g. the message was deleted, or WhatsApp briefly rejects it) is
+  // cosmetic and must never take down the actual command handling below.
+  const react = async (emoji) => {
+    try {
+      await sock.sendMessage(groupId, { react: { text: emoji, key: msg.key } });
+    } catch (err) {
+      console.error(`[bot] Failed to react (${emoji}) to a message in ${groupId}:`, err.message);
+    }
+  };
 
   if (!text.startsWith(COMMAND_PREFIX)) {
     const mentionsBot = messageMentionsBot(sock, msg);
+
+    // Acknowledge an @-mention immediately with 💬 ("seen"), then swap it
+    // for ✅ below once the bot has actually sent something back - a quick
+    // visual cue in busy group chats that the mention registered even
+    // before Gemini/the handler finishes. Covers every mentionsBot branch
+    // below, including the !ai-off one that logs instead of replying -
+    // that one deliberately never earns the ✅ (see `responded` below),
+    // since nothing was actually sent back for it to confirm.
+    if (mentionsBot) await react('💬');
+    let responded = false;
+
     // A message that mentions the bot and, once every @-mention token is
     // stripped back out, has nothing else left at all - just "@Snoopy" on
     // its own, no request text attached. Treated as the same quick "sign me
@@ -852,6 +873,7 @@ async function handleMessage(sock, msg, upsertType) {
         console.error(`[bot] Error handling a bare @-mention (treated as ${COMMAND_PREFIX}in) in ${groupId} (from ${senderId}):`, err);
         await reply(UNEXPECTED_ERROR_REPLY);
       }
+      responded = true;
     } else if (upsertType === 'notify' && ai.isEnabled(groupId) && mentionsBot) {
       try {
         await handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList });
@@ -859,6 +881,7 @@ async function handleMessage(sock, msg, upsertType) {
         console.error(`[bot] Error handling an AI mention in ${groupId} (from ${senderId}):`, err);
         await reply(UNEXPECTED_ERROR_REPLY);
       }
+      responded = true;
     } else if (upsertType === 'notify' && mentionsBot && !ai.isEnabled(groupId)) {
       // Same "a genuine @-mention that got silently dropped should leave
       // SOME trace" reasoning as the catch-up-gate log above - this is the
@@ -898,6 +921,7 @@ async function handleMessage(sock, msg, upsertType) {
         'Looks like you edited the list by hand - that doesn\'t actually update anything, so nothing was recorded! Just mention me with what you\'d like instead, e.g. "@Snoopy add me".'
       );
     }
+    if (mentionsBot && responded) await react('✅');
     return;
   }
 
