@@ -54,7 +54,7 @@ const TIPS_TEXT = [
   '*Tips*',
   '',
   '*Natural language*',
-  `_• Prefer plain English? @-mention me instead of typing a command, e.g. @Snoopy put me down - only works if an admin has turned on ${COMMAND_PREFIX}ai_`,
+  `_• Prefer plain English? @-mention me, or just reply to one of my messages, instead of typing a command, e.g. @Snoopy put me down - only works if an admin has turned on ${COMMAND_PREFIX}ai_`,
   '',
   '*Joining and leaving*',
   `_• ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid accept comma-separated names, e.g. ${COMMAND_PREFIX}in Alex, Sam, Sam+1 - up to ${MAX_NAMES_PER_COMMAND} at once (no limit for admins)_`,
@@ -75,6 +75,8 @@ const TIPS_TEXT = [
   '',
   '*Other*',
   `_• ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid sent while Snoopy's briefly offline still go through once it reconnects_`,
+  '',
+  `_• I react 💬 the moment I see your message, then swap it for ✅ once I've actually responded - handy for confirming I got it in a busy chat_`,
 ].join('\n');
 
 // Admin-only commands, split out so !help stays short for everyday use.
