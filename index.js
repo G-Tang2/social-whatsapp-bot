@@ -266,6 +266,7 @@ const { getRegularPlayers, getUndoableState, saveUndoSnapshot } = require('./sto
 const { isGroupAdmin } = require('./lib/adminCheck');
 const catchUpQueue = require('./lib/catchUpQueue');
 const { updateLastSeenStatus } = require('./lib/lastSeenStatus');
+const { checkVacancyReminders } = require('./lib/vacancyReminder');
 const { interpretMessage, formatTodayForPrompt, formatRegularPlayersForPrompt } = require('./lib/geminiCommand');
 const spam = require('./spam');
 const ai = require('./ai');
@@ -278,6 +279,7 @@ const {
   DEBUG,
   LAST_SEEN_STATUS_ENABLED,
   LAST_SEEN_STATUS_INTERVAL_MS,
+  VACANCY_REMINDER_INTERVAL_MS,
   TIMEZONE,
 } = config;
 
@@ -994,6 +996,19 @@ if (LAST_SEEN_STATUS_ENABLED) {
   }, LAST_SEEN_STATUS_INTERVAL_MS);
   if (typeof lastSeenTimer.unref === 'function') lastSeenTimer.unref();
 }
+
+// Same "single module-scope interval, read currentSock fresh each tick"
+// pattern as the last-seen timer just above - see lib/vacancyReminder.js
+// for what this actually checks (each configured group's current list for
+// a real risk of empty courts) and why it's unconditional (no on/off
+// toggle - unlike LAST_SEEN_STATUS_ENABLED, this only ever does anything
+// for a group that's both under the vacancy threshold AND close enough to
+// its start time, so there's no "wasted" cost to guard against for
+// everyone else).
+const vacancyReminderTimer = setInterval(() => {
+  checkVacancyReminders(currentSock);
+}, VACANCY_REMINDER_INTERVAL_MS);
+if (typeof vacancyReminderTimer.unref === 'function') vacancyReminderTimer.unref();
 
 start().catch((err) => {
   console.error('[bot] Fatal error on startup:', err);

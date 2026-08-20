@@ -67,6 +67,7 @@ const rawCommands = {
   [`${COMMAND_PREFIX}paymentlabel`]: adminCommands.handlePaymentlabel,
   [`${COMMAND_PREFIX}regulars`]: adminCommands.handleRegulars,
   [`${COMMAND_PREFIX}exempt`]: adminCommands.handleExempt,
+  [`${COMMAND_PREFIX}courtcanceller`]: adminCommands.handleCourtCanceller,
   [`${COMMAND_PREFIX}undo`]: adminCommands.handleUndo,
   [`${COMMAND_PREFIX}update`]: adminCommands.handleUpdate,
 
