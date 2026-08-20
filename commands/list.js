@@ -158,7 +158,7 @@ async function runPaidIfFlagged(groupId, senderId, senderName, paidFlag, explici
       paid.push(name.trim());
     } else {
       paidRejected.push(
-        `${name.trim()} is not on the payment list, perhaps you signed up under a different name or someone already marked you as paid`
+        `${name.trim()} is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid`
       );
     }
   }
@@ -486,7 +486,7 @@ async function handlePaid(ctx) {
     const result = markPaid(groupId, name);
     if (!result.ok) {
       rejected.push(
-        `${name.trim()} is not on the payment list, perhaps you signed up under a different name or someone already marked you as paid`
+        `${name.trim()} is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid`
       );
     } else {
       paid.push(name.trim());
