@@ -60,6 +60,7 @@ function buildFakeSock() {
   const deleted = [];
   const reactions = [];
   const statusUpdates = [];
+  const presenceUpdates = [];
   const admins = new Set(['admin@s.whatsapp.net']);
   const participants = new Set(['admin@s.whatsapp.net', 'alex@s.whatsapp.net', 'sam@s.whatsapp.net']);
 
@@ -68,6 +69,7 @@ function buildFakeSock() {
     deleted,
     reactions,
     statusUpdates,
+    presenceUpdates,
     // The bot's own JID - used by index.js's messageMentionsBot() to tell
     // whether an incoming message @-mentions the bot (see the natural-
     // language command feature below). Includes a device-id suffix, same
@@ -97,6 +99,9 @@ function buildFakeSock() {
     }),
     updateProfileStatus: async (status) => {
       statusUpdates.push(status);
+    },
+    sendPresenceUpdate: async (type, jid) => {
+      presenceUpdates.push({ type, jid });
     },
   };
   return sock;
@@ -224,6 +229,58 @@ test('e2e: a live !in command is processed and posts the updated list', async ()
   // -insensitively rather than assuming a particular capitalization.
   const posted = fakeSockInstance.sentMessages.find((m) => /alex/i.test(m.content.text || ''));
   assert.ok(posted, 'expected the list (containing alex) to have been posted');
+});
+
+// --- "typing..." presence while a live message is being processed ---
+// index.js sets the chat's presence to 'composing' right before dispatching
+// a live command/mention to a handler, and back to 'available' once that
+// handler settles (success or failure) - see the setPresence() helper and
+// its call sites in handleMessage().
+
+test('e2e: a live typed command sets presence to composing then available, around the handler call', async () => {
+  fakeSockInstance.presenceUpdates.length = 0;
+  await deliver(`${COMMAND_PREFIX}help`, { from: 'alex@s.whatsapp.net', type: 'notify' });
+  assert.deepEqual(fakeSockInstance.presenceUpdates, [
+    { type: 'composing', jid: GROUP_ID },
+    { type: 'available', jid: GROUP_ID },
+  ]);
+});
+
+test('e2e: a catch-up (append) command does not touch presence at all', async () => {
+  fakeSockInstance.presenceUpdates.length = 0;
+  await deliver(`${COMMAND_PREFIX}in`, { from: 'alex@s.whatsapp.net', type: 'append' });
+  assert.equal(fakeSockInstance.presenceUpdates.length, 0);
+});
+
+test('e2e: a typed command whose handler throws still resets presence back to available', async () => {
+  const key = `${COMMAND_PREFIX}help`;
+  const original = commands[key];
+  commands[key] = async () => {
+    throw new Error('simulated handler crash');
+  };
+  fakeSockInstance.presenceUpdates.length = 0;
+
+  try {
+    await deliver(key, { from: 'admin@s.whatsapp.net', type: 'notify' });
+  } finally {
+    commands[key] = original;
+  }
+
+  assert.deepEqual(fakeSockInstance.presenceUpdates, [
+    { type: 'composing', jid: GROUP_ID },
+    { type: 'available', jid: GROUP_ID },
+  ]);
+});
+
+test('e2e: an AI-dispatched @-mention sets presence to composing then available too', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'list', argText: '', confidence: 'high' });
+  fakeSockInstance.presenceUpdates.length = 0;
+  await deliver('show me the list', { from: 'admin@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+  assert.deepEqual(fakeSockInstance.presenceUpdates, [
+    { type: 'composing', jid: GROUP_ID },
+    { type: 'available', jid: GROUP_ID },
+  ]);
 });
 
 // --- Unexpected errors get a visible reply, not silence ---

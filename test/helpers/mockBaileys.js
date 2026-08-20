@@ -17,7 +17,10 @@
 // `sentMessages`, so existing assertions against `sentMessages` don't have
 // to account for the bot's incidental reactions on every @-mention),
 // groupMetadata() (returning fake participants, admins flagged via the
-// `admins` option), and `user.id` - the bot's own JID, used by
+// `admins` option), sendPresenceUpdate() (recording every call into its own
+// `presenceUpdates` array - see index.js's composing/available typing
+// indicator around live command/mention handling), and `user.id` - the
+// bot's own JID, used by
 // index.js's messageMentionsBot() (see the natural-language command
 // feature, lib/geminiCommand.js) to tell whether a message @-mentions the
 // bot itself. Defaults to a JID WITH a device-id suffix (like the real
@@ -28,6 +31,7 @@ function createFakeSock({ admins = [], participantIds = [], botJid = 'bot:7@s.wh
   const sentMessages = [];
   const deleted = [];
   const reactions = [];
+  const presenceUpdates = [];
 
   const allParticipantIds = Array.from(new Set([...admins, ...participantIds]));
 
@@ -35,7 +39,11 @@ function createFakeSock({ admins = [], participantIds = [], botJid = 'bot:7@s.wh
     sentMessages,
     deleted,
     reactions,
+    presenceUpdates,
     user: { id: botJid },
+    sendPresenceUpdate: async (type, jid) => {
+      presenceUpdates.push({ type, jid });
+    },
     sendMessage: async (jid, content, options) => {
       if (content && content.delete) {
         deleted.push({ jid, key: content.delete });
