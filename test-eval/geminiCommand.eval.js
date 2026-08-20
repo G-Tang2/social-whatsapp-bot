@@ -123,16 +123,23 @@ evalTest('"add 2 more friends" against a sender who already has Jordan+1/+2 on t
   assert.equal(inAction.argText.trim(), '+2');
 });
 
-// --- A collective name reference ("all the Xs") must match every entry in
-// the list, even ones separated from each other by unrelated names, not
-// just a visually clustered run. Real bug report: "all the Harrys paid"
-// caught Harry, Harry Li, Harry+1, Harry+2, and Harry+3 (all consecutive)
-// but missed Harry+4, which sat 4 lines further down past Ben/Janelle/Dean
-// - see COLLECTIVE NAME REFERENCES in SHARED_ARG_RULES. ---
+// --- A collective name reference ("all the Xs") for "paid" must match
+// every entry ACROSS THE WHOLE payment-due section, even ones separated
+// from each other by unrelated names, not just a visually clustered run -
+// but must NEVER cross into the Attendance section, even for an identical
+// name, since being on this week's list doesn't mean they owe anything.
+// Real bug report, two rounds: round 1 caught Harry, Harry Li, Harry+1,
+// Harry+2, Harry+3 (all consecutive) but missed Harry+4, separated from
+// its siblings by Ben/Janelle/Dean; round 2's first fix caught Harry+4 but
+// then ALSO wrongly grabbed the bare "Harry" from Attendance (rejected by
+// the real markPaid() check, but shouldn't have been guessed at all) -
+// see COLLECTIVE NAME REFERENCES and "paid"'s scope note in
+// SHARED_ARG_RULES/COMMAND_ARG_GUIDE. ---
 
-evalTest('"all the Harrys paid" catches every matching entry, including one separated from the rest by unrelated names', async () => {
+evalTest('"all the Harrys paid" catches every matching entry in the payment-due section, including one separated from the rest by unrelated names, but never the unrelated "Harry" in Attendance', async () => {
   const listText =
-    '*Payment due*\n\n' +
+    '*Attendance* (1/30)\n\n1. Harry\n\n' +
+    '──────────\n*Payment*\n\n*19th Aug Wed*\n' +
     '1. Bonny\n2. Ron\n3. Rj\n4. Charlie\n5. Xinny\n6. Harry Li\n7. leg\n8. Kelvin\n9. Tinh\n10. Chris\n' +
     '11. harry+1\n12. harry+2\n13. harry+3\n14. Ben\n15. Janelle\n16. Dean\n17. harry+4\n18. Van';
   const result = await interpretMessage('all the Harrys paid', { listText });
@@ -143,6 +150,11 @@ evalTest('"all the Harrys paid" catches every matching entry, including one sepa
   assert.match(paidAction.argText, /harry\s*\+\s*3/i);
   assert.match(paidAction.argText, /harry\s*\+\s*4/i, 'must not stop after the consecutive Harry+1..3 run and miss the scattered Harry+4');
   assert.match(paidAction.argText, /harry li/i);
+  assert.doesNotMatch(
+    paidAction.argText,
+    /(^|,)\s*harry\s*(,|$)/i,
+    'the bare "Harry" only appears in Attendance, not the payment-due section - must not be guessed as owing money'
+  );
 });
 
 // --- Compound messages must split into ordered actions, and relative
