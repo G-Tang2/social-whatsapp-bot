@@ -158,7 +158,7 @@ test(`does nothing for the cancel warning yet when more than ${CANCEL_WARNING_HO
   // Still within the 48-hour window, so the group-wide warning DOES fire -
   // just not the cancel-specific one yet.
   assert.equal(sock.sentMessages.length, 1);
-  assert.doesNotMatch(sock.sentMessages[0].content.text, /cancel the courts/i);
+  assert.doesNotMatch(sock.sentMessages[0].content.text, /cancel some courts/i);
 });
 
 test('sends the cancel warning to the configured court-canceller once within CANCEL_WARNING_HOURS', async () => {
@@ -169,7 +169,7 @@ test('sends the cancel warning to the configured court-canceller once within CAN
 
   await checkVacancyReminders(sock);
 
-  const cancelMsg = sock.sentMessages.find((m) => /cancel the courts/i.test(m.content.text || ''));
+  const cancelMsg = sock.sentMessages.find((m) => /cancel some courts/i.test(m.content.text || ''));
   assert.ok(cancelMsg, 'expected a court-cancellation warning');
   assert.deepEqual(cancelMsg.content.mentions, ['canceller@s.whatsapp.net']);
   assert.equal(store.getCurrentEvent(groupId).notifiedVacancyCancelWarning, true);
@@ -182,7 +182,7 @@ test('does NOT send the cancel warning when no court-canceller is configured, an
 
   await checkVacancyReminders(sock);
 
-  assert.ok(!sock.sentMessages.some((m) => /cancel the courts/i.test(m.content.text || '')));
+  assert.ok(!sock.sentMessages.some((m) => /cancel some courts/i.test(m.content.text || '')));
   assert.equal(store.getCurrentEvent(groupId).notifiedVacancyCancelWarning, false);
 });
 
