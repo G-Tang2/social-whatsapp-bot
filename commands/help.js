@@ -71,7 +71,7 @@ const TIPS_TEXT = [
   '*Other*',
   `_• ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid sent while Snoopy's briefly offline still go through once it reconnects_`,
   '',
-  `_• I react 💬 the moment I see your message, then swap it for ✅ once I've actually responded - handy for confirming I got it in a busy chat_`,
+  `_• 💬 means I've received your message and I'm processing it; ✅ means I'm done_`,
 ].join('\n');
 
 // Admin-only commands, split out so !help stays short for everyday use.
