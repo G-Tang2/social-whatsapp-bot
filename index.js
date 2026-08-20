@@ -928,6 +928,13 @@ async function handleMessage(sock, msg, upsertType) {
   const handler = commands[rawCmd];
   if (!handler) return; // unknown command - stay quiet to avoid being noisy in busy group chats
 
+  // Same 💬-then-✅ acknowledgment as an @-mention (see above) - only for a
+  // genuinely live typed command, never a catch-up ('append') redelivery:
+  // those stay quiet on their own (see the doc comments below) and get
+  // batched into ONE combined summary later, so there's no single "the bot
+  // responded to THIS message" moment to mark with a ✅ here.
+  if (upsertType === 'notify') await react('💬');
+
   let result;
   try {
     result = await handler({ sock, msg, groupId, senderId, senderName, argText, upsertType, reply, postList });
@@ -941,9 +948,11 @@ async function handleMessage(sock, msg, upsertType) {
     // fact.
     if (upsertType === 'notify') {
       await reply(UNEXPECTED_ERROR_REPLY);
+      await react('✅');
     }
     return;
   }
+  if (upsertType === 'notify') await react('✅');
 
   // Catch-up (upsertType === 'append') !in/!out/!paid handlers stay quiet
   // on their own (see commands/list.js's isCatchUp handling) and instead
