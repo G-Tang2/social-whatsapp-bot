@@ -245,6 +245,29 @@ function nextOccurrenceOfSameWeekday(currentIsoDate, referenceDate) {
   return `${yy}-${mm}-${dd}`;
 }
 
+// Given an ISO date "YYYY-MM-DD", returns the date exactly 7 days later,
+// also as "YYYY-MM-DD". Used by lib/autoNewlistScheduler.js's !autonewlist
+// feature to compute "next week" from the OUTGOING list's own date -
+// deliberately NOT nextOccurrenceOfSameWeekday above, which resolves
+// relative to TODAY and would return today's own date unchanged when
+// today already is that weekday (correct for a human typing !newlist same
+// on some later day, but wrong here: the scheduler typically fires on the
+// very same calendar day the outgoing list's social happened, so "closest
+// occurrence from today" would just recreate the list that's ending
+// instead of advancing to next week). Returns null for a malformed input.
+function oneWeekAfter(isoDate) {
+  if (!isValidDateString(isoDate)) return null;
+
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const target = new Date(Date.UTC(y, m - 1, d));
+  target.setUTCDate(target.getUTCDate() + 7);
+
+  const yy = target.getUTCFullYear();
+  const mm = String(target.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(target.getUTCDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
 function ordinalSuffix(day) {
   if (day >= 11 && day <= 13) return 'th'; // 11th, 12th, 13th are exceptions
   switch (day % 10) {
@@ -371,6 +394,7 @@ module.exports = {
   parseDisplayDateForUpdate,
   parseOwedSinceDisplayDate,
   nextOccurrenceOfSameWeekday,
+  oneWeekAfter,
   parseTimeOfDay,
   zonedDateTimeToUtc,
 };
