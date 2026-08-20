@@ -849,6 +849,22 @@ async function handleMessage(sock, msg, upsertType) {
       console.error(`[bot] Failed to react (${emoji}) to a message in ${groupId}:`, err.message);
     }
   };
+  // Chat-level "typing..." indicator, shown alongside the 💬/✅ reaction
+  // above while the bot is actually doing the work of handling a live
+  // message (a command, or an @-mention/reply that gets dispatched to a
+  // handler) - set to 'composing' right before that work starts and back
+  // to 'available' once it's done, success or failure (every call site
+  // below uses try/finally so a thrown handler error can never leave the
+  // indicator stuck on "typing..."). Best-effort, same as react() - a
+  // failure here is cosmetic and must never take down the actual command
+  // handling.
+  const setPresence = async (type) => {
+    try {
+      await sock.sendPresenceUpdate(type, groupId);
+    } catch (err) {
+      console.error(`[bot] Failed to set presence (${type}) in ${groupId}:`, err.message);
+    }
+  };
 
   if (!text.startsWith(COMMAND_PREFIX)) {
     const mentionsBot = messageMentionsBot(sock, msg);
@@ -882,19 +898,25 @@ async function handleMessage(sock, msg, upsertType) {
     // only when the message actually @-mentions the bot - never triggered
     // by ordinary chat, however list-related it might sound.
     if (upsertType === 'notify' && bareMention) {
+      await setPresence('composing');
       try {
         await commands[`${COMMAND_PREFIX}in`]({ sock, msg, groupId, senderId, senderName, argText: '', upsertType, reply, postList });
       } catch (err) {
         console.error(`[bot] Error handling a bare @-mention (treated as ${COMMAND_PREFIX}in) in ${groupId} (from ${senderId}):`, err);
         await reply(UNEXPECTED_ERROR_REPLY);
+      } finally {
+        await setPresence('available');
       }
       responded = true;
     } else if (upsertType === 'notify' && ai.isEnabled(groupId) && mentionsBot) {
+      await setPresence('composing');
       try {
         await handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList });
       } catch (err) {
         console.error(`[bot] Error handling an AI mention in ${groupId} (from ${senderId}):`, err);
         await reply(UNEXPECTED_ERROR_REPLY);
+      } finally {
+        await setPresence('available');
       }
       responded = true;
     } else if (upsertType === 'notify' && mentionsBot && !ai.isEnabled(groupId)) {
@@ -949,6 +971,11 @@ async function handleMessage(sock, msg, upsertType) {
   // batched into ONE combined summary later, so there's no single "the bot
   // responded to THIS message" moment to mark with a ✅ here.
   if (upsertType === 'notify') await react('💬');
+  // Same "only for a genuinely live message" scoping as the 💬/✅ reaction
+  // just above - a catch-up ('append') redelivery gets no per-message
+  // visible feedback of any kind, presence included (see the doc comment
+  // above the reaction).
+  if (upsertType === 'notify') await setPresence('composing');
 
   let result;
   try {
@@ -966,6 +993,11 @@ async function handleMessage(sock, msg, upsertType) {
       await react('✅');
     }
     return;
+  } finally {
+    // Runs on every exit from the try (including the early `return` inside
+    // the catch above) - the indicator can never get stuck on "typing..."
+    // after a handler throws.
+    if (upsertType === 'notify') await setPresence('available');
   }
   if (upsertType === 'notify') await react('✅');
 
