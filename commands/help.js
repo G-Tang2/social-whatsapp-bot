@@ -42,7 +42,7 @@ const HELP_TEXT = [
   `• *${COMMAND_PREFIX}paid [name]* - mark yourself, or [name], as paid`,
   '',
   '*Other*',
-  `• *@-mention me* - plain English works too instead of typing a command, e.g. "@Snoopy put me down" (if this group has it turned on - see ${COMMAND_PREFIX}tips for more)`,
+  `• *@-mention me, or reply to one of my messages* - plain English works too instead of typing a command, e.g. "@Snoopy put me down" (if this group has it turned on - see ${COMMAND_PREFIX}tips for more)`,
   `• *${COMMAND_PREFIX}help* - show this message`,
   `• *${COMMAND_PREFIX}tips* - tips and caveats for the everyday commands above (comma lists, +N guests, and more)`,
   `• *${COMMAND_PREFIX}admin* - show admin-only commands`,
