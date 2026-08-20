@@ -123,6 +123,28 @@ evalTest('"add 2 more friends" against a sender who already has Jordan+1/+2 on t
   assert.equal(inAction.argText.trim(), '+2');
 });
 
+// --- A collective name reference ("all the Xs") must match every entry in
+// the list, even ones separated from each other by unrelated names, not
+// just a visually clustered run. Real bug report: "all the Harrys paid"
+// caught Harry, Harry Li, Harry+1, Harry+2, and Harry+3 (all consecutive)
+// but missed Harry+4, which sat 4 lines further down past Ben/Janelle/Dean
+// - see COLLECTIVE NAME REFERENCES in SHARED_ARG_RULES. ---
+
+evalTest('"all the Harrys paid" catches every matching entry, including one separated from the rest by unrelated names', async () => {
+  const listText =
+    '*Payment due*\n\n' +
+    '1. Bonny\n2. Ron\n3. Rj\n4. Charlie\n5. Xinny\n6. Harry Li\n7. leg\n8. Kelvin\n9. Tinh\n10. Chris\n' +
+    '11. harry+1\n12. harry+2\n13. harry+3\n14. Ben\n15. Janelle\n16. Dean\n17. harry+4\n18. Van';
+  const result = await interpretMessage('all the Harrys paid', { listText });
+  const paidAction = findAction(result, 'paid');
+  assert.ok(paidAction, `expected a "paid" action, got: ${JSON.stringify(result && result.actions)}`);
+  assert.match(paidAction.argText, /harry\s*\+\s*1/i);
+  assert.match(paidAction.argText, /harry\s*\+\s*2/i);
+  assert.match(paidAction.argText, /harry\s*\+\s*3/i);
+  assert.match(paidAction.argText, /harry\s*\+\s*4/i, 'must not stop after the consecutive Harry+1..3 run and miss the scattered Harry+4');
+  assert.match(paidAction.argText, /harry li/i);
+});
+
 // --- Compound messages must split into ordered actions, and relative
 // dates must resolve against the given "Today is ..." reference. ---
 
