@@ -336,8 +336,12 @@ test('handleOut: "tournament" combines with "paid", either order, same as !in - 
   // tested is that "paid" ran at all, alongside "tournament", not silently
   // dropped - not the payment-tracking mechanics themselves (covered
   // elsewhere).
-  assert.deepEqual(aOutcome.paidRejected, ["A - not on the Payment list"]);
-  assert.deepEqual(bOutcome.paidRejected, ["B - not on the Payment list"]);
+  assert.deepEqual(aOutcome.paidRejected, [
+    'A is not on the payment list, perhaps you signed up under a different name or someone already marked you as paid',
+  ]);
+  assert.deepEqual(bOutcome.paidRejected, [
+    'B is not on the payment list, perhaps you signed up under a different name or someone already marked you as paid',
+  ]);
 });
 
 test('handleOut: "tournament" on a name not on the list at all is rejected, not silently ignored', async () => {
