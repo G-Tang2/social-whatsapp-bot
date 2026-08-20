@@ -58,6 +58,7 @@ let socketCreateCount = 0;
 function buildFakeSock() {
   const sentMessages = [];
   const deleted = [];
+  const reactions = [];
   const statusUpdates = [];
   const admins = new Set(['admin@s.whatsapp.net']);
   const participants = new Set(['admin@s.whatsapp.net', 'alex@s.whatsapp.net', 'sam@s.whatsapp.net']);
@@ -65,6 +66,7 @@ function buildFakeSock() {
   const sock = {
     sentMessages,
     deleted,
+    reactions,
     statusUpdates,
     // The bot's own JID - used by index.js's messageMentionsBot() to tell
     // whether an incoming message @-mentions the bot (see the natural-
@@ -80,6 +82,10 @@ function buildFakeSock() {
       if (content && content.delete) {
         deleted.push({ jid, key: content.delete });
         return { key: content.delete };
+      }
+      if (content && content.react) {
+        reactions.push({ jid, emoji: content.react.text, key: content.react.key });
+        return { key: content.react.key };
       }
       sentMessages.push({ jid, content });
       return { key: { id: `fake-${sentMessages.length}` } };

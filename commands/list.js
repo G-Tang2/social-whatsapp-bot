@@ -151,7 +151,6 @@ async function runPaidIfFlagged(groupId, senderId, senderName, paidFlag, explici
     names = resolved.names;
   }
 
-  const dueLabel = getDuePaymentsLabel(groupId);
   const paid = [];
   const paidRejected = [];
   for (const name of names) {
@@ -159,7 +158,9 @@ async function runPaidIfFlagged(groupId, senderId, senderName, paidFlag, explici
     if (result.ok) {
       paid.push(name.trim());
     } else {
-      paidRejected.push(`${name.trim()} - not on the ${dueLabel} list`);
+      paidRejected.push(
+        `${name.trim()} is not on the payment list, perhaps you signed up under a different name or someone already marked you as paid`
+      );
     }
   }
   return { paid, paidRejected, paidAmbiguous: null };
@@ -699,14 +700,15 @@ async function handlePaid(ctx) {
     return { command: 'paid', senderName, argText, tooMany: true };
   }
 
-  const dueLabel = getDuePaymentsLabel(groupId);
   const paid = [];
   const rejected = [];
 
   for (const name of names) {
     const result = markPaid(groupId, name);
     if (!result.ok) {
-      rejected.push(`${name.trim()} - not on the ${dueLabel} list`);
+      rejected.push(
+        `${name.trim()} is not on the payment list, perhaps you signed up under a different name or someone already marked you as paid`
+      );
     } else {
       paid.push(name.trim());
     }
