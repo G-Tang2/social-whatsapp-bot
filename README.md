@@ -1121,8 +1121,8 @@ If a group's current list is still 6 or more spots short of its limit as
 the social's start time closes in, the bot sends two escalating warnings:
 
 - **48 hours before start:** `@`-mentions the WHOLE group, e.g. "6 spots
-  still open with 48 hours to go! Plenty of room - sign up now or courts
-  may be cancelled."
+  still open! Plenty of room - sign up soon or courts may be cancelled
+  tomorrow."
 - **26 hours before start**, if there's *still* 6+ spots open: `@`-mentions
   whoever `!courtcanceller` names (see the command table above), as a
   direct heads-up to actually go cancel the courts if nobody fills in by
