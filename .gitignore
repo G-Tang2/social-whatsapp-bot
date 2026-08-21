@@ -2,7 +2,6 @@ node_modules/
 data/
 auth_info/
 auth_info*/
-assets/
 .env
 ecosystem.config.js
 npm-debug.log
