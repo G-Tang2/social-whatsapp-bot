@@ -26,7 +26,7 @@ async function handleAi(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can turn natural-language commands on or off.');
+    await reply('Only a group admin can turn natural-language commands on or off - even I\'ve got SOME standards.');
     return;
   }
 
@@ -38,7 +38,7 @@ async function handleAi(ctx) {
     // quietly doing nothing with no explanation.
     if (!GEMINI_API_KEY) {
       await reply(
-        `Can't turn this on yet - whoever set up this bot still needs to finish setting up this feature.`
+        `Can't turn this on yet - whoever's running the show still needs to finish setting up this feature.`
       );
       return;
     }

@@ -80,7 +80,7 @@ async function handleClear(ctx) {
   const { sock, groupId, senderId, reply, postList } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can clear the list.');
+    await reply('Only a group admin can clear the list - I don\'t make the rules, I just enforce them (badly).');
     return;
   }
   clearList(groupId);
@@ -96,11 +96,11 @@ async function handleClearpayments(ctx) {
   const { sock, groupId, senderId, reply, postList } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can clear the payment list.');
+    await reply('Only a group admin can clear the payment list - nice try, though!');
     return;
   }
   if (getDuePayments(groupId).length === 0) {
-    await reply('Nobody currently owes payment - nothing to clear.');
+    await reply('Nobody currently owes payment - nothing to clear, but nice thought!');
     return;
   }
   clearDuePayments(groupId);
@@ -171,7 +171,7 @@ async function handleNewlist(ctx) {
   const { sock, groupId, senderId, argText, reply, postList } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can start a new list.');
+    await reply('Only a group admin can start a new list - doghouse rules, sorry!');
     return;
   }
 
@@ -211,7 +211,7 @@ async function handleNewlist(ctx) {
   }
   if (!resolvedDate) {
     await reply(
-      `"${dateStr}" isn't a valid date - use DD/MM, e.g. ${COMMAND_PREFIX}newlist 20/08 EBC | 13-18 | 8PM start`
+      `Nope, "${dateStr}" isn't a valid date - use DD/MM, e.g. ${COMMAND_PREFIX}newlist 20/08 EBC | 13-18 | 8PM start`
     );
     return;
   }
@@ -256,7 +256,7 @@ async function handleNewlist(ctx) {
   const names = namesText ? namesText.split(',').map((n) => n.trim()).filter(Boolean) : [];
   const { rejected } = addRegularsToCurrentList(groupId, senderId, true, names);
   if (rejected.length) {
-    await reply(`New list started. Couldn't add:\n${rejected.join('\n')}`);
+    await reply(`New list started! Though a few slipped through my paws - couldn't add:\n${rejected.join('\n')}`);
   }
 
   await postList();
@@ -282,13 +282,13 @@ async function handleDate(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can change the date.');
+    await reply('Only a group admin can change the date - my paws are tied.');
     return;
   }
 
   const resolvedDate = parseTypedDate(argText);
   if (!resolvedDate) {
-    await reply(`"${argText}" isn't a valid date - use DD/MM, e.g. ${COMMAND_PREFIX}date 20/08`);
+    await reply(`Nope, "${argText}" isn't a valid date - use DD/MM, e.g. ${COMMAND_PREFIX}date 20/08`);
     return;
   }
 
@@ -313,12 +313,12 @@ async function handleLocation(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can change the location.');
+    await reply('Only a group admin can change the location - even I\'ve got SOME standards.');
     return;
   }
 
   if (argText.length > MAX_LOCATION_LENGTH) {
-    await reply(`That location is too long (max ${MAX_LOCATION_LENGTH} characters).`);
+    await reply(`Whoa, that location is too long (max ${MAX_LOCATION_LENGTH} characters) - keep it snappy!`);
     return;
   }
 
@@ -351,12 +351,12 @@ async function handleCourts(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can change the courts.');
+    await reply('Only a group admin can change the courts - I promise it\'s not personal.');
     return;
   }
 
   if (argText.length > MAX_COURTS_LENGTH) {
-    await reply(`That's too long (max ${MAX_COURTS_LENGTH} characters).`);
+    await reply(`Whoa, that's too long (max ${MAX_COURTS_LENGTH} characters) - keep it snappy!`);
     return;
   }
 
@@ -365,8 +365,8 @@ async function handleCourts(ctx) {
   if (!result.ok) {
     await reply(
       additive
-        ? `"${rest}" isn't a valid court list to add - use numbers and/or ranges separated by commas, e.g. ${COMMAND_PREFIX}courts add 1 or ${COMMAND_PREFIX}courts extra 12-14`
-        : `"${argText}" isn't a valid court list - use numbers and/or ranges separated by commas, e.g. ${COMMAND_PREFIX}courts 13-18 or ${COMMAND_PREFIX}courts 1, 2, 5-8`
+        ? `Nope, "${rest}" isn't a valid court list to add - use numbers and/or ranges separated by commas, e.g. ${COMMAND_PREFIX}courts add 1 or ${COMMAND_PREFIX}courts extra 12-14`
+        : `Nope, "${argText}" isn't a valid court list - use numbers and/or ranges separated by commas, e.g. ${COMMAND_PREFIX}courts 13-18 or ${COMMAND_PREFIX}courts 1, 2, 5-8`
     );
     return;
   }
@@ -387,7 +387,7 @@ async function handleCourts(ctx) {
     await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
   }
   if (result.demoted.length) {
-    await reply(`New limit is below the current headcount - moved to the waitlist, in order:\n${result.demoted.map((e) => e.name).join('\n')}`);
+    await reply(`New limit is below the current headcount - shuffled to the waitlist, in order:\n${result.demoted.map((e) => e.name).join('\n')}`);
   }
   await postList();
 }
@@ -406,12 +406,12 @@ async function handleTime(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can change the time.');
+    await reply('Only a group admin can change the time - the doghouse has rules, and I\'m sworn to uphold them.');
     return;
   }
 
   if (argText.length > MAX_TIME_LENGTH) {
-    await reply(`That's too long (max ${MAX_TIME_LENGTH} characters).`);
+    await reply(`Whoa, that's too long (max ${MAX_TIME_LENGTH} characters) - keep it snappy!`);
     return;
   }
 
@@ -436,7 +436,7 @@ async function handleLimit(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can change the participant limit.');
+    await reply('Only a group admin can change the participant limit - I\'d let you, but then where\'s the fun in that?');
     return;
   }
 
@@ -448,12 +448,12 @@ async function handleLimit(ctx) {
     const parsed = Number(argText.trim());
     if (!Number.isInteger(parsed) || parsed <= 0) {
       await reply(
-        `"${argText}" isn't a valid limit - use a whole number, e.g. ${COMMAND_PREFIX}limit 20, or ${COMMAND_PREFIX}limit off to remove it`
+        `Nope, "${argText}" isn't a valid limit - use a whole number, e.g. ${COMMAND_PREFIX}limit 20, or ${COMMAND_PREFIX}limit off to remove it`
       );
       return;
     }
     if (parsed > MAX_LIMIT) {
-      await reply(`That limit is too high (max ${MAX_LIMIT}).`);
+      await reply(`Whoa, easy there - that limit is too high (max ${MAX_LIMIT}).`);
       return;
     }
     newLimit = parsed;
@@ -470,7 +470,7 @@ async function handleLimit(ctx) {
     await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
   }
   if (demoted.length) {
-    await reply(`New limit is below the current headcount - moved to the waitlist, in order:\n${demoted.map((e) => e.name).join('\n')}`);
+    await reply(`New limit is below the current headcount - shuffled to the waitlist, in order:\n${demoted.map((e) => e.name).join('\n')}`);
   }
   await postList();
 }
@@ -479,7 +479,7 @@ async function handleAllow(ctx) {
   const { sock, msg, groupId, senderId, argText, reply, postList } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can let extra people in from the waitlist.');
+    await reply('Only a group admin can let extra people in from the waitlist - rules are rules, even for a mischievous beagle.');
     return;
   }
 
@@ -494,7 +494,7 @@ async function handleAllow(ctx) {
   const { moved, limit } = allowFromWaitlist(groupId, parsedCount);
 
   if (moved.length === 0) {
-    await reply('The waitlist is empty - nobody to let in.');
+    await reply('The waitlist is empty - nobody to let in, sorry!');
     return;
   }
   if (moved.length < parsedCount) {
@@ -525,12 +525,12 @@ async function handlePaymentlabel(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can change the payment-due header.');
+    await reply('Only a group admin can change the payment-due header - doghouse rules, sorry!');
     return;
   }
 
   if (argText.length > MAX_LABEL_LENGTH) {
-    await reply(`That header is too long (max ${MAX_LABEL_LENGTH} characters).`);
+    await reply(`Whoa, that header is too long (max ${MAX_LABEL_LENGTH} characters) - keep it snappy!`);
     return;
   }
 
@@ -589,7 +589,7 @@ async function handleRegulars(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can change the regular players list.');
+    await reply('Only a group admin can change the regular players list - my paws are tied.');
     return;
   }
 
@@ -597,7 +597,7 @@ async function handleRegulars(ctx) {
 
   if (/^clear$/i.test(trimmed)) {
     setRegularPlayers(groupId, []);
-    await reply(`Regular players list cleared.`);
+    await reply(`Regular players list cleared - poof, gone!`);
     return;
   }
 
@@ -644,7 +644,7 @@ async function handleRegulars(ctx) {
   }
 
   if (rejected.length) {
-    await reply(`Couldn't include:\n${rejected.join('\n')}`);
+    await reply(`Hmm, couldn't include these:\n${rejected.join('\n')}`);
   }
   await reply(`*Regular players*\n${formatRegularPlayers(updated)}`);
 }
@@ -694,7 +694,7 @@ async function handleExempt(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can change the payment-exempt list.');
+    await reply('Only a group admin can change the payment-exempt list - I don\'t make the rules, I just enforce them (badly).');
     return;
   }
 
@@ -702,7 +702,7 @@ async function handleExempt(ctx) {
 
   if (/^clear$/i.test(trimmed)) {
     setPaymentExempt(groupId, []);
-    await reply(`Payment-exempt list cleared.`);
+    await reply(`Payment-exempt list cleared - poof, gone!`);
     return;
   }
 
@@ -749,7 +749,7 @@ async function handleExempt(ctx) {
   }
 
   if (rejected.length) {
-    await reply(`Couldn't include:\n${rejected.join('\n')}`);
+    await reply(`Hmm, couldn't include these:\n${rejected.join('\n')}`);
   }
   await reply(`*Payment exempt*\n${formatPaymentExempt(updated)}`);
 }
@@ -817,12 +817,12 @@ async function handleSettournament(ctx) {
 
     const admin = await isGroupAdmin(sock, groupId, senderId);
     if (!admin) {
-      await reply('Only a group admin can set the tournament rules.');
+      await reply('Only a group admin can set the tournament rules - nice try, though!');
       return;
     }
 
     setTournamentRules(groupId, rulesText);
-    await reply(`Tournament rules updated. Anyone can view them with ${COMMAND_PREFIX}tournament.`);
+    await reply(`Tournament rules updated - very official. Anyone can view them with ${COMMAND_PREFIX}tournament.`);
     return;
   }
 
@@ -852,13 +852,13 @@ async function handleSettournament(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can turn the tournament on or off.');
+    await reply('Only a group admin can turn the tournament on or off - even I\'ve got SOME standards.');
     return;
   }
 
   if (normalizedArg === 'on') {
     if (isTournamentEnabled(groupId)) {
-      await reply('Tournament is already on for this group.');
+      await reply('Tournament is already on for this group - ahead of the game, I see.');
       return;
     }
     setTournamentEnabled(groupId, true);
@@ -871,7 +871,7 @@ async function handleSettournament(ctx) {
 
   if (normalizedArg === 'off') {
     if (!isTournamentEnabled(groupId)) {
-      await reply('Tournament is already off for this group.');
+      await reply('Tournament is already off for this group - nothing to see here.');
       return;
     }
     setTournamentEnabled(groupId, false);
@@ -905,7 +905,7 @@ async function handleTournamentLimit(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can change the tournament limit.');
+    await reply('Only a group admin can change the tournament limit - I promise it\'s not personal.');
     return;
   }
 
@@ -967,7 +967,7 @@ async function handleTournamentWinners(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can set the tournament winners.');
+    await reply('Only a group admin can set the tournament winners - the doghouse has rules, and I\'m sworn to uphold them.');
     return;
   }
 
@@ -983,7 +983,7 @@ async function handleTournamentWinners(ctx) {
     if (!modResult.ok) rejected.push(`${name} - ${modResult.reason}`);
   }
   if (rejected.length) {
-    await reply(`Couldn't set:\n${rejected.join('\n')}`);
+    await reply(`Hmm, couldn't set these:\n${rejected.join('\n')}`);
     return;
   }
 
@@ -1042,13 +1042,13 @@ async function handleCourtCanceller(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can change the court-cancellation reminder.');
+    await reply('Only a group admin can change the court-cancellation reminder - rules are rules, even for a mischievous beagle.');
     return;
   }
 
   if (/^(off|clear|none)$/i.test(argText.trim())) {
     setCourtCanceller(groupId, null);
-    await reply('Court-cancellation reminder turned off.');
+    await reply('Court-cancellation reminder turned off - living dangerously, are we?');
     return;
   }
 
@@ -1100,18 +1100,18 @@ async function handleUndo(ctx) {
   const { sock, groupId, senderId, reply, postList } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can undo the last change.');
+    await reply('Only a group admin can undo the last change - my paws are tied.');
     return;
   }
 
   const entry = getUndoSnapshot(groupId);
   if (!entry) {
-    await reply("Nothing to undo - either nothing's changed yet, or the last change was already undone.");
+    await reply("Nothing to undo - either nothing's changed yet, or the last change was already undone. My memory only goes back one step!");
     return;
   }
 
   restoreUndoableState(groupId, entry.snapshot);
-  await reply(`Undid: ${entry.description}`);
+  await reply(`Undid: ${entry.description} - like it never happened!`);
   await postList();
 }
 
@@ -1145,7 +1145,7 @@ async function handleUpdate(ctx) {
   const { sock, msg, groupId, senderId, argText, reply, postList } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can bulk-update the list this way.');
+    await reply('Only a group admin can bulk-update the list this way - doghouse rules, sorry!');
     return;
   }
 
@@ -1161,7 +1161,7 @@ async function handleUpdate(ctx) {
   const parsed = parseListSections(argText);
   if (parsed.sectionsFound === 0) {
     await reply(
-      `Couldn't find an *Attendance*, *Waitlist*, or payment section in that - paste what ${COMMAND_PREFIX}list shows (with your edits) after ${COMMAND_PREFIX}update.`
+      `Couldn't find an *Attendance*, *Waitlist*, or payment section in that, I'm afraid - paste what ${COMMAND_PREFIX}list shows (with your edits) after ${COMMAND_PREFIX}update.`
     );
     return;
   }
@@ -1364,7 +1364,7 @@ async function handleUpdate(ctx) {
   }
 
   if (!summaryLines.length) {
-    await reply('No changes found - that already matches the current list exactly.');
+    await reply('No changes found - that already matches the current list exactly. Nice try sneaking one past me, though!');
     return;
   }
 

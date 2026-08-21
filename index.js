@@ -509,7 +509,7 @@ function messageMentionsBot(sock, msg) {
 // not capable of doing that" is a clearer signal to just rephrase or use
 // the real command. See handleAiMention below for why this is ALWAYS sent in these
 // cases rather than sometimes staying silent.
-const AI_NOT_UNDERSTOOD_REPLY = `Sorry, I'm not capable of doing that - try again, or use ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) to see the exact commands I understand.`;
+const AI_NOT_UNDERSTOOD_REPLY = `Ooh, that one's got me stumped! I'm not capable of doing that (shocking, I know) - try rephrasing, or use ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) to see the exact commands I understand.`;
 
 // Shown instead of AI_NOT_UNDERSTOOD_REPLY specifically when
 // interpretMessage() (lib/geminiCommand.js) gave up because Gemini didn't
@@ -522,7 +522,7 @@ const AI_NOT_UNDERSTOOD_REPLY = `Sorry, I'm not capable of doing that - try agai
 // cases. Also points to typed commands (!help) as a fallback, since those
 // never touch Gemini at all - a real way around it timing out again, not
 // just "hope it's faster this time".
-const AI_TIMEOUT_REPLY = `Sorry, that took too long to process - try again, or use ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) to see the exact typed commands.`;
+const AI_TIMEOUT_REPLY = `Whoops, daydreamed a bit too long on that one - took too long to process. Try again, or use ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) to see the exact typed commands.`;
 
 // Shown when a command handler (typed or AI-dispatched) throws instead of
 // completing normally - a bug, a transient network failure talking to
@@ -535,7 +535,7 @@ const AI_TIMEOUT_REPLY = `Sorry, that took too long to process - try again, or u
 // Deliberately vague about the cause (no stack trace/error message leaked
 // into the group) - the real detail goes to the console for whoever's
 // running the bot to investigate.
-const UNEXPECTED_ERROR_REPLY = "Sorry, something went wrong on my end handling that - try again in a bit, and let an admin know if it keeps happening.";
+const UNEXPECTED_ERROR_REPLY = "Uh oh, tripped over my own paws there - something went wrong on my end handling that. Try again in a bit, and let an admin know if it keeps happening.";
 
 // Handles a live, non-"!"-prefixed message that @-mentioned the bot, in a
 // group that has !ai turned on (see the call site in handleMessage below
@@ -618,7 +618,7 @@ const UNEXPECTED_ERROR_REPLY = "Sorry, something went wrong on my end handling t
 // so the follow-up is read as continuing this exact exchange, not a cold
 // new request.
 function formatClarifyingQuestion(question) {
-  return `${question}\n\nReply to this message to let me know.`;
+  return `${question}\n\nGo on, reply to this message to let me know - I'm all ears (well, floppy ones).`;
 }
 
 // Fixed reminder appended after a model-authored `offTopicReply` (see
@@ -626,7 +626,7 @@ function formatClarifyingQuestion(question) {
 // prompt itself (SYSTEM_PROMPT's OFFTOPICREPLY paragraph explicitly tells
 // the model not to write its own version) so the wording here is fixed,
 // not dependent on the model repeating it faithfully every time.
-const OFF_TOPIC_REMINDER = "By the way, I'm just here running the signup list right now - if you or your friends want to join the social, let me know!";
+const OFF_TOPIC_REMINDER = "Anyway, enough chit-chat - I'm officially on duty running the signup list right now! If you or your friends want to join the social, just say the word.";
 function formatOffTopicReply(offTopicReply) {
   return `${offTopicReply}\n\n${OFF_TOPIC_REMINDER}`;
 }
@@ -1072,7 +1072,7 @@ async function handleMessage(sock, msg, upsertType) {
       // "Only a group admin can..." refusal for something they could have
       // just done themselves with !in/!out/!paid.
       await reply(
-        'Looks like you edited the list by hand - that doesn\'t actually update anything, so nothing was recorded! Just mention me with what you\'d like instead, e.g. "@Snoopy add me".'
+        'Nice try, but scribbling on the list yourself doesn\'t actually fool me - that doesn\'t update anything, so nothing was recorded! Just mention me with what you\'d like instead, e.g. "@Snoopy add me".'
       );
     }
     if (mentionsBot && responded) await react('✅');

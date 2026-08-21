@@ -35,6 +35,7 @@ const { isGroupAdmin } = require('../lib/adminCheck');
 // wall of text someone has to scroll past just to see what commands exist.
 const HELP_TEXT = [
   '*Commands*',
+  '_Everything I can do - no belly rubs required._',
   '',
   '*Joining and leaving*',
   `• *${COMMAND_PREFIX}in [name]* - add yourself, or [name]`,
@@ -55,6 +56,7 @@ const HELP_TEXT = [
 // footer - unchanged content, just its own reply now (see !tips below).
 const TIPS_TEXT = [
   '*Tips*',
+  '_The fine print, Snoopy-style._',
   '',
   '*Natural language*',
   `_• Prefer plain English? @-mention me, or just reply to one of my messages, instead of typing a command, e.g. @Snoopy put me down - only works if an admin has turned on ${COMMAND_PREFIX}ai_`,
@@ -92,6 +94,7 @@ const TIPS_TEXT = [
 // footer this used to include inline.
 const ADMIN_HELP_TEXT = [
   '*Admin commands*',
+  '_The keys to the doghouse - admins only, no exceptions._',
   '',
   '*List setup*',
   `• *${COMMAND_PREFIX}newlist DD/MM|same [location] | [courts] | [time] [with name1, name2, ...]* - start a new dated list, optionally signing people straight up on it. Use "same" instead of a date to reuse whatever day of the week the current list is already on`,
@@ -136,6 +139,7 @@ const ADMIN_HELP_TEXT = [
 // !admintips below).
 const ADMIN_TIPS_TEXT = [
   '*Admin tips*',
+  '_All the sneaky little details admins need to know._',
   '',
   '*List setup*',
   `_• ${COMMAND_PREFIX}newlist's location/courts/time carry forward if left out, e.g. ${COMMAND_PREFIX}newlist 20/08 EBC | 13-18 | 8PM start - or change one any time with ${COMMAND_PREFIX}location/${COMMAND_PREFIX}courts/${COMMAND_PREFIX}time. Typo'd the date? ${COMMAND_PREFIX}date DD/MM fixes just that. ${COMMAND_PREFIX}newlist same reuses the current list's day of the week instead of a date - same as "@Snoopy create a new list" with no date mentioned_`,
@@ -184,7 +188,7 @@ async function handleAdminHelp(ctx) {
   const { sock, groupId, senderId, reply } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can view the admin commands.');
+    await reply('Only a group admin can view the admin commands - doghouse rules, sorry!');
     return;
   }
   await reply(ADMIN_HELP_TEXT);
@@ -197,7 +201,7 @@ async function handleAdminTips(ctx) {
   const { sock, groupId, senderId, reply } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can view the admin tips.');
+    await reply('Only a group admin can view the admin tips - doghouse rules, sorry!');
     return;
   }
   await reply(ADMIN_TIPS_TEXT);

@@ -24,13 +24,13 @@ async function handleSpamfilter(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can turn spam filtering on or off.');
+    await reply('Only a group admin can turn spam filtering on or off - nice try, though!');
     return;
   }
 
   if (normalizedArg === 'on') {
     if (spam.isEnabled(groupId)) {
-      await reply('Spam filtering is already on for this group.');
+      await reply('Spam filtering is already on for this group - I\'m already on patrol.');
       return;
     }
     spam.setEnabled(groupId, true);
@@ -42,7 +42,7 @@ async function handleSpamfilter(ctx) {
 
   if (normalizedArg === 'off') {
     if (!spam.isEnabled(groupId)) {
-      await reply('Spam filtering is already off for this group.');
+      await reply('Spam filtering is already off for this group - living dangerously.');
       return;
     }
     spam.setEnabled(groupId, false);

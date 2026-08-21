@@ -31,13 +31,13 @@ async function handleInactivityToggle(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can turn inactivity checking on or off.');
+    await reply('Only a group admin can turn inactivity checking on or off - the doghouse has rules, and I\'m sworn to uphold them.');
     return;
   }
 
   if (normalizedArg === 'on') {
     if (activity.isEnabled(groupId)) {
-      await reply('Inactivity checking is already on for this group.');
+      await reply('Inactivity checking is already on for this group - I\'m already watching, hehe.');
       return;
     }
     // Give everyone a fresh "just seen" baseline right now, rather than
@@ -60,7 +60,7 @@ async function handleInactivityToggle(ctx) {
 
   if (normalizedArg === 'off') {
     if (!activity.isEnabled(groupId)) {
-      await reply('Inactivity checking is already off for this group.');
+      await reply('Inactivity checking is already off for this group - nothing to see here.');
       return;
     }
     activity.setEnabled(groupId, false);
@@ -77,7 +77,7 @@ async function handleStale(ctx) {
   const { sock, msg, groupId, senderId, reply } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can check who\'s been warned for inactivity.');
+    await reply('Only a group admin can check who\'s been warned for inactivity - rules are rules, even for a mischievous beagle.');
     return;
   }
 
@@ -88,7 +88,7 @@ async function handleStale(ctx) {
 
   const warnedList = activity.getWarned(groupId);
   if (!warnedList.length) {
-    await reply('Nobody is currently warned for inactivity.');
+    await reply('Nobody is currently warned for inactivity - everyone\'s behaving!');
     return;
   }
 

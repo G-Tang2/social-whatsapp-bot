@@ -25,13 +25,13 @@ async function handleAutonewlist(ctx) {
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can turn auto-newlist on or off.');
+    await reply('Only a group admin can turn auto-newlist on or off - I promise it\'s not personal.');
     return;
   }
 
   if (normalizedArg === 'on') {
     if (autoNewlist.isEnabled(groupId)) {
-      await reply('Auto-newlist is already on for this group.');
+      await reply('Auto-newlist is already on for this group - I\'ve got it covered.');
       return;
     }
     autoNewlist.setEnabled(groupId, true);
@@ -43,7 +43,7 @@ async function handleAutonewlist(ctx) {
 
   if (normalizedArg === 'off') {
     if (!autoNewlist.isEnabled(groupId)) {
-      await reply('Auto-newlist is already off for this group.');
+      await reply('Auto-newlist is already off for this group - nothing to see here.');
       return;
     }
     autoNewlist.setEnabled(groupId, false);

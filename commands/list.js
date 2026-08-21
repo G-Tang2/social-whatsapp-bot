@@ -16,7 +16,7 @@
 // batches them into ONE combined summary message once the backlog settles.
 // See lib/catchUpSummary.js for how that summary is worded.
 
-const { getCurrentEvent, getDuePaymentsLabel, addEntry, removeEntry, markPaid, joinTournament, leaveTournament, normalizeName } = require('../store');
+const { getCurrentEvent, addEntry, removeEntry, markPaid, joinTournament, leaveTournament, normalizeName } = require('../store');
 const { checkEntry } = require('../moderation');
 const { isGroupAdmin } = require('../lib/adminCheck');
 const { COMMAND_PREFIX, MAX_NAMES_PER_COMMAND } = require('../lib/config');
@@ -167,21 +167,20 @@ async function runPaidIfFlagged(groupId, senderId, senderName, paidFlag, explici
 }
 
 // Shared reply lines for a runPaidIfFlagged() outcome - used from every
-// call site in handleIn/handleOut below so the wording (and the
-// dueLabel lookup) stays in exactly one place. A clean paid outcome
+// call site in handleIn/handleOut below so the wording stays in exactly
+// one place. A clean paid outcome
 // (paidOutcome.paid.length) intentionally gets no reply of its own here -
 // same as standalone !paid, the reposted list (with the payment-due
 // section shrunk) is proof enough; callers are still responsible for
 // triggering that postList() themselves.
-async function replyPaidOutcome(reply, groupId, paidOutcome) {
+async function replyPaidOutcome(reply, paidOutcome) {
   if (paidOutcome.paidAmbiguous) {
-    const dueLabel = getDuePaymentsLabel(groupId);
     await reply(
-      `You have more than one entry on the ${dueLabel} list - say which one: ${COMMAND_PREFIX}paid <name>\nYours: ${paidOutcome.paidAmbiguous.join(', ')}`
+      `Which one, though? You have more than one entry on the Payment list - say which one: ${COMMAND_PREFIX}paid <name>\nYours: ${paidOutcome.paidAmbiguous.join(', ')}`
     );
   }
   if (paidOutcome.paidRejected.length) {
-    await reply(`Couldn't mark paid:\n${paidOutcome.paidRejected.join('\n')}`);
+    await reply(`Hmm, couldn't mark paid:\n${paidOutcome.paidRejected.join('\n')}`);
   }
 }
 
@@ -257,8 +256,8 @@ async function handleIn(ctx) {
         tournamentFlag
       );
       if (!isCatchUp) {
-        await reply(`You're already on the list as "${own.map((e) => e.name).join('", "')}".`);
-        await replyPaidOutcome(reply, groupId, paidOutcome);
+        await reply(`Ha, nice try - you're already on the list as "${own.map((e) => e.name).join('", "')}".`);
+        await replyPaidOutcome(reply, paidOutcome);
         if (tournamentOutcome.disabled) {
           await reply(`Tournament isn't enabled for this group (see ${COMMAND_PREFIX}tournament).`);
         }
@@ -395,7 +394,7 @@ async function handleIn(ctx) {
     if (rejected.length) {
       await reply(`Couldn't add:\n${rejected.join('\n')}`);
     }
-    await replyPaidOutcome(reply, groupId, paidOutcome);
+    await replyPaidOutcome(reply, paidOutcome);
     // Unlike a full tournament (capacity reached) - which is quietly
     // visible from the reposted list itself, tagged "(🏆 WL)" under
     // "Social only" (see store.js's addEntry()/entry.tournamentWaitlisted
@@ -403,7 +402,7 @@ async function handleIn(ctx) {
     // ALL gets an explicit reply, since there'd be no tournament UI in the
     // list at all to hint at why.
     if (tournamentRequestedButDisabled) {
-      await reply(`Tournament isn't enabled for this group (see ${COMMAND_PREFIX}settournament) - joined the social list only.`);
+      await reply(`Tournament isn't enabled for this group (see ${COMMAND_PREFIX}settournament) - joined the social list only, no trophy for you yet.`);
     }
     // No separate "added to the waitlist" (or "tournament is full"/"joined
     // the tournament") reply - the posted list below (with them shown in
@@ -442,9 +441,9 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
       const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
-          `You don't have an entry on the list. If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out tournament <name>.`
+          `Can't take you out of the tournament if you're not even on the list! If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out tournament <name>.`
         );
-        await replyPaidOutcome(reply, groupId, paidOutcome);
+        await replyPaidOutcome(reply, paidOutcome);
         if (paidOutcome.paid.length) {
           await postList();
         }
@@ -455,9 +454,9 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
       const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
-          `You have more than one entry - say which one: ${COMMAND_PREFIX}out tournament <name>\nYours: ${own.map((e) => e.name).join(', ')}`
+          `Which one, though? You have more than one entry - say which one: ${COMMAND_PREFIX}out tournament <name>\nYours: ${own.map((e) => e.name).join(', ')}`
         );
-        await replyPaidOutcome(reply, groupId, paidOutcome);
+        await replyPaidOutcome(reply, paidOutcome);
         if (paidOutcome.paid.length) {
           await postList();
         }
@@ -502,9 +501,9 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
 
   if (!isCatchUp) {
     if (rejected.length) {
-      await reply(`Couldn't move to social only:\n${rejected.join('\n')}`);
+      await reply(`Couldn't move to social only, alas:\n${rejected.join('\n')}`);
     }
-    await replyPaidOutcome(reply, groupId, paidOutcome);
+    await replyPaidOutcome(reply, paidOutcome);
     if (tournamentPromoted.length) {
       // A tournament spot just freed up, auto-promoting the front of the
       // (🏆 WL) queue - see leaveTournament()'s doc comment. Sent directly
@@ -558,9 +557,9 @@ async function handleOut(ctx) {
       const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
-          `You don't have an entry on the list. If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out <name>.`
+          `Can't remove you from a list you're not even on! If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out <name>.`
         );
-        await replyPaidOutcome(reply, groupId, paidOutcome);
+        await replyPaidOutcome(reply, paidOutcome);
         if (paidOutcome.paid.length) {
           await postList();
         }
@@ -571,9 +570,9 @@ async function handleOut(ctx) {
       const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
-          `You have more than one entry - say which one: ${COMMAND_PREFIX}out <name>\nYours: ${own.map((e) => e.name).join(', ')}`
+          `Which one, though? You have more than one entry - say which one: ${COMMAND_PREFIX}out <name>\nYours: ${own.map((e) => e.name).join(', ')}`
         );
-        await replyPaidOutcome(reply, groupId, paidOutcome);
+        await replyPaidOutcome(reply, paidOutcome);
         if (paidOutcome.paid.length) {
           await postList();
         }
@@ -621,9 +620,9 @@ async function handleOut(ctx) {
 
   if (!isCatchUp) {
     if (rejected.length) {
-      await reply(`Couldn't remove:\n${rejected.join('\n')}`);
+      await reply(`Couldn't remove, my apologies:\n${rejected.join('\n')}`);
     }
-    await replyPaidOutcome(reply, groupId, paidOutcome);
+    await replyPaidOutcome(reply, paidOutcome);
     if (promoted.length) {
       // A spot freed up, so someone was auto-promoted off the waitlist -
       // worth calling out (and tagging) since it's a status change for a
@@ -670,11 +669,10 @@ async function handlePaid(ctx) {
     // different names are, since owing for two separate events is now
     // normal, not a sign something's wrong).
     const resolved = resolveOwnDue(groupId, senderId, senderName);
-    const dueLabelForSelf = getDuePaymentsLabel(groupId);
     if (resolved.noEntry) {
       if (!isCatchUp) {
         await reply(
-          `You're not on the payment list. If your WhatsApp name doesn't match what's on the list, mention @Snoopy with "paid <name>".`
+          `Good news - you're not on the payment list! If your WhatsApp name doesn't match what's on the list, mention @Snoopy with "paid <name>".`
         );
       }
       return { command: 'paid', senderName, argText, noEntry: true };
@@ -682,7 +680,7 @@ async function handlePaid(ctx) {
     if (resolved.ambiguous) {
       if (!isCatchUp) {
         await reply(
-          `You have more than one entry on the ${dueLabelForSelf} list - say which one: ${COMMAND_PREFIX}paid <name>\nYours: ${resolved.ambiguous.join(', ')}`
+          `Which one, though? You have more than one entry on the Payment list - say which one: ${COMMAND_PREFIX}paid <name>\nYours: ${resolved.ambiguous.join(', ')}`
         );
       }
       return { command: 'paid', senderName, argText, ambiguous: resolved.ambiguous };
@@ -716,7 +714,7 @@ async function handlePaid(ctx) {
 
   if (!isCatchUp) {
     if (rejected.length) {
-      await reply(`Couldn't mark paid:\n${rejected.join('\n')}`);
+      await reply(`Hmm, couldn't mark paid:\n${rejected.join('\n')}`);
     }
     if (paid.length) {
       await postList();
