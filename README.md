@@ -960,24 +960,43 @@ current state. Every group starts off - each one opts in individually.
   is fully confident about both the command and who it's for, it's
   dispatched immediately, same as a real typed command (including all the
   same waitlisting/authorization/promotion behavior). Otherwise - low
-  confidence, or the message doesn't look list-related at all - the bot
-  replies with a plain "Sorry, I'm not capable of doing that - try again,
-  or use `!help`/`!admin`..." rather than showing a guessed `!command` or
-  acting on one.
+  confidence, or the message doesn't look list-related at all - nothing is
+  guessed or acted on; instead the bot either asks a clarifying question or
+  falls back to a plain "I'm not capable of doing that" (see the next two
+  bullets for which).
+- **Asks instead of guessing when it's unsure what you meant.** For a
+  low-confidence request that's still clearly *trying* to do something
+  list-related (as opposed to not being list-related at all), the model is
+  asked to also produce a short, specific question about exactly what's
+  ambiguous - e.g. "Janelle paid Janelle in" might get "Did you mean to
+  remove Janelle from the payment list, or add her to the attendance
+  list?" instead of either guessing or a generic "not capable" brush-off.
+  The bot sends that question back as a reply and tells the sender to
+  reply to it; a plain WhatsApp reply to that message (no fresh @-mention
+  needed - see the "reply to one of my messages" behavior above) is read
+  as continuing that same exchange, with the bot's own question quoted
+  back into the next interpretation so it isn't lost. In a compound
+  message where some parts are confident and others aren't, the confident
+  parts still dispatch normally and each uncertain-but-askable part gets
+  its own separate clarifying question, rather than the whole message
+  being silently short-circuited. If the model doesn't have a specific
+  question to ask (or the whole message just isn't list-related), it falls
+  back to the plain "not capable" reply below instead of asking something
+  generic like "can you clarify?".
 - **Always replies to an @-mention - never silent, never a swallowed
-  error.** Every case that doesn't end in a dispatched command gets some
-  reply, never silence - low confidence, not list-related, or the Gemini
-  API call itself failing/returning something unparseable all get that
-  same "I'm not capable of doing that" reply, but a call that specifically
-  took too long to respond gets its own, more accurate "Sorry, that took
-  too long to process - try again, or use `!help`/`!admin` to see the exact
-  typed commands." instead - the request may well have been perfectly
-  understandable, it just didn't get answered in time, so "I'm not capable
-  of doing that" would be misleading there, and a typed command sidesteps
-  Gemini entirely if it's having a slow moment. A failure is
-  still logged to the console for the operator either way, but the sender
-  in the group always hears back rather than being left wondering whether
-  the bot even saw their message.
+  error.** Every case that doesn't end in a dispatched command or a
+  clarifying question gets some reply, never silence - not list-related,
+  or the Gemini API call itself failing/returning something unparseable,
+  gets a plain "I'm not capable of doing that" reply, but a call that
+  specifically took too long to respond gets its own, more accurate "Sorry,
+  that took too long to process - try again, or use `!help`/`!admin` to see
+  the exact typed commands." instead - the request may well have been
+  perfectly understandable, it just didn't get answered in time, so "I'm
+  not capable of doing that" would be misleading there, and a typed
+  command sidesteps Gemini entirely if it's having a slow moment. A
+  failure is still logged to the console for the operator either way, but
+  the sender in the group always hears back rather than being left
+  wondering whether the bot even saw their message.
 
 See `lib/geminiCommand.js` for the actual prompt/schema if you want to
 tune its behavior, and `GEMINI_MODEL` in `.env.example` if you want to use

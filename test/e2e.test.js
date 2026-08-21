@@ -80,7 +80,7 @@ function buildFakeSock() {
         capturedHandlers[event] = handler;
       },
     },
-    sendMessage: async (jid, content) => {
+    sendMessage: async (jid, content, options) => {
       if (content && content.delete) {
         deleted.push({ jid, key: content.delete });
         return { key: content.delete };
@@ -89,7 +89,7 @@ function buildFakeSock() {
         reactions.push({ jid, emoji: content.react.text, key: content.react.key });
         return { key: content.react.key };
       }
-      sentMessages.push({ jid, content });
+      sentMessages.push({ jid, content, options });
       return { key: { id: `fake-${sentMessages.length}` } };
     },
     groupMetadata: async (jid) => ({
@@ -203,11 +203,12 @@ const { COMMAND_PREFIX } = require('../lib/config');
 const { formatList } = require('../lib/helpers');
 
 let fakeMsgCounter = 0;
-function makeMsg({ from, text, fromMe = false, mentions, quotedParticipant }) {
+function makeMsg({ from, text, fromMe = false, mentions, quotedParticipant, quotedMessageText }) {
   fakeMsgCounter += 1;
   const contextInfo = {};
   if (mentions && mentions.length) contextInfo.mentionedJid = mentions;
   if (quotedParticipant) contextInfo.participant = quotedParticipant;
+  if (quotedMessageText) contextInfo.quotedMessage = { conversation: quotedMessageText };
   return {
     key: { remoteJid: GROUP_ID, participant: from, fromMe, id: `E2E${fakeMsgCounter}` },
     pushName: from ? from.split('@')[0] : undefined,
@@ -215,10 +216,10 @@ function makeMsg({ from, text, fromMe = false, mentions, quotedParticipant }) {
   };
 }
 
-async function deliver(text, { from = 'alex@s.whatsapp.net', type = 'notify', mentions, quotedParticipant } = {}) {
+async function deliver(text, { from = 'alex@s.whatsapp.net', type = 'notify', mentions, quotedParticipant, quotedMessageText } = {}) {
   const upsertHandler = capturedHandlers['messages.upsert'];
   assert.ok(upsertHandler, 'expected index.js to have registered a messages.upsert handler');
-  await upsertHandler({ messages: [makeMsg({ from, text, mentions, quotedParticipant })], type });
+  await upsertHandler({ messages: [makeMsg({ from, text, mentions, quotedParticipant, quotedMessageText })], type });
 }
 
 test('e2e: a live !in command is processed and posts the updated list', async () => {
@@ -513,6 +514,61 @@ test('e2e: AI mention that is not list-related (command: none) still gets an "I 
 
   assert.equal(fakeSockInstance.sentMessages.length, 1);
   assert.match(fakeSockInstance.sentMessages[0].content.text, /not capable of doing that/i);
+});
+
+test('e2e: a fully-low-confidence AI mention with a "question" from the model asks that question and tells the sender to reply, instead of the generic "not capable" fallback', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({
+    command: 'out',
+    argText: 'Janelle',
+    confidence: 'low',
+    question: 'Did you mean to remove Janelle from the payment list, or take her off the attendance list?',
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('Janelle paid Janelle in', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  const sent = fakeSockInstance.sentMessages[0];
+  assert.match(sent.content.text, /Did you mean to remove Janelle from the payment list, or take her off the attendance list\?/);
+  assert.match(sent.content.text, /reply to this message/i);
+  assert.doesNotMatch(sent.content.text, /not capable of doing that/i);
+  // Same "quote the triggering message" mechanism every AI-mention reply
+  // already uses - this is what lets a plain WhatsApp reply to it be
+  // treated as a continuation (see messageMentionsBot() in index.js).
+  assert.ok(sent.options && sent.options.quoted, 'expected the clarifying question to be sent as a quote-reply');
+  assert.equal(sent.options.quoted.message.extendedTextMessage.text, 'Janelle paid Janelle in');
+});
+
+test('e2e: replying to the bot\'s own clarifying question includes it as REPLY CONTEXT in the follow-up prompt sent to Gemini', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({
+    command: 'out',
+    argText: 'Janelle',
+    confidence: 'low',
+    question: 'Did you mean to remove Janelle from the payment list, or take her off the attendance list?',
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('Janelle paid Janelle in', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+  const clarifyingText = fakeSockInstance.sentMessages[0].content.text;
+
+  setNextGeminiResponse({ command: 'update', argText: 'remove Janelle from the payment list', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  // A plain WhatsApp reply to the bot's own message - no fresh @-mention
+  // needed, same as any other reply-to-bot exchange (see
+  // messageMentionsBot() in index.js).
+  await deliver('the payment list one', {
+    from: 'jordan@s.whatsapp.net',
+    type: 'notify',
+    quotedParticipant: BOT_JID,
+    quotedMessageText: clarifyingText,
+  });
+
+  const promptText = getLastGeminiPromptText();
+  assert.match(promptText, /^REPLY CONTEXT:/m, 'expected an injected REPLY CONTEXT section on the follow-up prompt');
+  assert.match(promptText, /Did you mean to remove Janelle from the payment list/, 'expected the bot\'s own prior question to be quoted back into the prompt');
 });
 
 // --- Admin commands via AI mention (lib/geminiCommand.js's MAPPABLE_COMMANDS
@@ -1064,6 +1120,34 @@ test('e2e: a compound @-mention where only SOME actions are confident dispatches
   // "never guess out loud" treatment as a fully uncertain single mention.
   const combinedText = fakeSockInstance.sentMessages.map((m) => m.content.text || '').join('\n');
   assert.doesNotMatch(combinedText, /not capable of doing that/i);
+});
+
+test('e2e: a compound @-mention where one action is confident and the other is low-confidence WITH a question dispatches the real one AND separately asks the clarifying question', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({
+    actions: [
+      { command: 'location', argText: 'E2eCompoundVenue2', confidence: 'high' },
+      {
+        command: 'out',
+        argText: 'Nobody In Particular',
+        confidence: 'low',
+        question: 'Who did you want removed from the list?',
+      },
+    ],
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('change the venue to E2eCompoundVenue2, and also remove that one person, you know who', {
+    from: 'admin@s.whatsapp.net', type: 'notify', mentions: [BOT_JID],
+  });
+
+  // The confident action still ran for real.
+  assert.equal(store.getCurrentEvent(GROUP_ID).location, 'E2eCompoundVenue2');
+  // ...and the uncertain one, instead of being silently dropped, gets its
+  // own clarifying-question reply alongside the normal posted-list message.
+  const clarifying = fakeSockInstance.sentMessages.find((m) => /Who did you want removed from the list\?/.test(m.content.text || ''));
+  assert.ok(clarifying, 'expected a separate clarifying-question reply for the uncertain action');
+  assert.match(clarifying.content.text, /reply to this message/i);
 });
 
 test('e2e: a compound @-mention where EVERY action is uncertain falls back to the plain "not capable" reply', async () => {

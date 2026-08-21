@@ -89,6 +89,40 @@ test('interpretMessage: parses explicit names for someone else as a comma-separa
   assert.equal(result.actions[0].command, 'out');
 });
 
+test('interpretMessage: a low-confidence action\'s "question" field round-trips through untouched', async () => {
+  const client = fakeClient(JSON.stringify({
+    actions: [{ command: 'in', argText: 'Janelle', confidence: 'low', question: 'Did you mean to add Janelle, or mark her as paid?' }],
+  }));
+  const result = await interpretMessage('janelle', { client });
+  assert.equal(result.actions[0].question, 'Did you mean to add Janelle, or mark her as paid?');
+});
+
+// SYSTEM_PROMPT itself references the (quoted) phrase "REPLY CONTEXT" in
+// its QUESTION rules regardless of whether a real section is injected, so
+// these assert on the actual injected section header (`REPLY CONTEXT:`,
+// no surrounding quotes, at the start of a line) rather than the bare
+// phrase appearing anywhere at all.
+test('interpretMessage: passing priorBotMessage includes it in an injected "REPLY CONTEXT:" section of the actual prompt sent', async () => {
+  const { client, getCapturedArgs } = fakeClientCapturingConfig(
+    JSON.stringify({ actions: [{ command: 'in', argText: 'Janelle', confidence: 'high' }] })
+  );
+  await interpretMessage('just Janelle', {
+    client,
+    priorBotMessage: 'Did you mean to add Janelle, or mark her as paid?',
+  });
+  const prompt = getCapturedArgs().contents;
+  assert.match(prompt, /^REPLY CONTEXT:/m);
+  assert.match(prompt, /Did you mean to add Janelle, or mark her as paid\?/);
+});
+
+test('interpretMessage: omitting priorBotMessage (a plain mention, not a reply) leaves the prompt without an injected "REPLY CONTEXT:" section', async () => {
+  const { client, getCapturedArgs } = fakeClientCapturingConfig(
+    JSON.stringify({ actions: [{ command: 'in', argText: '', confidence: 'high' }] })
+  );
+  await interpretMessage('put me down', { client });
+  assert.doesNotMatch(getCapturedArgs().contents, /^REPLY CONTEXT:/m);
+});
+
 test('interpretMessage: an admin command (e.g. "clear") is a valid mapped command', async () => {
   const client = fakeClient(JSON.stringify({ actions: [{ command: 'clear', argText: '', confidence: 'high' }] }));
   const result = await interpretMessage('remove everyone from the list', { client });

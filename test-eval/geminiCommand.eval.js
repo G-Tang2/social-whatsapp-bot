@@ -224,3 +224,23 @@ evalTest('a pasted, hand-edited copy of the list maps to a single "update" actio
   assert.equal(result.actions.length, 1, `expected exactly 1 action, got: ${JSON.stringify(result.actions)}`);
   assert.equal(result.actions[0].command, 'update');
 });
+
+// --- A genuinely ambiguous but clearly list-related message must come back
+// low-confidence WITH a specific, non-generic "question" the sender can
+// actually answer - not silence, not a guess, and not a vague "can you
+// clarify?" - see the QUESTION paragraph in SYSTEM_PROMPT. Real bug report:
+// "Janelle paid Janelle in" is genuinely unclear whether it means removing
+// Janelle from the payment-due list or adding her to attendance. ---
+
+evalTest('a genuinely ambiguous request ("Janelle paid Janelle in") comes back low-confidence with a specific, non-generic question naming the real fork', async () => {
+  const listText =
+    '*Attendance* (0/10)\n\n(empty - use !in to add your name)\n\n' +
+    '──────────\n*Payment*\n\n*19th Aug Wed*\n1. Janelle';
+  const result = await interpretMessage('Janelle paid Janelle in', { listText });
+  assert.ok(result, 'expected a parsed result, not null');
+  const uncertain = result.actions.find((a) => a.confidence === 'low' && a.command !== 'none');
+  assert.ok(uncertain, `expected at least one low-confidence, non-"none" action, got: ${JSON.stringify(result.actions)}`);
+  assert.ok(uncertain.question && uncertain.question.trim(), 'expected a non-empty "question" on the low-confidence action');
+  assert.match(uncertain.question, /\bJanelle\b/i, 'expected the question to actually reference Janelle, not a generic "can you clarify?"');
+  assert.doesNotMatch(uncertain.question, /^(can you clarify|i'?m not sure what you mean)\.?$/i, 'expected a specific question, not a generic clarify-request');
+});

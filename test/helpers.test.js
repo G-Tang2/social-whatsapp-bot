@@ -23,6 +23,7 @@ const {
   expandRegularPlayersToken,
   parseNewListDetails,
   getMessageText,
+  getQuotedMessageText,
   stripMentionTokens,
   formatEventHeader,
   formatCount,
@@ -259,6 +260,25 @@ test('getMessageText extracts from conversation, extendedTextMessage, or caption
   assert.equal(getMessageText({ message: { imageMessage: { caption: 'pic caption' } } }), 'pic caption');
   assert.equal(getMessageText({ message: null }), '');
   assert.equal(getMessageText({}), '');
+});
+
+test('getQuotedMessageText extracts the quoted message\'s own text, same field priority as getMessageText', () => {
+  const withQuotedConversation = {
+    message: { extendedTextMessage: { text: 'my reply', contextInfo: { quotedMessage: { conversation: 'the bot\'s question' } } } },
+  };
+  assert.equal(getQuotedMessageText(withQuotedConversation), 'the bot\'s question');
+
+  const withQuotedExtendedText = {
+    message: { extendedTextMessage: { text: 'my reply', contextInfo: { quotedMessage: { extendedTextMessage: { text: 'nested extended text' } } } } },
+  };
+  assert.equal(getQuotedMessageText(withQuotedExtendedText), 'nested extended text');
+});
+
+test('getQuotedMessageText returns \'\' for a plain (non-reply) message, or a reply whose quoted message has no text', () => {
+  assert.equal(getQuotedMessageText({ message: { conversation: 'not a reply at all' } }), '');
+  assert.equal(getQuotedMessageText({ message: { extendedTextMessage: { text: 'reply', contextInfo: {} } } }), '');
+  assert.equal(getQuotedMessageText({ message: null }), '');
+  assert.equal(getQuotedMessageText({}), '');
 });
 
 test('formatEventHeader includes only the fields that are set', () => {

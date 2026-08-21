@@ -59,6 +59,8 @@ const TIPS_TEXT = [
   '*Natural language*',
   `_• Prefer plain English? @-mention me, or just reply to one of my messages, instead of typing a command, e.g. @Snoopy put me down - only works if an admin has turned on ${COMMAND_PREFIX}ai_`,
   '',
+  `_• If I'm not sure what you meant, I'll ask a clarifying question instead of guessing or ignoring you - just reply to that message with the answer and I'll pick up where we left off_`,
+  '',
   '*Joining and leaving*',
   `_• ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid accept comma-separated names, e.g. ${COMMAND_PREFIX}in Alex, Sam, Sam+1 - up to ${MAX_NAMES_PER_COMMAND} at once (no limit for admins)_`,
   '',

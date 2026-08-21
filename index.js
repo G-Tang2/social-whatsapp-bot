@@ -260,7 +260,7 @@ const P = require('pino');
 const qrcode = require('qrcode-terminal');
 
 const config = require('./lib/config');
-const { getMessageText, formatList, getMentionedJids, getQuotedParticipant, stripMentionTokens, normalizeJid } = require('./lib/helpers');
+const { getMessageText, formatList, getMentionedJids, getQuotedParticipant, getQuotedMessageText, stripMentionTokens, normalizeJid } = require('./lib/helpers');
 const { parseListSections } = require('./lib/listParser');
 const { getRegularPlayers, getUndoableState, saveUndoSnapshot } = require('./store');
 const { isGroupAdmin } = require('./lib/adminCheck');
@@ -551,18 +551,25 @@ const UNEXPECTED_ERROR_REPLY = "Sorry, something went wrong on my end handling t
 // just one - each item is judged and dispatched independently:
 //  - No interpretation at all (a failed/unparseable API call), or the
 //    array has no action with command !== 'none' and confidence 'high':
-//    reply with the plain AI_NOT_UNDERSTOOD_REPLY above, rather than
-//    guessing, acting, or (a previous version of this feature) staying
-//    completely silent - EXCEPT when interpretMessage() gave up specifically
-//    because Gemini didn't respond in time (interpretation.timedOut - see
-//    that function's own doc comment), which gets AI_TIMEOUT_REPLY instead:
-//    a genuinely different situation ("might well have understood you, just
-//    didn't answer fast enough") deserves a genuinely different reply, not
-//    "I'm not capable of doing that" - which would wrongly suggest the
-//    request itself was the problem. Being @-mentioned always gets SOME
-//    reply now either way - the sender should never be left wondering
-//    whether the bot even saw their message, the same way an unrecognized
-//    "!command" would previously just vanish with no feedback at all.
+//    if the model returned at least one low-confidence action with a real
+//    command and its own `question` (see RESPONSE_SCHEMA's doc comment in
+//    lib/geminiCommand.js), reply with THAT question instead of guessing
+//    or staying silent - telling the sender to reply to it (see
+//    formatClarifyingQuestion below), which messageMentionsBot() already
+//    treats as addressing the bot again, continuing the exchange with
+//    `priorBotMessage` context (see handleAiMention below). No question
+//    available (the model didn't provide one) falls back to the plain
+//    AI_NOT_UNDERSTOOD_REPLY - EXCEPT when interpretMessage() gave up
+//    specifically because Gemini didn't respond in time
+//    (interpretation.timedOut - see that function's own doc comment),
+//    which gets AI_TIMEOUT_REPLY instead: a genuinely different situation
+//    ("might well have understood you, just didn't answer fast enough")
+//    deserves a genuinely different reply, not "I'm not capable of doing
+//    that" - which would wrongly suggest the request itself was the
+//    problem. Being @-mentioned always gets SOME reply now either way -
+//    the sender should never be left wondering whether the bot even saw
+//    their message, the same way an unrecognized "!command" would
+//    previously just vanish with no feedback at all.
 //  - Each action with command !== 'none' and confidence 'high' dispatches
 //    straight to the real command handler (commands/list.js or
 //    commands/admin.js/etc.), exactly as if that !command had been typed -
@@ -581,12 +588,28 @@ const UNEXPECTED_ERROR_REPLY = "Sorry, something went wrong on my end handling t
 //    command one after another yourself) - there's no separate combined
 //    reply here.
 //  - Any action with command 'none' or confidence 'low' inside an
-//    otherwise-dispatchable batch is silently skipped (not replied to on
-//    its own) - same "never guess out loud" philosophy as a fully
-//    uncertain single-request mention, just applied per-action instead of
-//    to the whole message. Only if EVERY action in the array is
-//    undispatchable does the whole mention fall back to
-//    AI_NOT_UNDERSTOOD_REPLY.
+//    otherwise-dispatchable batch is silently skipped if it has no
+//    `question` (same "never guess out loud" philosophy as before), but a
+//    low-confidence action WITH a question gets its own follow-up reply
+//    after the batch finishes (see the needsClarification loop at the end
+//    of handleAiMention below) - e.g. "Janelle paid, and sign up the new
+//    guy" dispatches the "paid" half and separately asks about the unclear
+//    "in" half, rather than silently dropping it. Only if EVERY action in
+//    the array is undispatchable does the whole mention fall back to
+//    AI_NOT_UNDERSTOOD_REPLY/a clarifying question per the bullet above.
+// Appended to a low-confidence action's model-authored `question` (see
+// RESPONSE_SCHEMA's doc comment in lib/geminiCommand.js) before it's sent
+// back to the sender - `reply()` already quotes the triggering message, so
+// a plain WhatsApp "Reply" to THIS message is all that's needed to
+// continue; messageMentionsBot() below already treats a reply to any of
+// the bot's own messages the same as a fresh @-mention, and
+// handleAiMention passes the quoted text back through as `priorBotMessage`
+// so the follow-up is read as continuing this exact exchange, not a cold
+// new request.
+function formatClarifyingQuestion(question) {
+  return `${question}\n\nReply to this message to let me know.`;
+}
+
 async function handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList }) {
   const mentioned = getMentionedJids(msg);
   const cleanedText = stripMentionTokens(text, mentioned);
@@ -608,13 +631,43 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   // SYSTEM_PROMPT's REGULAR PLAYERS paragraph, and commands/admin.js's
   // !regulars for how the roster itself is stored/managed.
   const regularPlayersText = formatRegularPlayersForPrompt(getRegularPlayers(groupId));
-  const interpretation = await interpretMessage(cleanedText, { listText, todayLabel, regularPlayersText });
+  // If `msg` is a WhatsApp reply to one of the BOT'S OWN messages
+  // specifically (not just any reply), pass that message's text through as
+  // context - see lib/geminiCommand.js's buildPrompt() `priorBotMessage`
+  // doc comment. Same bot-JID comparison messageMentionsBot() above uses
+  // against sock.user.id/sock.user.lid.
+  const botJids = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
+  const quotedParticipant = getQuotedParticipant(msg);
+  const priorBotMessage = quotedParticipant && botJids.includes(normalizeJid(quotedParticipant))
+    ? getQuotedMessageText(msg) || undefined
+    : undefined;
+  const interpretation = await interpretMessage(cleanedText, { listText, todayLabel, regularPlayersText, priorBotMessage });
 
   const actions = interpretation && interpretation.actions;
   const dispatchable = (actions || []).filter((a) => a.command !== 'none' && a.confidence === 'high');
+  // Low-confidence guesses that came with a real (non-'none') command AND
+  // a question worth asking back - see RESPONSE_SCHEMA's `question` field.
+  // A low-confidence action with no question (the model didn't provide
+  // one) or command 'none' (genuinely unrelated chat, nothing to clarify)
+  // falls through to the existing generic-fallback/silent-skip behavior
+  // below, unchanged - this is a pure upgrade over that, never a
+  // regression when the model doesn't cooperate.
+  const needsClarification = (actions || []).filter(
+    (a) => a.confidence === 'low' && a.command !== 'none' && a.question && a.question.trim()
+  );
 
   if (!dispatchable.length) {
-    await reply(interpretation && interpretation.timedOut ? AI_TIMEOUT_REPLY : AI_NOT_UNDERSTOOD_REPLY);
+    if (interpretation && interpretation.timedOut) {
+      await reply(AI_TIMEOUT_REPLY);
+    } else if (needsClarification.length) {
+      // Only the first, even if the model returned more than one low-
+      // confidence guess - one clarifying question per exchange keeps the
+      // back-and-forth simple; asking several at once would leave the
+      // sender unsure which one their reply is even answering.
+      await reply(formatClarifyingQuestion(needsClarification[0].question));
+    } else {
+      await reply(AI_NOT_UNDERSTOOD_REPLY);
+    }
     return;
   }
 
@@ -695,6 +748,17 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
 
   if (repostOwed) {
     await postList();
+  }
+
+  // Ask about anything the model was unsure about ALONGSIDE the part(s)
+  // that just dispatched successfully above - e.g. "Janelle paid, and sign
+  // up the new guy" where only the low-confidence "sign up the new guy"
+  // half needs a follow-up. Sent after the repost (so the sender sees the
+  // real, current state first, then the question), one reply per
+  // still-ambiguous action - see formatClarifyingQuestion's doc comment
+  // for why each is independently reply-able.
+  for (const action of needsClarification) {
+    await reply(formatClarifyingQuestion(action.question));
   }
 }
 
