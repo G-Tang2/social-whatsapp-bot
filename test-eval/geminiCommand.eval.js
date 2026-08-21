@@ -157,6 +157,27 @@ evalTest('"all the Harrys paid" catches every matching entry in the payment-due 
   );
 });
 
+// --- A self+others split where the tournament flag applies to the WHOLE
+// request must tournament-flag BOTH resulting actions, not just the one
+// with the named other person. Real bug report: "add me and stella to the
+// tournament" added the sender social-only and only Stella into the
+// tournament - see SELF+OTHERS SPLIT's added compound-modifier sentence in
+// SHARED_ARG_RULES. ---
+
+evalTest('"add me and stella to the tournament" tournament-flags BOTH the sender and Stella, not just one of them', async () => {
+  const result = await interpretMessage('add me and stella to the tournament', {
+    listText: '*Attendance* (0/10)\n\n(empty - use !in to add your name)',
+  });
+  assert.ok(result, 'expected a parsed result, not null');
+  const inActions = result.actions.filter((a) => a.command === 'in');
+  assert.equal(inActions.length, 2, `expected 2 "in" actions (self + Stella), got: ${JSON.stringify(result.actions)}`);
+  const selfAction = inActions.find((a) => a.argText.trim().toLowerCase() === 'tournament');
+  const stellaAction = inActions.find((a) => /stella/i.test(a.argText));
+  assert.ok(selfAction, `expected one action to be the sender alone, tournament-flagged (argText "tournament"), got: ${JSON.stringify(inActions)}`);
+  assert.ok(stellaAction, `expected one action naming Stella, got: ${JSON.stringify(inActions)}`);
+  assert.match(stellaAction.argText, /^tournament\s*,/i, 'the tournament flag must lead Stella\'s argText too, not just the sender\'s');
+});
+
 // --- Compound messages must split into ordered actions, and relative
 // dates must resolve against the given "Today is ..." reference. ---
 
