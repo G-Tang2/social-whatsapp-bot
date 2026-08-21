@@ -37,13 +37,6 @@ process.env.TIMEZONE = 'UTC';
 // call at all. The fake @google/genai module injected below is what
 // actually intercepts that call - see BOT_JID/geminiResponseQueue below.
 process.env.GEMINI_API_KEY = 'test-key-not-real';
-// See index.js's handleMessage/lib/config.js - the "banter" treatment for
-// one specific sender. Configured here (rather than left unset, like most
-// of this file's env setup) so the dedicated banter tests further down
-// have a real target/line pool to exercise; every other test in this file
-// uses a sender other than BANTER_TARGET_JID, so this is a no-op for them.
-process.env.BANTER_TARGET_JID = 'banter-target@s.whatsapp.net';
-process.env.BANTER_LINES = 'Nice shot, said no one ever.|Working on that backhand, are we?';
 
 const BOT_JID = 'bot:7@s.whatsapp.net';
 // The bot's "LID" (privacy-addressing) JID - a completely different
@@ -1707,68 +1700,4 @@ test('e2e: a logged-out close does NOT schedule a reconnect', async () => {
   await new Promise((resolve) => setTimeout(resolve, 1300));
 
   assert.equal(socketCreateCount, before, 'a logged-out session must not trigger a reconnect attempt');
-});
-
-// --- BANTER_TARGET_JID/BANTER_LINES (index.js's handleMessage, see
-// lib/config.js) - deliberately configured via process.env at the top of
-// this file (BANTER_TARGET_JID='banter-target@s.whatsapp.net') rather than
-// committed anywhere else, same as the real feature is meant to be
-// configured (see its own doc comments for why). ---
-
-test('e2e: BANTER_TARGET_JID gets an eye-roll reaction instead of a tick, every time, regardless of the banter-line chance', async () => {
-  fakeSockInstance.reactions.length = 0;
-  const originalRandom = Math.random;
-  Math.random = () => 0.99; // always above BANTER_CHANCE - suppresses the follow-up line, isolating just the reaction
-  try {
-    await deliver('!in', { from: 'banter-target@s.whatsapp.net', type: 'notify' });
-  } finally {
-    Math.random = originalRandom;
-  }
-
-  const tickReactions = fakeSockInstance.reactions.filter((r) => r.emoji === '✅');
-  const eyerollReactions = fakeSockInstance.reactions.filter((r) => r.emoji === '🙄');
-  assert.equal(tickReactions.length, 0, 'the target must never get the plain tick');
-  assert.equal(eyerollReactions.length, 1, 'expected exactly one eye-roll reaction');
-});
-
-test('e2e: everyone else still gets the plain tick reaction, unaffected by BANTER_TARGET_JID', async () => {
-  fakeSockInstance.reactions.length = 0;
-  await deliver('!in', { from: 'alex@s.whatsapp.net', type: 'notify' });
-
-  const eyerollReactions = fakeSockInstance.reactions.filter((r) => r.emoji === '🙄');
-  const tickReactions = fakeSockInstance.reactions.filter((r) => r.emoji === '✅');
-  assert.equal(eyerollReactions.length, 0, 'only BANTER_TARGET_JID should ever get the eye-roll');
-  assert.equal(tickReactions.length, 1, 'expected the normal tick reaction');
-});
-
-test('e2e: BANTER_TARGET_JID gets one of the configured BANTER_LINES as a follow-up reply when the random chance hits', async () => {
-  fakeSockInstance.sentMessages.length = 0;
-  const originalRandom = Math.random;
-  Math.random = () => 0; // always below BANTER_CHANCE - guarantees the line fires; also picks BANTER_LINES[0] via the same call
-  try {
-    await deliver('!in', { from: 'banter-target@s.whatsapp.net', type: 'notify' });
-  } finally {
-    Math.random = originalRandom;
-  }
-
-  const banterMsg = fakeSockInstance.sentMessages.find(
-    (m) => /Nice shot, said no one ever\.|Working on that backhand, are we\?/.test(m.content.text || '')
-  );
-  assert.ok(banterMsg, 'expected one of the configured BANTER_LINES to have been sent');
-});
-
-test('e2e: BANTER_TARGET_JID does NOT get a banter line when the random chance misses', async () => {
-  fakeSockInstance.sentMessages.length = 0;
-  const originalRandom = Math.random;
-  Math.random = () => 0.99; // always above BANTER_CHANCE
-  try {
-    await deliver('!in', { from: 'banter-target@s.whatsapp.net', type: 'notify' });
-  } finally {
-    Math.random = originalRandom;
-  }
-
-  const banterMsg = fakeSockInstance.sentMessages.find(
-    (m) => /Nice shot, said no one ever\.|Working on that backhand, are we\?/.test(m.content.text || '')
-  );
-  assert.equal(banterMsg, undefined, 'no banter line should be sent when the random chance misses');
 });

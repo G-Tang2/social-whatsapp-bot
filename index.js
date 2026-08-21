@@ -285,18 +285,7 @@ const {
   VACANCY_REMINDER_INTERVAL_MS,
   INACTIVITY_CHECK_INTERVAL_MS,
   TIMEZONE,
-  BANTER_TARGET_JID,
-  BANTER_LINES,
 } = config;
-
-// How often BANTER_TARGET_JID's snarky one-liner (see handleMessage
-// below) actually fires, once they've done something that would
-// otherwise earn a plain ✅ - not a secret/identifying value like
-// BANTER_TARGET_JID/BANTER_LINES themselves, so this is fine to keep in
-// committed source rather than .env. The eye-roll reaction itself is NOT
-// gated by this - that one always replaces the tick for this person;
-// only the follow-up comment is occasional.
-const BANTER_CHANCE = 0.25;
 
 // Last-resort safety net. Without these, a single unexpected rejection or
 // thrown error ANYWHERE (e.g. a reconnect attempt failing right after the
@@ -977,23 +966,6 @@ async function handleMessage(sock, msg, upsertType) {
       console.error(`[bot] Failed to react (${emoji}) to a message in ${groupId}:`, err.message);
     }
   };
-  // Deliberately-outside-the-repo "banter" treatment for one specific real
-  // person (see BANTER_TARGET_JID/BANTER_LINES doc comments in
-  // lib/config.js for why this is configured entirely via .env rather than
-  // hardcoded here) - a no-op for everyone else, and a no-op entirely
-  // unless both settings are configured. `isBanterTarget` gates the
-  // reaction swap below (react(successReaction) instead of react('✅'),
-  // every time), while BANTER_CHANCE only gates the follow-up snarky line
-  // (sendBanterLine below) - the eye-roll always replaces the tick for
-  // this person, but they only get an actual comment about a quarter of
-  // the time, not every single time they use the bot.
-  const isBanterTarget = Boolean(BANTER_TARGET_JID) && normalizeJid(senderId) === normalizeJid(BANTER_TARGET_JID);
-  const successReaction = isBanterTarget ? '🙄' : '✅';
-  const sendBanterLine = async () => {
-    if (!isBanterTarget || !BANTER_LINES.length || Math.random() >= BANTER_CHANCE) return;
-    const line = BANTER_LINES[Math.floor(Math.random() * BANTER_LINES.length)];
-    await reply(line);
-  };
   // Chat-level "typing..." indicator, shown alongside the 💬/✅ reaction
   // above while the bot is actually doing the work of handling a live
   // message (a command, or an @-mention/reply that gets dispatched to a
@@ -1103,10 +1075,7 @@ async function handleMessage(sock, msg, upsertType) {
         'Nice try, but scribbling on the list yourself doesn\'t actually fool me - that doesn\'t update anything, so nothing was recorded! Just mention me with what you\'d like instead, e.g. "@Snoopy add me".'
       );
     }
-    if (mentionsBot && responded) {
-      await react(successReaction);
-      await sendBanterLine();
-    }
+    if (mentionsBot && responded) await react('✅');
     return;
   }
 
@@ -1138,7 +1107,7 @@ async function handleMessage(sock, msg, upsertType) {
     // fact.
     if (upsertType === 'notify') {
       await reply(UNEXPECTED_ERROR_REPLY);
-      await react(successReaction);
+      await react('✅');
     }
     return;
   } finally {
@@ -1147,10 +1116,7 @@ async function handleMessage(sock, msg, upsertType) {
     // after a handler throws.
     if (upsertType === 'notify') await setPresence('available');
   }
-  if (upsertType === 'notify') {
-    await react(successReaction);
-    await sendBanterLine();
-  }
+  if (upsertType === 'notify') await react('✅');
 
   // Catch-up (upsertType === 'append') !in/!out/!paid handlers stay quiet
   // on their own (see commands/list.js's isCatchUp handling) and instead
