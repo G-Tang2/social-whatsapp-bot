@@ -1120,7 +1120,7 @@ does.
 If a group's current list is still 6 or more spots short of its limit as
 the social's start time closes in, the bot sends two escalating warnings:
 
-- **48 hours before start:** `@`-mentions the WHOLE group, e.g. "6 spots
+- **50 hours before start:** `@`-mentions the WHOLE group, e.g. "6 spots
   still open! Plenty of room - sign up soon or courts may be cancelled
   tomorrow."
 - **26 hours before start**, if there's *still* 6+ spots open: `@`-mentions
@@ -1131,7 +1131,7 @@ the social's start time closes in, the bot sends two escalating warnings:
 Each warning fires **at most once** per list - it won't repeat every time
 the periodic check runs, and a fresh `!newlist` resets both, so a new cycle
 gets its own fresh pair of warnings. If no `!courtcanceller` is set, the
-26-hour warning simply never goes out (the 48-hour one still does).
+26-hour warning simply never goes out (the 50-hour one still does).
 
 **This needs a real, computable start time**, not just a limit and a date -
 `!time` has always been pure freeform display text (e.g. "8pm - 10pm", "8PM
@@ -1671,7 +1671,7 @@ one giant switch statement. The actual work is split across two folders:
   `!in`/`!out`/`!paid` outcomes into one combined summary - see below), and
   `lastSeenStatus.js` (the WhatsApp About/status heartbeat - see "Last seen
   status heartbeat" above), `vacancyReminder.js` (the low-signup
-  48-hour/26-hour warnings - see "Vacancy warnings" above), and
+  50-hour/26-hour warnings - see "Vacancy warnings" above), and
   `autoNewlistScheduler.js` (auto-starting next week's list - see
   "Auto-starting next week's list" above).
 - `commands/` - one file per group of related commands (`list.js` for

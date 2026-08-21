@@ -583,47 +583,47 @@ test('setCourtCanceller persists across newList/clearList, same lifecycle as reg
   assert.deepEqual(store.getCourtCanceller(groupId), { jid: 'alex@s.whatsapp.net' });
 });
 
-// markVacancy48hNotified/markVacancyCancelWarningNotified - the one-shot-
+// markVacancy50hNotified/markVacancyCancelWarningNotified - the one-shot-
 // per-list-cycle flags lib/vacancyReminder.js checks before sending each
 // of its two escalating warnings.
 
 test('a brand-new list has neither vacancy warning marked as sent', () => {
   const groupId = freshGroupId();
   const event = store.getCurrentEvent(groupId);
-  assert.equal(event.notifiedVacancy48h, false);
+  assert.equal(event.notifiedVacancy50h, false);
   assert.equal(event.notifiedVacancyCancelWarning, false);
 });
 
-test('markVacancy48hNotified/markVacancyCancelWarningNotified flip only their own flag on the current event', () => {
+test('markVacancy50hNotified/markVacancyCancelWarningNotified flip only their own flag on the current event', () => {
   const groupId = freshGroupId();
-  store.markVacancy48hNotified(groupId);
+  store.markVacancy50hNotified(groupId);
   let event = store.getCurrentEvent(groupId);
-  assert.equal(event.notifiedVacancy48h, true);
+  assert.equal(event.notifiedVacancy50h, true);
   assert.equal(event.notifiedVacancyCancelWarning, false);
 
   store.markVacancyCancelWarningNotified(groupId);
   event = store.getCurrentEvent(groupId);
-  assert.equal(event.notifiedVacancy48h, true);
+  assert.equal(event.notifiedVacancy50h, true);
   assert.equal(event.notifiedVacancyCancelWarning, true);
 });
 
 test('newList resets both vacancy-notified flags for the fresh cycle', () => {
   const groupId = freshGroupId();
-  store.markVacancy48hNotified(groupId);
+  store.markVacancy50hNotified(groupId);
   store.markVacancyCancelWarningNotified(groupId);
   store.newList(groupId, '2026-08-20', {});
 
   const event = store.getCurrentEvent(groupId);
-  assert.equal(event.notifiedVacancy48h, false);
+  assert.equal(event.notifiedVacancy50h, false);
   assert.equal(event.notifiedVacancyCancelWarning, false);
 });
 
 test('clearList does NOT reset the vacancy-notified flags - same list cycle, still only warn once', () => {
   const groupId = freshGroupId();
-  store.markVacancy48hNotified(groupId);
+  store.markVacancy50hNotified(groupId);
   store.clearList(groupId);
 
-  assert.equal(store.getCurrentEvent(groupId).notifiedVacancy48h, true);
+  assert.equal(store.getCurrentEvent(groupId).notifiedVacancy50h, true);
 });
 
 test('getUndoableState/restoreUndoableState round-trip courtCanceller alongside regularPlayers/paymentExempt', () => {

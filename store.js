@@ -331,11 +331,11 @@ function emptyGroupState() {
       // runs), and both reset to false whenever a fresh cycle starts (see
       // newList() below) - a new list is a fresh chance to fill up, so it
       // deserves its own fresh warning too.
-      notifiedVacancy48h: false,
+      notifiedVacancy50h: false,
       notifiedVacancyCancelWarning: false,
       // Whether lib/autoNewlistScheduler.js's !autonewlist feature has
       // already started next week's list for THIS cycle - one-shot per
-      // list, same reasoning/lifecycle as notifiedVacancy48h above (reset
+      // list, same reasoning/lifecycle as notifiedVacancy50h above (reset
       // to false whenever a fresh cycle starts via newList() below). See
       // markAutoNewlistCreated below.
       autoNewlistCreated: false,
@@ -481,8 +481,8 @@ function migrateIfNeeded(data) {
         data[groupId].current.tournamentRules = null;
         migrated = true;
       }
-      if (data[groupId].current.notifiedVacancy48h === undefined) {
-        data[groupId].current.notifiedVacancy48h = false;
+      if (data[groupId].current.notifiedVacancy50h === undefined) {
+        data[groupId].current.notifiedVacancy50h = false;
         migrated = true;
       }
       if (data[groupId].current.notifiedVacancyCancelWarning === undefined) {
@@ -910,21 +910,21 @@ function setCourtCanceller(groupId, canceller) {
   return all[groupId].courtCanceller;
 }
 
-// Marks the CURRENT list's 48-hours-before "plenty of spots, sign up or
+// Marks the CURRENT list's 50-hours-before "plenty of spots, sign up or
 // courts may be cancelled" group-wide warning as sent - see
 // lib/vacancyReminder.js, which checks this (via getCurrentEvent's
-// notifiedVacancy48h) before sending, so the warning fires AT MOST ONCE
+// notifiedVacancy50h) before sending, so the warning fires AT MOST ONCE
 // per list cycle regardless of how often the periodic check runs. Reset
 // back to false by newList() below, same as
 // markVacancyCancelWarningNotified.
-function markVacancy48hNotified(groupId) {
+function markVacancy50hNotified(groupId) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
-  all[groupId].current.notifiedVacancy48h = true;
+  all[groupId].current.notifiedVacancy50h = true;
   writeAll(all);
 }
 
-// Same as markVacancy48hNotified above, for the 26-hours-before
+// Same as markVacancy50hNotified above, for the 26-hours-before
 // court-cancellation warning sent to whoever !courtcanceller designates.
 function markVacancyCancelWarningNotified(groupId) {
   const all = readAll();
@@ -937,7 +937,7 @@ function markVacancyCancelWarningNotified(groupId) {
 // auto-started - see lib/autoNewlistScheduler.js, which checks this (via
 // getCurrentEvent's autoNewlistCreated) before acting, so it fires AT MOST
 // ONCE per list cycle regardless of how often the periodic check runs.
-// Reset back to false by newList() below, same as markVacancy48hNotified.
+// Reset back to false by newList() below, same as markVacancy50hNotified.
 function markAutoNewlistCreated(groupId) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
@@ -1888,8 +1888,8 @@ function newList(groupId, date, details = {}) {
     tournamentWinners: null,
     tournamentRules: outgoing.tournamentRules || null,
     // A fresh cycle, a fresh chance to fill up - see
-    // markVacancy48hNotified/markVacancyCancelWarningNotified above.
-    notifiedVacancy48h: false,
+    // markVacancy50hNotified/markVacancyCancelWarningNotified above.
+    notifiedVacancy50h: false,
     notifiedVacancyCancelWarning: false,
     // A fresh cycle hasn't had its own auto-newlist fire yet - see
     // markAutoNewlistCreated above.
@@ -1923,7 +1923,7 @@ module.exports = {
   leaveTournament,
   getCourtCanceller,
   setCourtCanceller,
-  markVacancy48hNotified,
+  markVacancy50hNotified,
   markVacancyCancelWarningNotified,
   markAutoNewlistCreated,
   getUndoableState,

@@ -106,7 +106,7 @@ test(`does nothing yet when more than ${FIRST_WARNING_HOURS} hours remain, even 
   assert.equal(sock.sentMessages.length, 0);
 });
 
-test('sends the 48-hour group-wide warning once vacancies>=MIN and within FIRST_WARNING_HOURS, tagging every participant', async () => {
+test('sends the 50-hour group-wide warning once vacancies>=MIN and within FIRST_WARNING_HOURS, tagging every participant', async () => {
   const groupId = freshGroupId();
   const participantIds = ['a@s.whatsapp.net', 'b@s.whatsapp.net', 'c@s.whatsapp.net'];
   const sock = createFakeSock({ participantIds });
@@ -118,10 +118,10 @@ test('sends the 48-hour group-wide warning once vacancies>=MIN and within FIRST_
   const sent = sock.sentMessages[0];
   assert.match(sent.content.text, /sign up/i);
   assert.deepEqual(new Set(sent.content.mentions), new Set(participantIds));
-  assert.equal(store.getCurrentEvent(groupId).notifiedVacancy48h, true);
+  assert.equal(store.getCurrentEvent(groupId).notifiedVacancy50h, true);
 });
 
-test('the 48-hour warning fires AT MOST ONCE per list cycle, even across repeated checks', async () => {
+test('the 50-hour warning fires AT MOST ONCE per list cycle, even across repeated checks', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
   setUpList(groupId, { hoursFromNow: FIRST_WARNING_HOURS - 1, limit: 10, entryCount: 0 });
@@ -130,10 +130,10 @@ test('the 48-hour warning fires AT MOST ONCE per list cycle, even across repeate
   await checkVacancyReminders(sock);
   await checkVacancyReminders(sock);
 
-  assert.equal(sock.sentMessages.length, 1, 'expected exactly one 48-hour warning, not one per check');
+  assert.equal(sock.sentMessages.length, 1, 'expected exactly one 50-hour warning, not one per check');
 });
 
-test('a fresh !newlist resets notifiedVacancy48h, allowing the warning to fire again for the new cycle', async () => {
+test('a fresh !newlist resets notifiedVacancy50h, allowing the warning to fire again for the new cycle', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
   setUpList(groupId, { hoursFromNow: FIRST_WARNING_HOURS - 1, limit: 10, entryCount: 0 });
@@ -144,7 +144,7 @@ test('a fresh !newlist resets notifiedVacancy48h, allowing the warning to fire a
   store.newList(groupId, isoDate, { time });
   await checkVacancyReminders(sock);
 
-  assert.equal(sock.sentMessages.length, 2, 'expected a second 48-hour warning for the new list cycle');
+  assert.equal(sock.sentMessages.length, 2, 'expected a second 50-hour warning for the new list cycle');
 });
 
 test(`does nothing for the cancel warning yet when more than ${CANCEL_WARNING_HOURS} hours remain`, async () => {
@@ -155,7 +155,7 @@ test(`does nothing for the cancel warning yet when more than ${CANCEL_WARNING_HO
 
   await checkVacancyReminders(sock);
 
-  // Still within the 48-hour window, so the group-wide warning DOES fire -
+  // Still within the 50-hour window, so the group-wide warning DOES fire -
   // just not the cancel-specific one yet.
   assert.equal(sock.sentMessages.length, 1);
   assert.doesNotMatch(sock.sentMessages[0].content.text, /cancel some courts/i);
@@ -186,7 +186,7 @@ test('does NOT send the cancel warning when no court-canceller is configured, an
   assert.equal(store.getCurrentEvent(groupId).notifiedVacancyCancelWarning, false);
 });
 
-test('a bot outage through the 48-hour mark still catches up: both warnings fire in the same check once already inside CANCEL_WARNING_HOURS', async () => {
+test('a bot outage through the 50-hour mark still catches up: both warnings fire in the same check once already inside CANCEL_WARNING_HOURS', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
   store.setCourtCanceller(groupId, { jid: 'canceller@s.whatsapp.net' });
@@ -196,7 +196,7 @@ test('a bot outage through the 48-hour mark still catches up: both warnings fire
 
   assert.equal(sock.sentMessages.length, 2, 'expected both the group-wide AND the cancel warning');
   const event = store.getCurrentEvent(groupId);
-  assert.equal(event.notifiedVacancy48h, true);
+  assert.equal(event.notifiedVacancy50h, true);
   assert.equal(event.notifiedVacancyCancelWarning, true);
 });
 
