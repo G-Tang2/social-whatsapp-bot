@@ -268,9 +268,11 @@ const catchUpQueue = require('./lib/catchUpQueue');
 const { updateLastSeenStatus } = require('./lib/lastSeenStatus');
 const { checkVacancyReminders } = require('./lib/vacancyReminder');
 const { checkAutoNewlist } = require('./lib/autoNewlistScheduler');
+const { checkAllGroupsInactivity } = require('./lib/inactivityCheck');
 const { interpretMessage, formatTodayForPrompt, formatRegularPlayersForPrompt } = require('./lib/geminiCommand');
 const spam = require('./spam');
 const ai = require('./ai');
+const activity = require('./activity');
 const { commands, rawCommands, CATCH_UP_COMMANDS } = require('./commands');
 
 const {
@@ -281,6 +283,7 @@ const {
   LAST_SEEN_STATUS_ENABLED,
   LAST_SEEN_STATUS_INTERVAL_MS,
   VACANCY_REMINDER_INTERVAL_MS,
+  INACTIVITY_CHECK_INTERVAL_MS,
   TIMEZONE,
 } = config;
 
@@ -837,6 +840,18 @@ async function handleMessage(sock, msg, upsertType) {
     }
   }
 
+  // Record activity for EVERY real message in a moderated group - not just
+  // bot commands - since the inactivity check (and !stale) needs to see
+  // general chat presence, not just list interactions. If this message
+  // turned out to be spam and got deleted above, this line already
+  // returned above too, so a deleted message correctly doesn't count as
+  // activity. Gated on the group having inactivity checking turned on (see
+  // !inactivity) - a group that's never opted in shouldn't have
+  // activity.json growing on its behalf for no reason.
+  if (activity.isEnabled(groupId)) {
+    activity.recordActivity(groupId, senderId);
+  }
+
   const reply = (body) => sock.sendMessage(groupId, { text: body }, { quoted: msg });
   const postList = () => sock.sendMessage(groupId, { text: formatList(groupId) });
   // Best-effort reaction on the mentioning message itself - a failure here
@@ -1055,6 +1070,19 @@ const autoNewlistTimer = setInterval(() => {
   checkAutoNewlist(currentSock);
 }, VACANCY_REMINDER_INTERVAL_MS);
 if (typeof autoNewlistTimer.unref === 'function') autoNewlistTimer.unref();
+
+// Same "single module-scope interval, read currentSock fresh each tick"
+// pattern as the timers above - see lib/inactivityCheck.js for what this
+// actually checks (each configured group with !inactivity on, for members
+// who've gone quiet) and why it's unconditional (the per-group
+// !inactivity toggle - default off - already gates all the real work).
+// Own dedicated cadence (INACTIVITY_CHECK_INTERVAL_MS, default once a
+// day) rather than reusing VACANCY_REMINDER_INTERVAL_MS - these
+// thresholds are measured in days, not minutes.
+const inactivityTimer = setInterval(() => {
+  checkAllGroupsInactivity(currentSock);
+}, INACTIVITY_CHECK_INTERVAL_MS);
+if (typeof inactivityTimer.unref === 'function') inactivityTimer.unref();
 
 start().catch((err) => {
   console.error('[bot] Fatal error on startup:', err);

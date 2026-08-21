@@ -33,6 +33,8 @@ every change.
 | `!ai [on\|off]` | viewing: anyone; changing: group admins only | Turns natural-language command interpretation (see "Natural-language commands" below) on or off for *this* group. OFF by default everywhere, and requires `GEMINI_API_KEY` to be configured. With no argument, shows the current on/off state without changing it |
 | `!courtcanceller [@name]` | viewing: anyone; changing: group admins only | Sets who gets tagged with a reminder to cancel the courts if the list is still well short of people close to the start time (see "Vacancy warnings" below). Must be a real `@`-mention, not a typed name. `!courtcanceller off` turns it off. With no `@`-mention, shows who's currently set without changing it |
 | `!autonewlist [on\|off]` | viewing: anyone; changing: group admins only | Turns automatic "start next week's list once this one's social has ended" (see "Auto-starting next week's list" below) on or off for *this* group. OFF by default everywhere. With no argument, shows the current on/off state without changing it |
+| `!inactivity [on\|off]` | viewing: anyone; changing: group admins only | Turns inactivity reminders (see "Reminding inactive members" below) on or off for *this* group. Off by default everywhere. With no argument, shows the current on/off state without changing it |
+| `!stale` | group admins only | Lists who's currently been warned for inactivity, how long ago, and who's overdue for manual removal (see "Reminding inactive members" below) |
 | `!update <paste the list, edited>` | group admins only | Bulk-edits Attendance/Waitlist/Payment by re-reading a copy-pasted, hand-edited list (see "Bulk-editing the roster" below) |
 | `!undo` | group admins only | Reverses the single most recent change made in the group, whatever command caused it (see "Undoing the last change" below) |
 | `!help` | anyone | Shows help for the everyday commands (`!in`, `!out`, `!list`, `!paid`) |
@@ -1190,6 +1192,92 @@ Configurable in `.env` (see `.env.example`):
 - Checked on the same `VACANCY_REMINDER_INTERVAL_MINUTES` cadence as
   vacancy warnings above - no separate interval setting.
 
+## Reminding inactive members
+
+This is a separate feature from the signup list above - it's about general
+chat presence in the group, not list membership, and it's off by default
+for every group.
+
+**It's a per-group setting, turned on/off live in chat - not an `.env`
+switch.** Run `!inactivity on` (group admins only) in whichever group you
+want it active in. This matters if the bot moderates more than one group
+via `ALLOWED_GROUPS`: turning it on in one group doesn't turn it on
+anywhere else, so a group that doesn't want this can just never run the
+command. Run bare `!inactivity` any time to see whether it's currently on
+or off for that group, and `!inactivity off` to turn it back off.
+
+Once on, the bot tracks the last time each group member sent *any*
+message - regular chat, images, stickers, voice notes, all count, not just
+bot commands. On a periodic background check (every
+`INACTIVITY_CHECK_INTERVAL_DAYS`, default 1), anyone who's gone quiet for
+`INACTIVITY_WARN_AFTER_DAYS` (default 1) gets tagged in the group with a
+one-time reminder that they'll be considered for removal if they stay
+quiet for another `INACTIVITY_REMOVE_AFTER_DAYS` (default 1). Sending any
+message - even just replying "here!" - clears the warning and resets their
+clock, exactly like the reminder promises. Those three timing settings
+live in `.env` (see `.env.example`), accept fractional values if you want
+finer control (e.g. `0.5` for 12 hours), and apply to every group that has
+the feature turned on - they're global tuning knobs, only the on/off
+switch itself is per group.
+
+A few things worth knowing about how this works:
+
+- **Warn-only, no auto-kick.** The bot never removes anyone itself, even
+  once someone's overdue. It just surfaces who's overdue via `!stale`
+  (group admins only) - actually removing someone from the group is a
+  manual step an admin takes from WhatsApp's own "Remove participant" UI,
+  same as always. This was a deliberate choice: getting flagged as
+  inactive and actually getting removed are different enough in
+  consequence that the second one should stay a human decision, not
+  something a script does unattended.
+- **Group admins are exempt.** They're never warned or counted as
+  candidates for removal, regardless of how long they've been quiet.
+- **No history before the bot started watching.** The bot can only track
+  activity from the moment a group ran `!inactivity on` (or the moment it
+  first sees a given member, if they join later) - there's no way to see
+  someone's message history from before that. So nobody is flagged purely
+  because the bot doesn't know their past; everyone starts with a clean
+  "just seen" baseline the moment the feature is turned on for their group.
+  Turning it off and back on later re-baselines everyone again, so time
+  spent with it off never counts against anyone.
+- **Requires `ALLOWED_GROUPS` to include the group.** The bot can only
+  track activity in groups it's actually configured to watch - see
+  "Configure the group and list name" below. `!inactivity on` still works
+  if you run it in an unconfigured group, but the periodic check never
+  reaches a group that isn't in `ALLOWED_GROUPS`, so nothing will actually
+  happen there.
+- **`!stale`** shows everyone currently warned, sorted most-overdue first,
+  tagged so it's obvious at a glance who needs a decision - and marks
+  anyone past `INACTIVITY_REMOVE_AFTER_DAYS` since their warning as
+  `OVERDUE`. It's admin-only and view-only; running it doesn't warn or
+  remove anyone by itself. If the feature is off for that group, it says so
+  instead of an empty report.
+- **Every sweep logs a one-line summary**, e.g. `[bot] Inactivity sweep for
+  1234...@g.us: 14 participant(s) tracked, 1 candidate(s) due for a
+  warning.`, printed unconditionally (not just with `DEBUG=true`) so a
+  "why didn't so-and-so get warned" question can be answered straight from
+  the logs (`pm2 logs`, or your terminal if running it directly) instead of
+  guessing - check for these lines around when a warning was expected. A
+  sweep that never logs at all for a group usually means that group isn't
+  in `ALLOWED_GROUPS`, or the bot's socket was disconnected right at that
+  tick (it just tries again on the next one).
+- **Resilient to a flaky/incomplete `groupMetadata()` response.** Each
+  sweep re-fetches the group's member list from WhatsApp to refresh
+  tracking. A fetch that comes back completely empty (0 participants,
+  which a real group never actually has) is treated as untrustworthy and
+  skipped entirely, logged as `groupMetadata() returned 0 participants -
+  skipping this cycle`. A fetch that's merely *missing some* previously-known
+  members - which has been observed transiently right after a reconnect,
+  while Baileys' own internal group-metadata cache is still catching up -
+  no longer drops them immediately either: someone missing from a single
+  snapshot is only marked as pending removal, and is actually dropped only
+  if they're still missing on the *next* sweep too. This matters because
+  the old immediate-drop behavior would silently reseed a fresh "just seen"
+  baseline for anyone wrongly dropped this way on their very next
+  appearance - quietly resetting their inactivity clock and making a
+  genuinely-long quiet period (even many hours) never actually trigger a
+  warning, with nothing wrong-looking in `!stale` to point at afterward.
+
 ## Important: how this connects to WhatsApp, and the risk involved
 
 This bot uses **Baileys**, an unofficial library that talks to WhatsApp the
@@ -1648,6 +1736,12 @@ few seconds around a reconnect) - nothing to back up here, since it's
 transient by nature and never holds the list data itself, only the
 not-yet-sent notification about it.
 
+There's a fourth JSON file, `data/activity.json`, for the inactivity-
+reminders feature (see "Reminding inactive members" above) - a per-group
+on/off flag plus, once turned on, each tracked participant's last-seen
+timestamp and warning state. A group that's never run `!inactivity on`
+has no entry here at all.
+
 If you're upgrading from an older copy of this bot (before `!newlist`,
 `!paid`, `!paymentlabel`, `!limit`/`!allow`, or the `!location`/`!courts`/
 `!time` header existed), no action is needed - the first time it reads your
@@ -1685,19 +1779,22 @@ one giant switch statement. The actual work is split across two folders:
   `!in`/`!out`/`!paid` outcomes into one combined summary - see below), and
   `lastSeenStatus.js` (the WhatsApp About/status heartbeat - see "Last seen
   status heartbeat" above), `vacancyReminder.js` (the low-signup
-  50-hour/26-hour warnings - see "Vacancy warnings" above), and
+  50-hour/26-hour warnings - see "Vacancy warnings" above),
   `autoNewlistScheduler.js` (auto-starting next week's list - see
-  "Auto-starting next week's list" above).
+  "Auto-starting next week's list" above), and `inactivityCheck.js` (the
+  periodic background sweep for the inactivity-reminders feature - see
+  "Reminding inactive members" above).
 - `commands/` - one file per group of related commands (`list.js` for
   `!in`/`!out`/`!list`/`!paid`, `admin.js` for the list-management
-  commands, `spamfilter.js`, `help.js`), plus
+  commands, `inactivity.js`, `spamfilter.js`, `help.js`), plus
   `commands/index.js`, which aggregates them into the dispatch table
   the top-level `index.js` uses. Each handler takes a single `ctx` object
   (`{ sock, msg, groupId, senderId, senderName, argText, reply, postList,
   ... }`) rather than a long parameter list.
 
-`store.js` and `spam.js` (the JSON-file-backed data modules) are unchanged
-by this split - they're already independent of `index.js`.
+`store.js`, `spam.js`, and `activity.js` (the JSON-file-backed data
+modules) are unchanged by this split - they're already independent of
+`index.js`.
 
 **Admin-status caching:** `sock.groupMetadata()` (needed to check if
 someone's a group admin) is a network call, and it used to be made fresh

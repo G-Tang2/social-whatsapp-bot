@@ -243,13 +243,13 @@ test('interpretMessage: returns null for blank text without even calling the cli
 });
 
 test('MAPPABLE_COMMANDS: includes every single command the bot has, no exceptions - plus "none"', () => {
-  for (const cmd of ['in', 'out', 'paid', 'list', 'clear', 'clearpayments', 'newlist', 'date', 'location', 'courts', 'time', 'limit', 'allow', 'paymentlabel', 'regulars', 'exempt', 'tournament', 'settournament', 'tournamentlimit', 'tournamentwinners', 'undo', 'update', 'spamfilter', 'ai', 'help', 'admin', 'none']) {
+  for (const cmd of ['in', 'out', 'paid', 'list', 'clear', 'clearpayments', 'newlist', 'date', 'location', 'courts', 'time', 'limit', 'allow', 'paymentlabel', 'regulars', 'exempt', 'tournament', 'settournament', 'tournamentlimit', 'tournamentwinners', 'undo', 'update', 'inactivity', 'stale', 'spamfilter', 'ai', 'help', 'admin', 'none']) {
     assert.ok(MAPPABLE_COMMANDS.includes(cmd), `expected MAPPABLE_COMMANDS to include "${cmd}"`);
   }
   // Exact-length check too, not just "includes every expected one" - so an
   // accidental extra/duplicate entry in MAPPABLE_COMMANDS (which wouldn't
   // be caught by the loop above) still fails this test.
-  assert.equal(MAPPABLE_COMMANDS.length, 27);
+  assert.equal(MAPPABLE_COMMANDS.length, 29);
 });
 
 test('interpretMessage: "regulars" (e.g. declaring the regulars) is a valid mapped command', async () => {
