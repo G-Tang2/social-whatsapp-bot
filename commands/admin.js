@@ -73,6 +73,7 @@ const {
   formatTournamentPromotedMessage,
   formatTournamentRoster,
   getMentionedJids,
+  normalizeJid,
 } = require('../lib/helpers');
 
 async function handleClear(ctx) {
@@ -1051,7 +1052,16 @@ async function handleCourtCanceller(ctx) {
     return;
   }
 
-  const mentioned = getMentionedJids(msg);
+  // Excludes the BOT's own JID(s) from candidates - reachable via a
+  // natural-language @-mention too (see lib/geminiCommand.js's
+  // MAPPABLE_COMMANDS), where the sender necessarily @-mentions the bot
+  // itself to trigger AI interpretation at all, so `mentioned` would
+  // otherwise carry the bot's own JID (usually first, e.g. "@Snoopy make
+  // @Alex the court canceller") right alongside the actual target -
+  // without this filter, mentioned[0] could silently set the bot itself
+  // as its own court-canceller instead of refusing/picking the real target.
+  const botJids = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
+  const mentioned = getMentionedJids(msg).filter((jid) => !botJids.includes(normalizeJid(jid)));
   if (!mentioned.length) {
     await reply(`@-mention the person directly, e.g. ${COMMAND_PREFIX}courtcanceller @Alex - a typed name alone can't be reliably tagged.`);
     return;

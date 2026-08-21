@@ -950,6 +950,58 @@ test('e2e: "@bot what admin commands are there" dispatches to the real !admin ha
   assert.match(fakeSockInstance.sentMessages[0].content.text, /only a group admin can view the admin commands/i);
 });
 
+test('e2e: "@bot any tips" dispatches to the real !tips handler', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'tips', argText: '', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('any tips for using this', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  assert.match(fakeSockInstance.sentMessages[0].content.text, /\*Tips\*/);
+});
+
+test('e2e: "@bot any admin tips" dispatches to the real !admintips handler, refusing a non-admin exactly like typing !admintips themselves would', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'admintips', argText: '', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('any admin tips', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  assert.match(fakeSockInstance.sentMessages[0].content.text, /only a group admin can view the admin tips/i);
+});
+
+test('e2e: an admin @-mentioning "turn on auto-newlist" dispatches to the real !autonewlist handler', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'autonewlist', argText: 'on', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('turn on auto-newlist for this group', { from: 'admin@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  assert.match(fakeSockInstance.sentMessages[0].content.text, /auto-newlist turned \*on\*/i);
+});
+
+test('e2e: an admin @-mentioning "make @Alex the court canceller" (bot mentioned too) sets it to the ACTUAL named person, not the bot itself - regression for the bot\'s own @-mention leaking into the mentioned-JID list', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  const ALEX_JID = 'e2ecourtcancellerprobe@s.whatsapp.net';
+  setNextGeminiResponse({ command: 'courtcanceller', argText: 'Alex', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  // The bot's own JID necessarily appears in mentions too (that's how AI
+  // interpretation gets triggered at all) - order matters for the
+  // regression this guards: the bot is mentioned FIRST, same as it would
+  // be in a real "@Snoopy make @Alex the court canceller" message.
+  await deliver('make @Alex the court canceller', {
+    from: 'admin@s.whatsapp.net', type: 'notify', mentions: [BOT_JID, ALEX_JID],
+  });
+
+  const posted = fakeSockInstance.sentMessages.find((m) => /Court-cancellation reminder set to/.test(m.content.text || ''));
+  assert.ok(posted, 'expected a confirmation that the court-canceller was set');
+  assert.deepEqual(posted.content.mentions, [ALEX_JID]);
+});
+
 // --- Tournament sub-feature: !settournament/!tournament/!tournamentlimit/
 // !tournamentwinners, and !in's "tournament" opt-in keyword ---
 

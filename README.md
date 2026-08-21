@@ -837,8 +837,9 @@ gets interpreted via the
 as if you'd typed it - EVERY command the bot has, no exceptions: an
 everyday command (`!in`, `!out`, `!paid`, `!list`), an admin
 list-management command (`!clear`, `!newlist`, `!limit`, `!spamfilter`,
-`!update`, ...; see `!admin` for the full list), or the help commands
-(`!help`, `!admin`). It's off by default, unlike spam filtering, because
+`!courtcanceller`, `!autonewlist`, `!update`, ...; see `!admin` for the
+full list), or the help commands (`!help`, `!tips`, `!admin`,
+`!admintips`). It's off by default, unlike spam filtering, because
 it calls an external paid API and can occasionally misread ordinary chat,
 so it's an explicit opt-in rather than a safety default every group gets
 automatically.
