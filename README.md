@@ -1154,15 +1154,21 @@ Configurable in `.env` (see `.env.example`):
 - `TIMEZONE` (same setting as the last-seen heartbeat above) is what the
   list's date/time are interpreted in when computing the real start
   instant.
-- `VACANCY_REMINDER_IMAGE_PATH` - optional path to an image (a flyer, a
-  poster, whatever) to attach to the 50-hour broadcast specifically (the
-  26-hour court-canceller message stays plain text either way - it's a
-  private nudge to one person, not a pitch to join). Same image for every
-  group the bot moderates. Left unset, that broadcast stays plain text.
-  Read fresh off disk on every send, not cached at startup, so swapping
-  the file takes effect on the very next warning without restarting the
-  bot; a missing or unreadable file just falls back to plain text
-  (logged, not fatal).
+- `VACANCY_REMINDER_IMAGE_PATH` - optional path to an image or video (a
+  flyer, a poster, whatever) to attach to the 50-hour broadcast
+  specifically (the 26-hour court-canceller message stays plain text
+  either way - it's a private nudge to one person, not a pitch to join).
+  Same file for every group the bot moderates. Left unset, that broadcast
+  stays plain text. Read fresh off disk on every send, not cached at
+  startup, so swapping the file takes effect on the very next warning
+  without restarting the bot; a missing or unreadable file just falls
+  back to plain text (logged, not fatal). A `.jpg`/`.png` (or anything
+  else) is sent as a plain image; a `.mp4`/`.mov`/`.m4v` is sent as a
+  looping, muted "GIF" instead (WhatsApp has no real `.gif` message type -
+  what looks like one is always actually a video with a `gifPlayback`
+  flag set). A raw `.gif` file itself won't work as-is - Baileys doesn't
+  transcode it for you, so convert one first, e.g.:
+  `ffmpeg -i reminder.gif -movflags faststart -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" reminder.mp4`.
 
 There's no on/off toggle for this feature specifically (unlike spam
 filtering, `!ai`, or the tournament sub-feature) - it only ever does
