@@ -18,7 +18,7 @@
 module.exports = {
   apps: [
     {
-      name: 'whatsapp-list-bot',
+      name: 'whatsapp-list-bot-keith',
       script: 'index.js',
       cwd: __dirname,
       autorestart: true,
