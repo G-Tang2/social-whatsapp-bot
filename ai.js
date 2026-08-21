@@ -1,11 +1,18 @@
 // ai.js
 // Per-group on/off state for natural-language command interpretation (see
 // lib/geminiCommand.js) - turned on/off with !ai on / !ai off (admins
-// only, see commands/ai.js). OFF by default for every group, unlike
-// spam.js's spamfilter (on by default): this feature calls an external
-// paid API (Gemini) and can misinterpret ordinary chat, so it's an
-// explicit opt-in rather than a safety default every group gets
-// automatically. Same on-disk shape/pattern as spam.js (data/ai.json):
+// only, see commands/ai.js). ON by default for every group - same
+// "safety/convenience default every group gets automatically" pattern as
+// spam.js's spamfilter - PROVIDED GEMINI_API_KEY is actually configured
+// (see isEnabled() below): a fresh install with no key set still defaults
+// every group to off, same as before this changed, since the feature is
+// entirely non-functional without one anyway (see commands/ai.js's own
+// refusal on `!ai on` with no key configured) - defaulting "on" in that
+// case would just mean every plain @-mention now gets a "not capable of
+// doing that" reply (see lib/geminiCommand.js's interpretMessage(), which
+// itself returns null with no key set) instead of staying silent, for a
+// group that never actually turned anything on. Same on-disk shape/pattern
+// as spam.js (data/ai.json):
 // {
 //   "<groupId>": { "enabled": true | false },
 //   ...
@@ -25,6 +32,11 @@ require('dotenv').config();
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'ai.json');
+// Read directly from process.env (not lib/config.js) to avoid this module
+// depending on load order relative to it - same "read env directly"
+// convention as DATA_DIR above. Only used to decide the DEFAULT below; an
+// explicit per-group `!ai on`/`!ai off` always wins regardless of this.
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 function ensureFile() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -56,13 +68,15 @@ function writeAll(data) {
 }
 
 // Whether natural-language command interpretation is turned on for
-// `groupId`. OFF by default - a group that's never touched !ai at all (or
-// has no data.json entry yet) gets no AI calls at all. Only an explicit
-// !ai on (which persists `enabled: true`) turns it on; any other stored
-// value, or no stored value at all, means off.
+// `groupId`. A group that's never touched !ai at all (or has no data.json
+// entry yet) gets the DEFAULT - on if GEMINI_API_KEY is configured, off
+// otherwise (see the file-level comment above for why) - same "undefined
+// falls back to the default" shape as spam.js. Once a group has run !ai on
+// or !ai off at all, that explicit choice is what's read back here from
+// then on, regardless of whether a key is configured.
 function isEnabled(groupId) {
   const all = readAll();
-  if (!all[groupId] || all[groupId].enabled === undefined) return false;
+  if (!all[groupId] || all[groupId].enabled === undefined) return !!GEMINI_API_KEY;
   return !!all[groupId].enabled;
 }
 
