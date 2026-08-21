@@ -291,6 +291,109 @@ test('parseListSections returns sectionsFound 0 for text with no recognizable se
   assert.equal(parseListSections(null).sectionsFound, 0);
 });
 
+test('parseListSections: a plain, non-tournament-formatted Attendance section leaves tournamentPlayers null (not touched at all)', () => {
+  const text = ['*Attendance*', '', '1. Alex', '2. Sam'].join('\n');
+  const result = parseListSections(text);
+  assert.equal(result.tournamentPlayers, null);
+  assert.deepEqual(result.tournamentWaitlistedNames, []);
+});
+
+test('parseListSections reads back the tournament-enabled format formatList() produces, splitting Attendance into tournamentPlayers and everyone else', () => {
+  const text = [
+    '*Attendance* (3/6)',
+    '',
+    '🏆 *Tournament players* (2/2)',
+    '',
+    '1. Keith',
+    '2. Bao',
+    '',
+    'Social only',
+    '',
+    '3. Garvin',
+  ].join('\n');
+
+  const result = parseListSections(text);
+  // The flat `attendance` array is unaffected - still everyone, tournament
+  // and social-only alike, same as before tournament-awareness existed.
+  assert.deepEqual(result.attendance, ['Keith', 'Bao', 'Garvin']);
+  assert.deepEqual(result.tournamentPlayers, ['Keith', 'Bao']);
+  assert.deepEqual(result.tournamentWaitlistedNames, []);
+});
+
+test('parseListSections: an empty "(none yet)" tournament roster still yields tournamentPlayers as a genuine [] (not null) - distinguishing "nobody\'s in it" from "no tournament info in this paste at all"', () => {
+  const text = [
+    '*Attendance* (1/6)',
+    '',
+    '🏆 *Tournament players* (0)',
+    '',
+    '(none yet)',
+    '',
+    'Social only',
+    '',
+    '1. Garvin',
+  ].join('\n');
+
+  const result = parseListSections(text);
+  assert.deepEqual(result.tournamentPlayers, []);
+  assert.deepEqual(result.attendance, ['Garvin']);
+});
+
+test('parseListSections strips the trailing "(🏆 WL)" flag from a Social-only name, and records it in tournamentWaitlistedNames', () => {
+  const text = [
+    '*Attendance* (2/6)',
+    '',
+    '🏆 *Tournament players* (1/1)',
+    '',
+    '1. Keith',
+    '',
+    'Social only',
+    '',
+    '2. Bao (🏆 WL)',
+  ].join('\n');
+
+  const result = parseListSections(text);
+  // The name itself is clean - NOT "Bao (🏆 WL)" literally, which would
+  // otherwise silently corrupt !update round-trips (a previously real bug:
+  // the tagged name would get treated as a brand new, differently-named
+  // entry, dropping the real one and losing its tournament/addedBy data).
+  assert.deepEqual(result.attendance, ['Keith', 'Bao']);
+  assert.deepEqual(result.tournamentPlayers, ['Keith']);
+  assert.deepEqual(result.tournamentWaitlistedNames, ['Bao']);
+});
+
+test('parseListSections handles BOTH "(TBC)" and "(🏆 WL)" on the same name, in formatList()\'s actual order (TBC before WL)', () => {
+  const text = [
+    '*Attendance* (2/6)',
+    '',
+    '🏆 *Tournament players* (1/1)',
+    '',
+    '1. Keith',
+    '',
+    'Social only',
+    '',
+    '2. Bao (TBC) (🏆 WL)',
+  ].join('\n');
+
+  const result = parseListSections(text);
+  assert.deepEqual(result.attendance, ['Keith', 'Bao']);
+  assert.deepEqual(result.tournamentWaitlistedNames, ['Bao']);
+});
+
+test('parseListSections: "Social only" text BEFORE any tournament header is never mistaken for the sub-header - it has to follow "🏆 Tournament players" first', () => {
+  const text = [
+    '*Attendance*',
+    '',
+    'Social only chat about the game tonight, see you all there!',
+    '',
+    '1. Alex',
+    '2. Sam',
+  ].join('\n');
+
+  const result = parseListSections(text);
+  assert.deepEqual(result.attendance, ['Alex', 'Sam']);
+  assert.equal(result.tournamentPlayers, null); // never saw the real tournament header at all
+});
+
 test('parseListSections honors names added, removed, or reordered by the editor', () => {
   const text = [
     '*Attendance*',

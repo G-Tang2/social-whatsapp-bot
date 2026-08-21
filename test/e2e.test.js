@@ -735,6 +735,45 @@ test('e2e: a non-admin @-mentioning a pasted list is refused, exactly like typin
   assert.match(fakeSockInstance.sentMessages[0].content.text, /only a group admin can bulk-update/i);
 });
 
+test('e2e: an admin @-mentioning a tournament-formatted pasted list (🏆 Tournament players / Social only) correctly reconciles tournament membership via the real !update handler - regression for a real bug where this silently did nothing', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  store.setTournamentEnabled(GROUP_ID, true);
+  store.setTournamentLimit(GROUP_ID, 2);
+  await deliver('!in Keith', { from: 'keith@s.whatsapp.net', type: 'notify' });
+  await deliver('!in Bao', { from: 'bao@s.whatsapp.net', type: 'notify' });
+  await deliver('!in Garvin', { from: 'garvin@s.whatsapp.net', type: 'notify' });
+  await deliver('!in tournament Keith, Bao', { from: 'admin@s.whatsapp.net', type: 'notify' }); // Garvin starts social-only
+
+  const pastedEdit = [
+    'update the list to be',
+    '',
+    '*Attendance* (3/6)',
+    '',
+    '🏆 *Tournament players* (2/2)',
+    '',
+    '1. Keith',
+    '2. Garvin', // swapped in for Bao
+    '',
+    'Social only',
+    '',
+    '3. Bao',
+  ].join('\n');
+  setNextGeminiResponse({ command: 'update', argText: pastedEdit, confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver(pastedEdit, { from: 'admin@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  const summary = fakeSockInstance.sentMessages.find((m) => /Tournament:/.test(m.content.text || ''));
+  assert.ok(summary, 'expected a "Tournament: ..." summary line, not "No changes found"');
+  assert.match(summary.content.text, /Garvin \(social only → tournament\)/);
+  assert.match(summary.content.text, /Bao \(tournament → social only\)/);
+
+  const entries = store.getCurrentEvent(GROUP_ID).entries;
+  assert.equal(entries.find((e) => e.name === 'Garvin').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Bao').tournament, false);
+  assert.equal(entries.length, 3); // still all on the list - this only ever touches tournament placement
+});
+
 test('e2e: an "update" AI action uses the REAL original message, not whatever argText the model returned - regression for a real bug where the model\'s own copy lost the "*Attendance*" header in transit', async () => {
   ai.setEnabled(GROUP_ID, true);
   await deliver('!in E2eUpdateFidelityProbe', { from: 'probe@s.whatsapp.net', type: 'notify' });
@@ -855,16 +894,158 @@ test('e2e: "@bot what admin commands are there" dispatches to the real !admin ha
   assert.match(fakeSockInstance.sentMessages[0].content.text, /only a group admin can view the admin commands/i);
 });
 
+// --- Tournament sub-feature: !settournament/!tournament/!tournamentlimit/
+// !tournamentwinners, and !in's "tournament" opt-in keyword ---
+
+test('e2e: a typed !in tournament joins both the social list and the tournament, once an admin has turned it on', async () => {
+  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('!in tournament', { from: 'e2etournamentprobe1@s.whatsapp.net', type: 'notify' });
+
+  const posted = fakeSockInstance.sentMessages.find((m) => /🏆 \*Tournament\*/.test(m.content.text || ''));
+  assert.ok(posted, 'expected the posted list to include the tournament roster section');
+  assert.match(posted.content.text, /e2etournamentprobe1/i);
+});
+
+test('e2e: an admin @-mentioning "sign me up for the tournament" dispatches to the real !in handler with the tournament keyword', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  setNextGeminiResponse({ command: 'in', argText: 'tournament', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('sign me up for the tournament', { from: 'e2etournamentprobe2@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  const posted = fakeSockInstance.sentMessages.find((m) => /🏆 \*Tournament\*/.test(m.content.text || ''));
+  assert.ok(posted, 'expected the posted list to show the tournament section');
+  assert.match(posted.content.text, /e2etournamentprobe2/i);
+});
+
+test('e2e: !tournamentwinners sets the "Congrats to ..." banner, which then shows above every posted list', async () => {
+  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  await deliver('!tournamentwinners E2eWinnerA, E2eWinnerB', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('!list', { from: 'jordan@s.whatsapp.net', type: 'notify' });
+
+  const posted = fakeSockInstance.sentMessages.find((m) => /Congrats to E2eWinnerA and E2eWinnerB/.test(m.content.text || ''));
+  assert.ok(posted, 'expected the winners banner to appear above the posted list');
+});
+
+test('e2e: !newlist clears the previous cycle\'s tournament winners banner', async () => {
+  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  await deliver('!tournamentwinners E2eClearedWinnerA, E2eClearedWinnerB', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  await deliver('!newlist 25/08', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('!list', { from: 'jordan@s.whatsapp.net', type: 'notify' });
+
+  const posted = fakeSockInstance.sentMessages[0].content.text;
+  assert.doesNotMatch(posted, /Congrats to/);
+});
+
+test('e2e: an admin @-mentioning "create a new list for tomorrow and the tournament winners are Peter and Rob" runs !newlist FIRST, then !tournamentwinners - the winners land on the fresh list instead of being immediately cleared by it', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  setNextGeminiResponse({
+    actions: [
+      { command: 'newlist', argText: '25/08', confidence: 'high' },
+      { command: 'tournamentwinners', argText: 'Peter, Rob', confidence: 'high' },
+    ],
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('create a new list for tomorrow and the tournament winners are Peter and Rob', {
+    from: 'admin@s.whatsapp.net',
+    type: 'notify',
+    mentions: [BOT_JID],
+  });
+
+  // If "tournamentwinners" had run BEFORE "newlist" (wrong order), newList()
+  // would have immediately cleared it right back to null - this is a real
+  // regression guard for that ordering bug, not just a "does the field get
+  // set at all" check.
+  assert.deepEqual(store.getTournamentWinners(GROUP_ID), ['Peter', 'Rob']);
+});
+
+test('e2e: a non-admin typing !settournament on is refused, and the feature stays off', async () => {
+  // Explicitly off first - earlier tests in this file may have already
+  // turned it on for GROUP_ID (shared across this whole file, unlike
+  // store.test.js/commands.test.js's per-test freshGroupId()).
+  await deliver('!settournament off', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('!settournament on', { from: 'jordan@s.whatsapp.net', type: 'notify' });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  assert.match(fakeSockInstance.sentMessages[0].content.text, /only a group admin/i);
+  assert.equal(store.isTournamentEnabled(GROUP_ID), false);
+});
+
+test('e2e: !settournament rules <text> sets the rules, and anyone can read them back with bare !tournament', async () => {
+  await deliver('!settournament rules Best of 3, single elimination', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('!tournament', { from: 'jordan@s.whatsapp.net', type: 'notify' });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  assert.match(fakeSockInstance.sentMessages[0].content.text, /Best of 3, single elimination/);
+});
+
 // --- Compound @-mentions: a single message bundling multiple distinct
 // requests together maps to MULTIPLE actions (see lib/geminiCommand.js's
 // RESPONSE_SCHEMA/SYSTEM_PROMPT "MULTIPLE ACTIONS" and index.js's
 // handleAiMention) - regression coverage for a real bug report where only
-// the first part of a compound request (e.g. "create a new list ... change
-// the location ... add some names") ever took effect, because the old
-// single-action shape could only dispatch one of the three. ---
+// the first part of a compound request (e.g. "create a new list ... the
+// tournament limit is 12 ... add Keith, Tu and Bao to the tournament") ever
+// took effect, because the old single-action shape could only dispatch one
+// of the three. ---
+
+test('e2e: a compound @-mention (new list + tournament limit + add named people to the tournament) dispatches all three actions in order', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  // Isolate from an earlier test's saved regulars roster on this shared
+  // GROUP_ID - !newlist now always merges the roster into the tournament
+  // (see commands/admin.js's handleNewlist), which would otherwise inflate
+  // the tournament count/roster this test asserts on below.
+  store.setRegularPlayers(GROUP_ID, []);
+  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  setNextGeminiResponse({
+    actions: [
+      { command: 'newlist', argText: '23/08 Noble Park | 1, 2 | 7pm-9pm', confidence: 'high' },
+      { command: 'tournamentlimit', argText: '12', confidence: 'high' },
+      { command: 'in', argText: 'tournament, E2eCompoundKeith, E2eCompoundTu, E2eCompoundBao', confidence: 'high' },
+    ],
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver(
+    'create a new list for next Sunday at Noble Park courts 1,2 at 7pm-9pm. The tournament limit is 12. Add E2eCompoundKeith, E2eCompoundTu and E2eCompoundBao to the tournament',
+    { from: 'admin@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] }
+  );
+
+  assert.equal(store.getTournamentLimit(GROUP_ID), 12);
+  const entries = store.getCurrentEvent(GROUP_ID).entries;
+  for (const name of ['E2eCompoundKeith', 'E2eCompoundTu', 'E2eCompoundBao']) {
+    const entry = entries.find((e) => e.name === name);
+    assert.ok(entry, `expected ${name} to be on the new list`);
+    assert.equal(entry.tournament, true, `expected ${name} to be opted into the tournament`);
+  }
+
+  // All three actions succeeded quietly (no refusal/warning text from any
+  // of them), so the group should see the FINAL state in exactly one
+  // posted-list message - not three separate reposts, one per action, each
+  // immediately made stale by the next action running right after it.
+  assert.equal(fakeSockInstance.sentMessages.length, 1, 'expected exactly one posted-list message for the whole batch, not one per action');
+  const posted = fakeSockInstance.sentMessages[0];
+  assert.match(posted.content.text, /🏆 \*Tournament\* \(3\/12\)/);
+  assert.match(posted.content.text, /E2eCompoundKeith/);
+  assert.match(posted.content.text, /E2eCompoundTu/);
+  assert.match(posted.content.text, /E2eCompoundBao/);
+});
 
 test('e2e: a compound @-mention where only SOME actions are confident dispatches just those, silently skipping the uncertain one', async () => {
   ai.setEnabled(GROUP_ID, true);
+  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
   setNextGeminiResponse({
     actions: [
       { command: 'location', argText: 'E2eCompoundVenue', confidence: 'high' },
