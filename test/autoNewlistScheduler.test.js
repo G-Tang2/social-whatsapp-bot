@@ -103,7 +103,7 @@ test('starts next week\'s list once past the assumed end time, carrying forward 
   assert.equal(event.date, expectedDate);
   assert.equal(event.location, 'EBC');
   // autoNewlistCreated is back to false here - not a bug: newList() resets
-  // it for the FRESH cycle it just started, same as notifiedVacancy48h.
+  // it for the FRESH cycle it just started, same as notifiedVacancy50h.
   // What actually proves the one-shot guard worked is the next test below
   // (a second check right after doesn't send a second message).
   assert.equal(event.autoNewlistCreated, false);
