@@ -1159,7 +1159,7 @@ does.
 If a group's current list is still 6 or more spots short of its limit as
 the social's start time closes in, the bot sends two escalating warnings:
 
-- **50 hours before start:** `@`-mentions the WHOLE group, e.g. "6 spots
+- **52 hours before start:** `@`-mentions the WHOLE group, e.g. "6 spots
   still open! Plenty of room - sign up soon or courts may be cancelled
   tomorrow."
 - **26 hours before start**, if there's *still* 6+ spots open: `@`-mentions
@@ -1170,7 +1170,7 @@ the social's start time closes in, the bot sends two escalating warnings:
 Each warning fires **at most once** per list - it won't repeat every time
 the periodic check runs, and a fresh `!newlist` resets both, so a new cycle
 gets its own fresh pair of warnings. If no `!courtcanceller` is set, the
-26-hour warning simply never goes out (the 50-hour one still does).
+26-hour warning simply never goes out (the 52-hour one still does).
 
 **This needs a real, computable start time**, not just a limit and a date -
 `!time` has always been pure freeform display text (e.g. "8pm - 10pm", "8PM
@@ -1192,20 +1192,24 @@ Configurable in `.env` (see `.env.example`):
   list's date/time are interpreted in when computing the real start
   instant.
 - `VACANCY_REMINDER_IMAGE_PATH` - optional path to an image or video (a
-  flyer, a poster, whatever) to attach to the 50-hour broadcast
-  specifically (the 26-hour court-canceller message stays plain text
-  either way - it's a private nudge to one person, not a pitch to join).
-  Same file for every group the bot moderates. Left unset, that broadcast
-  stays plain text. Read fresh off disk on every send, not cached at
-  startup, so swapping the file takes effect on the very next warning
-  without restarting the bot; a missing or unreadable file just falls
-  back to plain text (logged, not fatal). A `.jpg`/`.png` (or anything
-  else) is sent as a plain image; a `.mp4`/`.mov`/`.m4v` is sent as a
-  looping, muted "GIF" instead (WhatsApp has no real `.gif` message type -
-  what looks like one is always actually a video with a `gifPlayback`
-  flag set). A raw `.gif` file itself won't work as-is - Baileys doesn't
-  transcode it for you, so convert one first, e.g.:
+  flyer, a poster, whatever) to attach to the 52-hour broadcast
+  specifically. Same file for every group the bot moderates. Left unset,
+  that broadcast stays plain text. Read fresh off disk on every send, not
+  cached at startup, so swapping the file takes effect on the very next
+  warning without restarting the bot; a missing or unreadable file just
+  falls back to plain text (logged, not fatal). A `.jpg`/`.png` (or
+  anything else) is sent as a plain image; a `.mp4`/`.mov`/`.m4v` is sent
+  as a looping, muted "GIF" instead (WhatsApp has no real `.gif` message
+  type - what looks like one is always actually a video with a
+  `gifPlayback` flag set). A raw `.gif` file itself won't work as-is -
+  Baileys doesn't transcode it for you, so convert one first, e.g.:
   `ffmpeg -i reminder.gif -movflags faststart -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" reminder.mp4`.
+- `VACANCY_CANCEL_WARNING_MEDIA_PATH` - same idea, but for the 26-hour
+  court-canceller heads-up instead - a private nudge to whoever
+  `!courtcanceller` names, not a group broadcast. Independent of
+  `VACANCY_REMINDER_IMAGE_PATH` above (a different message, so a
+  separately optional file) - left unset, that message stays plain text.
+  Same fresh-off-disk-on-every-send/image-vs-video rules as above.
 
 There's no on/off toggle for this feature specifically (unlike spam
 filtering, `!ai`, or the tournament sub-feature) - it only ever does
@@ -1831,7 +1835,7 @@ one giant switch statement. The actual work is split across two folders:
   `!in`/`!out`/`!paid` outcomes into one combined summary - see below), and
   `lastSeenStatus.js` (the WhatsApp About/status heartbeat - see "Last seen
   status heartbeat" above), `vacancyReminder.js` (the low-signup
-  50-hour/26-hour warnings - see "Vacancy warnings" above),
+  52-hour/26-hour warnings - see "Vacancy warnings" above),
   `autoNewlistScheduler.js` (auto-starting next week's list - see
   "Auto-starting next week's list" above), and `inactivityCheck.js` (the
   periodic background sweep for the inactivity-reminders feature - see
