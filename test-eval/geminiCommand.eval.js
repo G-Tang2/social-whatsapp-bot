@@ -178,6 +178,25 @@ evalTest('"add me and stella to the tournament" tournament-flags BOTH the sender
   assert.match(stellaAction.argText, /^tournament\s*,/i, 'the tournament flag must lead Stella\'s argText too, not just the sender\'s');
 });
 
+// --- "social only" phrased WITH an explicit verb ("add X to social only")
+// must be recognized the same as the bare "<name> social only" form - never
+// tournament-flagged. Real bug report: "add Nguyn and Hannah to social
+// only" tournament-flagged them instead of leaving them social-only - the
+// SPECIAL CASE for "in" only covered the bare, no-verb phrasing before this
+// fix - see its widened wording in COMMAND_ARG_GUIDE. ---
+
+evalTest('"add Nguyn and Hannah to social only" adds them WITHOUT the tournament flag, even with an explicit "add ... to" verb', async () => {
+  const result = await interpretMessage('add Nguyn and Hannah to social only', {
+    listText: '*Attendance* (0/10)\n\n(empty - use !in to add your name)',
+  });
+  assert.ok(result, 'expected a parsed result, not null');
+  const inAction = result.actions.find((a) => a.command === 'in');
+  assert.ok(inAction, `expected an "in" action, got: ${JSON.stringify(result.actions)}`);
+  assert.match(inAction.argText, /\bNguyn\b/i);
+  assert.match(inAction.argText, /\bHannah\b/i);
+  assert.doesNotMatch(inAction.argText, /tournament/i, 'must NOT be tournament-flagged - "social only" explicitly says the opposite');
+});
+
 // --- Compound messages must split into ordered actions, and relative
 // dates must resolve against the given "Today is ..." reference. ---
 
