@@ -1354,12 +1354,19 @@ of OS:
    step 1/2 from above yet, do that now (`npm start`, scan the QR code, copy
    the group JID into `.env`).
 
-5. **Install pm2 and start the bot under it:**
+5. **Copy the pm2 config, then install pm2 and start the bot under it:**
    ```powershell
+   copy ecosystem.config.example.js ecosystem.config.js
    npm install -g pm2
    pm2 start ecosystem.config.js
    pm2 logs whatsapp-list-bot
    ```
+   `ecosystem.config.js` is gitignored, same as `.env` - if another
+   deployment of this bot (a different WhatsApp group) might ever run on
+   this same machine, open your copy and change its `name` field to
+   something unique first; pm2 process names are global to the whole
+   machine, not scoped per folder, so two copies sharing a name don't run
+   side by side - starting the second one restarts the first instead.
    You should see `[bot] Connected to WhatsApp.` in the logs. Press
    `Ctrl+C` to stop *watching* the logs (the bot keeps running in the
    background under pm2 - this doesn't stop it).
@@ -1404,12 +1411,19 @@ version of the steps.
    the group JID into `.env`). The first time you run it, macOS may prompt
    you to allow Terminal/Node network access - allow it.
 
-5. **Install pm2 and start the bot under it:**
+5. **Copy the pm2 config, then install pm2 and start the bot under it:**
    ```bash
+   cp ecosystem.config.example.js ecosystem.config.js
    npm install -g pm2
    pm2 start ecosystem.config.js
    pm2 logs whatsapp-list-bot
    ```
+   `ecosystem.config.js` is gitignored, same as `.env` - if another
+   deployment of this bot (a different WhatsApp group) might ever run on
+   this same machine, open your copy and change its `name` field to
+   something unique first; pm2 process names are global to the whole
+   machine, not scoped per folder, so two copies sharing a name don't run
+   side by side - starting the second one restarts the first instead.
    You should see `[bot] Connected to WhatsApp.` in the logs. Press
    `Ctrl+C` to stop *watching* the logs (the bot keeps running in the
    background under pm2 - this doesn't stop it).
