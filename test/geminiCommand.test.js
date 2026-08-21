@@ -97,6 +97,14 @@ test('interpretMessage: a low-confidence action\'s "question" field round-trips 
   assert.equal(result.actions[0].question, 'Did you mean to add Janelle, or mark her as paid?');
 });
 
+test('interpretMessage: a "none" action\'s "offTopicReply" field round-trips through untouched', async () => {
+  const client = fakeClient(JSON.stringify({
+    actions: [{ command: 'none', argText: '', confidence: 'high', offTopicReply: 'Layer bread, filling, and condiments - simple as that!' }],
+  }));
+  const result = await interpretMessage('how do I make a sandwich', { client });
+  assert.equal(result.actions[0].offTopicReply, 'Layer bread, filling, and condiments - simple as that!');
+});
+
 // SYSTEM_PROMPT itself references the (quoted) phrase "REPLY CONTEXT" in
 // its QUESTION rules regardless of whether a real section is injected, so
 // these assert on the actual injected section header (`REPLY CONTEXT:`,

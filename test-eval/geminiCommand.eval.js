@@ -212,6 +212,25 @@ evalTest('off-topic small talk maps to "none", not a guessed list command', asyn
   assert.equal(result.actions[0].command, 'none');
 });
 
+// --- An off-topic but genuinely answerable question must still map to
+// "none" (never a guessed list command), but come back with a short,
+// real "offTopicReply" rather than an empty one - see index.js's
+// handleAiMention, which sends that reply back with a fixed reminder
+// that Snoopy's currently running the signup list. ---
+
+evalTest('"how do I make a sandwich" maps to "none" with a short, real, ON-TOPIC-TO-THE-QUESTION offTopicReply, not an empty one or a guessed list command', async () => {
+  const result = await interpretMessage('how do I make a sandwich', {
+    listText: '*Attendance* (0/10)\n\n(empty - use !in to add your name)',
+  });
+  assert.ok(result, 'expected a parsed result, not null');
+  assert.equal(result.actions.length, 1, `expected exactly 1 action, got: ${JSON.stringify(result.actions)}`);
+  assert.equal(result.actions[0].command, 'none');
+  const { offTopicReply } = result.actions[0];
+  assert.ok(offTopicReply && offTopicReply.trim(), 'expected a non-empty offTopicReply');
+  assert.match(offTopicReply, /bread/i, 'expected the reply to actually be about making a sandwich');
+  assert.ok(offTopicReply.length < 300, `expected a brief reply (1-2 sentences), got ${offTopicReply.length} chars: "${offTopicReply}"`);
+});
+
 // --- A pasted copy of the list must be recognized as "update", never
 // split into a mix of in/out/date/etc. actions. ---
 

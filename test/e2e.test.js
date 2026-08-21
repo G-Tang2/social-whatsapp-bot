@@ -516,6 +516,47 @@ test('e2e: AI mention that is not list-related (command: none) still gets an "I 
   assert.match(fakeSockInstance.sentMessages[0].content.text, /not capable of doing that/i);
 });
 
+test('e2e: an off-topic AI mention (command: none) with an "offTopicReply" from the model gets that reply plus the fixed "join the social" reminder, instead of the generic "not capable" fallback', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({
+    command: 'none',
+    argText: '',
+    confidence: 'high',
+    offTopicReply: 'Layer bread, filling, and condiments - simple as that!',
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('how do I make a sandwich', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  const sent = fakeSockInstance.sentMessages[0].content.text;
+  assert.match(sent, /Layer bread, filling, and condiments - simple as that!/);
+  assert.match(sent, /running the signup list/i);
+  assert.match(sent, /join the social/i);
+  assert.doesNotMatch(sent, /not capable of doing that/i);
+});
+
+test('e2e: a compound @-mention with a real dispatchable action plus an off-topic aside dispatches the real one AND separately replies to the off-topic part', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({
+    actions: [
+      { command: 'in', argText: '', confidence: 'high' },
+      { command: 'none', argText: '', confidence: 'high', offTopicReply: 'Layer bread, filling, and condiments - simple as that!' },
+    ],
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('how do I make a sandwich, also sign me up', {
+    from: 'e2eoffTopicComboProbe@s.whatsapp.net', type: 'notify', mentions: [BOT_JID],
+  });
+
+  const posted = fakeSockInstance.sentMessages.find((m) => /e2eoffTopicComboProbe/i.test(m.content.text || ''));
+  assert.ok(posted, 'expected the real "in" action to have dispatched and posted the updated list');
+  const offTopic = fakeSockInstance.sentMessages.find((m) => /Layer bread, filling, and condiments/.test(m.content.text || ''));
+  assert.ok(offTopic, 'expected a separate reply addressing the off-topic sandwich question');
+  assert.match(offTopic.content.text, /join the social/i);
+});
+
 test('e2e: a fully-low-confidence AI mention with a "question" from the model asks that question and tells the sender to reply, instead of the generic "not capable" fallback', async () => {
   ai.setEnabled(GROUP_ID, true);
   setNextGeminiResponse({

@@ -962,9 +962,9 @@ current state. Every group starts off - each one opts in individually.
   dispatched immediately, same as a real typed command (including all the
   same waitlisting/authorization/promotion behavior). Otherwise - low
   confidence, or the message doesn't look list-related at all - nothing is
-  guessed or acted on; instead the bot either asks a clarifying question or
-  falls back to a plain "I'm not capable of doing that" (see the next two
-  bullets for which).
+  guessed or acted on; instead the bot either asks a clarifying question, or
+  briefly addresses an off-topic message, or falls back to a plain "I'm not
+  capable of doing that" (see the next three bullets for which).
 - **Asks instead of guessing when it's unsure what you meant.** For a
   low-confidence request that's still clearly *trying* to do something
   list-related (as opposed to not being list-related at all), the model is
@@ -984,11 +984,28 @@ current state. Every group starts off - each one opts in individually.
   question to ask (or the whole message just isn't list-related), it falls
   back to the plain "not capable" reply below instead of asking something
   generic like "can you clarify?".
+- **Briefly addresses an off-topic message, then reminds people Snoopy's
+  busy running the list.** For a message that isn't list-related at all
+  (small talk, an unrelated question - "how do I make a sandwich"), the
+  model is asked for a short, direct reply to whatever was actually said,
+  which the bot sends back with a fixed reminder appended that it's
+  currently running the group's signup list, and an invitation for the
+  sender (or their friends) to join the social - rather than either
+  ignoring the message or the flat "not capable" brush-off. Kept
+  deliberately brief (one or two sentences, no step-by-step instructions),
+  and the model is told to sidestep anything sensitive/personal/
+  inappropriate with a neutral line instead of engaging with it. Same
+  "alongside a real dispatched action" treatment as a clarifying question
+  above for a compound message - "how do I make a sandwich, also sign me
+  up" both signs the sender up AND gets a separate reply about the
+  sandwich. No offTopicReply from the model falls back to the plain "not
+  capable" reply below.
 - **Always replies to an @-mention - never silent, never a swallowed
-  error.** Every case that doesn't end in a dispatched command or a
-  clarifying question gets some reply, never silence - not list-related,
-  or the Gemini API call itself failing/returning something unparseable,
-  gets a plain "I'm not capable of doing that" reply, but a call that
+  error.** Every case that doesn't end in a dispatched command, a
+  clarifying question, or an off-topic reply gets some reply, never
+  silence - not list-related with no offTopicReply from the model, or the
+  Gemini API call itself failing/returning something unparseable, gets a
+  plain "I'm not capable of doing that" reply, but a call that
   specifically took too long to respond gets its own, more accurate "Sorry,
   that took too long to process - try again, or use `!help`/`!admin` to see
   the exact typed commands." instead - the request may well have been

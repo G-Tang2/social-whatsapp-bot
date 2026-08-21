@@ -61,6 +61,8 @@ const TIPS_TEXT = [
   '',
   `_• If I'm not sure what you meant, I'll ask a clarifying question instead of guessing or ignoring you - just reply to that message with the answer and I'll pick up where we left off_`,
   '',
+  `_• Ask me something off-topic and I'll give it a quick answer, then remind you (and your friends) that I'm here running the signup list - no need to leave the group to chat with me_`,
+  '',
   '*Joining and leaving*',
   `_• ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid accept comma-separated names, e.g. ${COMMAND_PREFIX}in Alex, Sam, Sam+1 - up to ${MAX_NAMES_PER_COMMAND} at once (no limit for admins)_`,
   '',

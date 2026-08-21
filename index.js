@@ -558,8 +558,15 @@ const UNEXPECTED_ERROR_REPLY = "Sorry, something went wrong on my end handling t
 //    formatClarifyingQuestion below), which messageMentionsBot() already
 //    treats as addressing the bot again, continuing the exchange with
 //    `priorBotMessage` context (see handleAiMention below). No question
-//    available (the model didn't provide one) falls back to the plain
-//    AI_NOT_UNDERSTOOD_REPLY - EXCEPT when interpretMessage() gave up
+//    available, but the model DID mark the (sole) action 'none' with a
+//    real `offTopicReply` (see RESPONSE_SCHEMA's doc comment in
+//    lib/geminiCommand.js): reply with that instead - a brief, direct
+//    response to whatever off-topic thing was actually said, with a fixed
+//    reminder that Snoopy's currently running the signup list appended
+//    (see formatOffTopicReply below) - rather than the generic "I'm not
+//    capable of doing that", which reads oddly for ordinary small talk.
+//    Neither a question nor an offTopicReply available falls back to the
+//    plain AI_NOT_UNDERSTOOD_REPLY - EXCEPT when interpretMessage() gave up
 //    specifically because Gemini didn't respond in time
 //    (interpretation.timedOut - see that function's own doc comment),
 //    which gets AI_TIMEOUT_REPLY instead: a genuinely different situation
@@ -588,15 +595,19 @@ const UNEXPECTED_ERROR_REPLY = "Sorry, something went wrong on my end handling t
 //    command one after another yourself) - there's no separate combined
 //    reply here.
 //  - Any action with command 'none' or confidence 'low' inside an
-//    otherwise-dispatchable batch is silently skipped if it has no
-//    `question` (same "never guess out loud" philosophy as before), but a
-//    low-confidence action WITH a question gets its own follow-up reply
-//    after the batch finishes (see the needsClarification loop at the end
-//    of handleAiMention below) - e.g. "Janelle paid, and sign up the new
-//    guy" dispatches the "paid" half and separately asks about the unclear
-//    "in" half, rather than silently dropping it. Only if EVERY action in
-//    the array is undispatchable does the whole mention fall back to
-//    AI_NOT_UNDERSTOOD_REPLY/a clarifying question per the bullet above.
+//    otherwise-dispatchable batch is silently skipped if it has neither a
+//    `question` nor an `offTopicReply` (same "never guess out loud"
+//    philosophy as before), but a low-confidence action WITH a question,
+//    or a 'none' action WITH an offTopicReply, gets its own follow-up
+//    reply after the batch finishes (see the needsClarification/
+//    offTopicReplies loops at the end of handleAiMention below) - e.g.
+//    "Janelle paid, and sign up the new guy" dispatches the "paid" half
+//    and separately asks about the unclear "in" half, and "how do I make
+//    a sandwich, also sign me up" dispatches the "in" half and separately
+//    answers the sandwich question, rather than silently dropping either.
+//    Only if EVERY action in the array is undispatchable does the whole
+//    mention fall back to AI_NOT_UNDERSTOOD_REPLY/a clarifying
+//    question/an offTopicReply per the bullet above.
 // Appended to a low-confidence action's model-authored `question` (see
 // RESPONSE_SCHEMA's doc comment in lib/geminiCommand.js) before it's sent
 // back to the sender - `reply()` already quotes the triggering message, so
@@ -608,6 +619,16 @@ const UNEXPECTED_ERROR_REPLY = "Sorry, something went wrong on my end handling t
 // new request.
 function formatClarifyingQuestion(question) {
   return `${question}\n\nReply to this message to let me know.`;
+}
+
+// Fixed reminder appended after a model-authored `offTopicReply` (see
+// RESPONSE_SCHEMA's doc comment in lib/geminiCommand.js) - kept OUT of the
+// prompt itself (SYSTEM_PROMPT's OFFTOPICREPLY paragraph explicitly tells
+// the model not to write its own version) so the wording here is fixed,
+// not dependent on the model repeating it faithfully every time.
+const OFF_TOPIC_REMINDER = "By the way, I'm just here running the signup list right now - if you or your friends want to join the social, let me know!";
+function formatOffTopicReply(offTopicReply) {
+  return `${offTopicReply}\n\n${OFF_TOPIC_REMINDER}`;
 }
 
 async function handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList }) {
@@ -655,6 +676,14 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   const needsClarification = (actions || []).filter(
     (a) => a.confidence === 'low' && a.command !== 'none' && a.question && a.question.trim()
   );
+  // A genuinely off-topic action (command 'none') the model gave a real
+  // `offTopicReply` for - see RESPONSE_SCHEMA's doc comment in
+  // lib/geminiCommand.js. No offTopicReply (the model didn't provide one)
+  // falls through to the existing AI_NOT_UNDERSTOOD_REPLY fallback below,
+  // unchanged - a pure upgrade, never a regression.
+  const offTopicReplies = (actions || []).filter(
+    (a) => a.command === 'none' && a.offTopicReply && a.offTopicReply.trim()
+  );
 
   if (!dispatchable.length) {
     if (interpretation && interpretation.timedOut) {
@@ -665,6 +694,8 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
       // back-and-forth simple; asking several at once would leave the
       // sender unsure which one their reply is even answering.
       await reply(formatClarifyingQuestion(needsClarification[0].question));
+    } else if (offTopicReplies.length) {
+      await reply(formatOffTopicReply(offTopicReplies[0].offTopicReply));
     } else {
       await reply(AI_NOT_UNDERSTOOD_REPLY);
     }
@@ -759,6 +790,13 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   // for why each is independently reply-able.
   for (const action of needsClarification) {
     await reply(formatClarifyingQuestion(action.question));
+  }
+  // Same "alongside the part(s) that just dispatched" treatment for an
+  // off-topic aside bundled into an otherwise-actionable message - e.g.
+  // "how do I make a sandwich, also sign me up" dispatches the "in" half
+  // above and separately gets a brief reply to the sandwich question here.
+  for (const action of offTopicReplies) {
+    await reply(formatOffTopicReply(action.offTopicReply));
   }
 }
 
