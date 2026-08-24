@@ -198,6 +198,26 @@ evalTest('"add me and stella to the tournament" tournament-flags BOTH the sender
   assert.match(stellaAction.argText, /^tournament\s*,/i, 'the tournament flag must lead Stella\'s argText too, not just the sender\'s');
 });
 
+// --- Asking to join BOTH the tournament AND the social list in the same
+// request must be ONE tournament-flagged action, never two - a tournament
+// entry already IS a social/attendance entry, so there's nothing separate
+// to add. Real bug report: "add me to competition and social" produced
+// TWO actions (one tournament-flagged, one plain self-add) - the plain
+// one ran second, found the sender already added by the first, and
+// replied "you're already on the list" even though the tournament add
+// itself had genuinely succeeded - see TOURNAMENT FLAG's added
+// "competition and social" sentence in SHARED_ARG_RULES. ---
+
+evalTest('"add me to competition and social" is a single tournament-flagged action, not two redundant ones', async () => {
+  const listText =
+    '*Attendance* (0/16)\n\n🏆 *Tournament* (0/16)\nAsk @Snoopy for details\n\n(empty)\n\nSocial only\n\n(none yet)';
+  const result = await interpretMessage('add me to competition and social', { listText });
+  assert.ok(result, 'expected a parsed result, not null');
+  const inActions = result.actions.filter((a) => a.command === 'in');
+  assert.equal(inActions.length, 1, `expected exactly 1 "in" action, not a separate redundant plain add, got: ${JSON.stringify(result.actions)}`);
+  assert.equal(inActions[0].argText.trim().toLowerCase(), 'tournament', `expected the sole action to be tournament-flagged for the sender alone, got argText: "${inActions[0].argText}"`);
+});
+
 // --- A bare, single-word message that's JUST the command's own verb (no
 // name, no other words at all) must still be read as the sender alone,
 // high confidence - not dropped to "low"/"none" for being too sparse.
