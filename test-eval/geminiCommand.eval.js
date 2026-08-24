@@ -123,6 +123,26 @@ evalTest('"add 2 more friends" against a sender who already has Jordan+1/+2 on t
   assert.equal(inAction.argText.trim(), '+2');
 });
 
+// --- Explicitly naming someone ELSE's guests using the same "+1"/"+2"
+// convention the list itself displays must be read as literal names for
+// THAT person's party, never confused with the sender's own "+N" unnamed-
+// guest shorthand. Real bug report: Keith (not otherwise on the list)
+// sent "add Peter, Peter+1, Peter+2" and the bot added Peter correctly,
+// but ALSO separately added Keith himself plus 3 more guests (Keith,
+// Keith+1, Keith+2, Keith+3) - as if "Peter, Peter+1, Peter+2" had been
+// silently reinterpreted as the sender's own "+3" - see the added
+// disambiguating sentence on "+N" UNNAMED GUESTS in SHARED_ARG_RULES. ---
+
+evalTest('"add Peter, Peter+1, Peter+2" adds exactly those three literal names in ONE action, and never adds the sender (who was never mentioned)', async () => {
+  const listText = '*Attendance* (0/10)\n\n(empty - use !in to add your name)';
+  const result = await interpretMessage('add Peter, Peter+1, Peter+2', { listText });
+  assert.ok(result, 'expected a parsed result, not null');
+  const inActions = result.actions.filter((a) => a.command === 'in');
+  assert.equal(inActions.length, 1, `expected exactly 1 "in" action, not a second one for the sender, got: ${JSON.stringify(result.actions)}`);
+  const names = inActions[0].argText.split(',').map((n) => n.trim().toLowerCase());
+  assert.deepEqual(names, ['peter', 'peter+1', 'peter+2'], `expected the three literal names verbatim, got argText: "${inActions[0].argText}"`);
+});
+
 // --- A collective name reference ("all the Xs") for "paid" must match
 // every entry ACROSS THE WHOLE payment-due section, even ones separated
 // from each other by unrelated names, not just a visually clustered run -
