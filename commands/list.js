@@ -16,7 +16,7 @@
 // batches them into ONE combined summary message once the backlog settles.
 // See lib/catchUpSummary.js for how that summary is worded.
 
-const { getCurrentEvent, addEntry, removeEntry, markPaid, joinTournament, leaveTournament, normalizeName } = require('../store');
+const { getCurrentEvent, addEntry, removeEntry, markPaid, markPaidEarly, joinTournament, leaveTournament, normalizeName } = require('../store');
 const { checkEntry } = require('../moderation');
 const { isGroupAdmin } = require('../lib/adminCheck');
 const { COMMAND_PREFIX, MAX_NAMES_PER_COMMAND } = require('../lib/config');
@@ -66,19 +66,58 @@ const {
 // `self !== false` here: this is name-driven, not ID-driven, so it's no
 // more permissive than just typing your own name explicitly already is -
 // see handlePaid's doc comment ("anyone can mark any name paid").
-function resolveOwnDue(groupId, senderId, senderName) {
-  const due = getCurrentEvent(groupId).duePayments || [];
-  const own = due.filter((e) => e.addedBy === senderId && e.self !== false);
+// The actual matching logic shared by resolveOwnDue (against duePayments)
+// and resolveOwnAttendanceEntry (against current.entries) below - both
+// need the exact same "match by WhatsApp ID first, current push name
+// second, ambiguous only across genuinely DIFFERENT names" rules, just
+// against a different array.
+function resolveOwnFrom(items, senderId, senderName) {
+  const own = items.filter((e) => e.addedBy === senderId && e.self !== false);
   if (own.length > 0) {
     const uniqueNames = [...new Set(own.map((e) => normalizeName(e.name)))];
     if (uniqueNames.length > 1) return { ambiguous: own.map((e) => e.name) };
     return { names: [own[0].name] };
   }
   if (senderName) {
-    const byName = due.filter((e) => normalizeName(e.name) === normalizeName(senderName));
+    const byName = items.filter((e) => normalizeName(e.name) === normalizeName(senderName));
     if (byName.length > 0) return { names: [byName[0].name] };
   }
   return { noEntry: true };
+}
+
+function resolveOwnDue(groupId, senderId, senderName) {
+  const due = getCurrentEvent(groupId).duePayments || [];
+  return resolveOwnFrom(due, senderId, senderName);
+}
+
+// Same bare-self resolution as resolveOwnDue above, but against the
+// CONFIRMED attendance list (current.entries - not duePayments, not the
+// waitlist) instead - the "pay early" fallback for someone who isn't due
+// for payment yet at all (see markPaidEarly's doc comment in store.js).
+// Only ever consulted by callers AFTER resolveOwnDue has already come
+// back { noEntry: true } for the same sender - someone genuinely due for
+// a past cycle resolves against duePayments first, never this.
+function resolveOwnAttendanceEntry(groupId, senderId, senderName) {
+  const entries = getCurrentEvent(groupId).entries || [];
+  return resolveOwnFrom(entries, senderId, senderName);
+}
+
+// Marks `name` paid, trying the real payment-due list first (existing
+// markPaid() behavior, unchanged) and falling back to tagging their
+// CONFIRMED attendance/tournament entry as paid early (store.js's
+// markPaidEarly) only if that first lookup comes back not_found - lets
+// someone who isn't due for payment yet at all (before !newlist has even
+// archived this cycle into duePayments) settle up ahead of time, without
+// ever letting an early payment mask a REAL, already-outstanding debt for
+// the same name. Returns `{ ok }`, same shallow shape callers already
+// check from a bare markPaid() call - which of the two actually matched
+// doesn't change how a caller replies (see replyPaidOutcome/handlePaid
+// below - a successful pay is quiet either way, the reposted list is the
+// proof).
+function markPaidAnywhere(groupId, name) {
+  const dueResult = markPaid(groupId, name);
+  if (dueResult.ok) return { ok: true };
+  return markPaidEarly(groupId, name);
 }
 
 // Resolves "!in +N" (see PLUS_N_TOKEN in lib/helpers.js) into the actual
@@ -132,12 +171,15 @@ function resolveAdditiveGuestNames(groupId, senderId, senderName, guestCount) {
 // !in/!out just processed - "!in paid Alex, Sam" marks both Alex and Sam
 // paid, matched literally by name, exactly like standalone "!paid Alex,
 // Sam" would. With no explicit names (the bare "!in paid" / "!out paid"
-// case), falls back to resolveOwnDue() above instead of just reusing the
-// sender's push name, since that's the identity-correct match for the
-// SEPARATE duePayments list. Deliberately independent of whatever the
-// !in/!out half of the command did - "already on the list, but let me pay
-// what I owe" is a legitimate combo, so paying is attempted regardless of
-// whether the add/remove itself succeeded for a given name.
+// case), falls back to resolveOwnDue() above (and, if THAT comes back
+// empty, resolveOwnAttendanceEntry() - the same "pay early" fallback
+// standalone !paid uses, see handlePaid below) instead of just reusing
+// the sender's push name, since that's the identity-correct match for
+// the SEPARATE duePayments/entries lists. Deliberately independent of
+// whatever the !in/!out half of the command did - "already on the list,
+// but let me pay what I owe" is a legitimate combo, so paying is
+// attempted regardless of whether the add/remove itself succeeded for a
+// given name.
 async function runPaidIfFlagged(groupId, senderId, senderName, paidFlag, explicitNames) {
   if (!paidFlag) return { paid: [], paidRejected: [], paidAmbiguous: null };
 
@@ -146,15 +188,21 @@ async function runPaidIfFlagged(groupId, senderId, senderName, paidFlag, explici
     names = explicitNames;
   } else {
     const resolved = resolveOwnDue(groupId, senderId, senderName);
-    if (resolved.noEntry) return { paid: [], paidRejected: [], paidAmbiguous: null };
     if (resolved.ambiguous) return { paid: [], paidRejected: [], paidAmbiguous: resolved.ambiguous };
-    names = resolved.names;
+    if (!resolved.noEntry) {
+      names = resolved.names;
+    } else {
+      const ownEntry = resolveOwnAttendanceEntry(groupId, senderId, senderName);
+      if (ownEntry.ambiguous) return { paid: [], paidRejected: [], paidAmbiguous: ownEntry.ambiguous };
+      if (ownEntry.noEntry) return { paid: [], paidRejected: [], paidAmbiguous: null };
+      names = ownEntry.names;
+    }
   }
 
   const paid = [];
   const paidRejected = [];
   for (const name of names) {
-    const result = markPaid(groupId, name);
+    const result = markPaidAnywhere(groupId, name);
     if (result.ok) {
       paid.push(name.trim());
     } else {
@@ -669,14 +717,6 @@ async function handlePaid(ctx) {
     // different names are, since owing for two separate events is now
     // normal, not a sign something's wrong).
     const resolved = resolveOwnDue(groupId, senderId, senderName);
-    if (resolved.noEntry) {
-      if (!isCatchUp) {
-        await reply(
-          `Good news - you're not on the payment list! If your WhatsApp name doesn't match what's on the list, mention @Snoopy with "paid <name>".`
-        );
-      }
-      return { command: 'paid', senderName, argText, noEntry: true };
-    }
     if (resolved.ambiguous) {
       if (!isCatchUp) {
         await reply(
@@ -685,7 +725,33 @@ async function handlePaid(ctx) {
       }
       return { command: 'paid', senderName, argText, ambiguous: resolved.ambiguous };
     }
-    names = resolved.names;
+    if (!resolved.noEntry) {
+      names = resolved.names;
+    } else {
+      // Not due for payment at all yet (that only gets populated once
+      // !newlist archives the current cycle) - try paying EARLY against
+      // their confirmed attendance/tournament entry instead, same
+      // WhatsApp-ID-first matching as above (see
+      // resolveOwnAttendanceEntry/markPaidEarly's doc comments).
+      const ownEntry = resolveOwnAttendanceEntry(groupId, senderId, senderName);
+      if (ownEntry.ambiguous) {
+        if (!isCatchUp) {
+          await reply(
+            `Which one, though? You have more than one entry on the list - say which one: ${COMMAND_PREFIX}paid <name>\nYours: ${ownEntry.ambiguous.join(', ')}`
+          );
+        }
+        return { command: 'paid', senderName, argText, ambiguous: ownEntry.ambiguous };
+      }
+      if (ownEntry.noEntry) {
+        if (!isCatchUp) {
+          await reply(
+            `Good news - you're not on the payment list! If your WhatsApp name doesn't match what's on the list, mention @Snoopy with "paid <name>".`
+          );
+        }
+        return { command: 'paid', senderName, argText, noEntry: true };
+      }
+      names = ownEntry.names;
+    }
   } else {
     names = parseNames(argText, senderName);
   }
@@ -702,7 +768,7 @@ async function handlePaid(ctx) {
   const rejected = [];
 
   for (const name of names) {
-    const result = markPaid(groupId, name);
+    const result = markPaidAnywhere(groupId, name);
     if (!result.ok) {
       rejected.push(
         `${name.trim()} is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid`

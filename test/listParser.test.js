@@ -379,6 +379,33 @@ test('parseListSections handles BOTH "(TBC)" and "(🏆 WL)" on the same name, i
   assert.deepEqual(result.tournamentWaitlistedNames, ['Bao']);
 });
 
+test('parseListSections strips the trailing "(paid)" flag from a name that paid EARLY', () => {
+  const text = ['*Attendance*', '', '1. Chakriya (paid)', '2. Sam'].join('\n');
+  const result = parseListSections(text);
+  // Clean "Chakriya", NOT "Chakriya (paid)" literally - otherwise a
+  // copy-pasted !update would treat it as a brand new, differently-named
+  // entry, same class of bug the "(🏆 WL)" tag already guards against.
+  assert.deepEqual(result.attendance, ['Chakriya', 'Sam']);
+});
+
+test('parseListSections handles BOTH "(paid)" and "(🏆 WL)" on the same name, in formatEntryLine()\'s actual order ("(paid)" before "(🏆 WL)")', () => {
+  const text = [
+    '*Attendance* (2/6)',
+    '',
+    '🏆 *Tournament players* (1/1)',
+    '',
+    '1. Keith',
+    '',
+    'Social only',
+    '',
+    '2. Bao (paid) (🏆 WL)',
+  ].join('\n');
+
+  const result = parseListSections(text);
+  assert.deepEqual(result.attendance, ['Keith', 'Bao']);
+  assert.deepEqual(result.tournamentWaitlistedNames, ['Bao']);
+});
+
 test('parseListSections: "Social only" text BEFORE any tournament header is never mistaken for the sub-header - it has to follow "🏆 Tournament players" first', () => {
   const text = [
     '*Attendance*',

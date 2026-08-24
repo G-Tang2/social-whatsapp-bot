@@ -322,6 +322,32 @@ test('formatList: someone who wanted the tournament but it was full is tagged (�
   assert.doesNotMatch(text2, /Wendy \(🏆 WL\)/);
 });
 
+test('formatList: someone who paid EARLY (store.js\'s markPaidEarly) is tagged "(paid)" next to their name', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.addEntry(groupId, 'Ryan', 'ryan@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false); // hasn't paid - no tag
+
+  const before = formatList(groupId);
+  assert.doesNotMatch(before, /\(paid\)/);
+
+  store.markPaidEarly(groupId, 'Ryan');
+  const after = formatList(groupId);
+  assert.match(after, /1\. Ryan \(paid\)/);
+  assert.match(after, /2\. Sam$/);
+});
+
+test('formatList: "(paid)" and "(🏆 WL)" both show, in that order, when the same entry has both', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.setTournamentEnabled(groupId, true);
+  store.setTournamentLimit(groupId, 1);
+  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // takes the only spot
+  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // wanted in, but full - WL'd
+  store.markPaidEarly(groupId, 'Bao');
+
+  const text = formatList(groupId);
+  assert.match(text, /Social only\n\n2\. Bao \(paid\) \(🏆 WL\)/);
+});
+
 test('formatList: (🏆 WL)-tagged entries are sorted to the FRONT of Social only, ahead of earlier joiners who never asked - that ordering IS the tournament queue', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setTournamentEnabled(groupId, true);

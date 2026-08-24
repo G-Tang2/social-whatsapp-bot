@@ -1349,6 +1349,11 @@ function addEntry(groupId, name, addedBy, addedByIsAdmin, selfAdded, wantsTourna
     self: !!selfAdded,
     tournament: false,
     tournamentWaitlisted: false,
+    // Whether this person has already paid AHEAD of this cycle even
+    // being archived into duePayments - see markPaidEarly() below for how
+    // it gets set, and newList()'s doc comment for how it's honored when
+    // this cycle finally does get archived.
+    paidEarly: false,
   };
 
   const atCapacity = current.limit !== null && current.limit !== undefined && current.entries.length >= current.limit;
@@ -1742,6 +1747,41 @@ function markPaid(groupId, name) {
   return { ok: true, count, duePayments: current.duePayments };
 }
 
+/**
+ * Tags a CONFIRMED attendance entry (current.entries - NOT the waitlist,
+ * and NOT duePayments) as already paid, for someone settling up ahead of
+ * time, before !newlist has even archived this cycle into duePayments yet
+ * (markPaid() above only ever operates on duePayments, so it can't help
+ * here - there's nothing there yet for this cycle). commands/list.js's
+ * handlePaid/runPaidIfFlagged only ever call this as a FALLBACK, after
+ * markPaid() itself has already come back not_found for the same name -
+ * someone who's genuinely due for a past cycle should still have that
+ * real debt cleared first, not get shunted here instead.
+ *
+ * Waitlist is deliberately excluded - paying ahead for a spot you don't
+ * have yet doesn't make sense, and someone promoted off the waitlist
+ * later starts with paidEarly already false on their (brand new) entry
+ * object regardless.
+ *
+ * Idempotent - marking an already-paidEarly entry again is a harmless
+ * no-op, still `{ ok: true }`.
+ */
+function markPaidEarly(groupId, name) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  const current = all[groupId].current;
+  const normalized = normalizeName(name);
+
+  const entry = current.entries.find((e) => normalizeName(e.name) === normalized);
+  if (!entry) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  entry.paidEarly = true;
+  writeAll(all);
+  return { ok: true };
+}
+
 // Starts a brand new dated list. The outgoing list itself is NOT archived
 // anywhere - only the current list is ever kept, and `history` is reset to
 // empty right along with it (wiping out any old archived lists too, so
@@ -1789,6 +1829,13 @@ function markPaid(groupId, name) {
 // existing entry is left exactly as-is (exemption is forward-looking, not
 // a retroactive debt forgiveness - see getPaymentExempt's own doc comment).
 //
+// An outgoing entry with `paidEarly: true` (see markPaidEarly() above) is
+// ALSO skipped, same reasoning - they already settled up for this cycle
+// ahead of time, so there's nothing left to carry into duePayments for
+// it. Since `entries: []` on the fresh cycle below never carries
+// paidEarly forward either way, this only ever matters for THIS exact
+// transition, never retroactively.
+//
 // `details` (optional) controls the new list's location/courts/time -
 // each key works independently:
 //   - omitted/undefined -> carries forward the outgoing list's value
@@ -1812,6 +1859,7 @@ function newList(groupId, date, details = {}) {
   const mergedDue = [...stillOwing];
   for (const entry of newlyOwing) {
     if (exempt.has(normalizeName(entry.name))) continue;
+    if (entry.paidEarly) continue;
     // Spread rather than push the entry object itself - `entry` is still
     // the same object reference sitting in `outgoing.entries` (about to be
     // discarded wholesale once `state.current` is replaced below) -
@@ -1948,6 +1996,7 @@ module.exports = {
   clearList,
   clearDuePayments,
   markPaid,
+  markPaidEarly,
   newList,
   normalizeName,
 };

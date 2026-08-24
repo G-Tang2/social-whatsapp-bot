@@ -395,6 +395,22 @@ entries/waitlist/date/location/courts/time untouched. Changed your mind?
 `!undo` (see "Undoing the last change" below) reverses it, same as it would
 any other command.
 
+**Paying early:** `!paid <name>` (or a bare `!paid` for yourself) also
+works for someone who's confirmed on the *current* attendance/tournament
+list but isn't actually due for payment yet at all - before `!newlist`
+has even carried this cycle into the payment section. `!paid` always
+checks the real payment-due list first, so it never masks an actual
+outstanding debt from a previous cycle; only when a name genuinely isn't
+due for anything yet does it fall back to tagging their attendance entry
+paid early instead of refusing. That name then shows a `(paid)` tag next
+to it in `*Attendance*`/`*Waitlist*` (e.g. `1. Chakriya (paid)`) as the
+only visible sign, right up until the next `!newlist` - at which point
+they're simply skipped when that cycle's attendees get carried into the
+payment section, exactly like an exempt name would be (see below), so
+they never show up owing for the cycle they already paid for. The tag
+itself never affects name-matching anywhere else (`!out`, `!update`,
+another `!paid`, ...) - it's stripped the same way the `(🏆 WL)` tag is.
+
 Some people never need to pay at all - the organizer themselves, a
 sponsor, a coach. A group admin can mark them exempt with `!exempt Peter`
 (or `!exempt Peter, Chris` for several at once) - anyone on that saved
