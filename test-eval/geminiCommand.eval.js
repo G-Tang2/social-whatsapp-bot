@@ -341,3 +341,23 @@ evalTest('a genuinely ambiguous request ("Janelle paid Janelle in") comes back l
   assert.match(uncertain.question, /\bJanelle\b/i, 'expected the question to actually reference Janelle, not a generic "can you clarify?"');
   assert.doesNotMatch(uncertain.question, /^(can you clarify|i'?m not sure what you mean)\.?$/i, 'expected a specific question, not a generic clarify-request');
 });
+
+// --- A "courts" request giving only a COUNT ("we have 6 courts now") with
+// no actual court numbers must ask specifically for the numbers, not a
+// generic add-vs-replace choice - argText needs real numbers/ranges either
+// way, so that's the actually-missing information, not which of the two
+// modes it is. Real user report: the model's question offered "add 6
+// extra courts" vs. "replace with court 6" - a false choice that doesn't
+// resolve anything, since neither answer alone gives usable court numbers -
+// see the added SPECIAL CASE sentence on "courts" in COMMAND_ARG_GUIDE. ---
+
+evalTest('"we have 6 courts now" (a bare count, no court numbers) asks specifically for the court numbers, not add-vs-replace', async () => {
+  const listText = '*Attendance* (0/10)\n\n(empty - use !in to add your name)';
+  const result = await interpretMessage('we have 6 courts now', { listText });
+  assert.ok(result, 'expected a parsed result, not null');
+  const uncertain = result.actions.find((a) => a.command === 'courts' && a.confidence === 'low');
+  assert.ok(uncertain, `expected a low-confidence "courts" action, got: ${JSON.stringify(result.actions)}`);
+  assert.ok(uncertain.question && uncertain.question.trim(), 'expected a non-empty "question"');
+  assert.match(uncertain.question, /which|what/i, 'expected the question to ask for the actual court numbers');
+  assert.doesNotMatch(uncertain.question, /replace/i, 'must not offer a false add-vs-replace choice that still leaves the numbers unknown');
+});
