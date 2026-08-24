@@ -1036,6 +1036,48 @@ See `lib/geminiCommand.js` for the actual prompt/schema if you want to
 tune its behavior, and `GEMINI_MODEL` in `.env.example` if you want to use
 a different model than the default.
 
+## Snoopy's voice
+
+Every reply the bot sends - **every command, typed or @-mentioned, not
+just the natural-language layer above** - is restyled into Snoopy's own
+voice (the *Peanuts* character: the World War I Flying Ace fantasy, the
+never-finished novel typed on the doghouse roof, Woodstock, root beer,
+supper time, quietly pleased with himself) via a live Gemini call before
+it's sent, independent of whether a group has `!ai` turned on at all -
+this isn't the natural-language interpretation feature, it's a separate
+"how does the bot sound" pass over the reply text a command already
+decided to send. Only needs `GEMINI_API_KEY` configured (see
+"Natural-language commands" above) - not a per-group toggle.
+
+It's a pure **style transfer**, never content generation: every reply's
+real facts - names, numbers, dates, `!command` syntax someone might
+copy-paste - are already correct before this ever runs, and the model is
+told to preserve every one of them exactly. A cheap local safety check
+afterward (no second API call) discards the restyle and falls back to
+the plain, original wording if any `!command` token went missing, or the
+result came back empty or wildly different in length from what went in -
+a live model call should never be the reason a payment amount or a
+command's exact syntax comes out wrong.
+
+**"Generic Snoopy response" fallback:** every reply string in this
+codebase is already hand-written with real personality (see
+`commands/*.js`/`index.js`) - that's exactly what gets sent whenever
+Gemini isn't configured, the call errors, times out, or fails the safety
+check above. There's no separate "Gemini is down" apology - the bot just
+sends the same reply it always would have, unstyled but still itself,
+and the sender never sees a blank or broken reply because of it.
+
+**Deliberately NOT restyled:** the posted list itself (`!list` and every
+list repost) - it's a precise data display people (and `!update`) rely on
+to copy-paste back exactly, not a conversational reply - and any message
+carrying a real WhatsApp `mentions` tag (waitlist/tournament promotions,
+`!courtcanceller` confirmations, vacancy warnings) - the literal
+`@1234567890` token has to survive character-for-character for WhatsApp
+to actually render the tag, which a live rephrase can't safely guarantee.
+
+See `lib/snoopyVoice.js` for the actual prompt and safety check if you
+want to tune the voice further.
+
 ## Catching up after a network outage
 
 If the computer hosting the bot briefly loses internet - a router hiccup, a

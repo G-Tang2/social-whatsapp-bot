@@ -270,6 +270,7 @@ const { checkVacancyReminders } = require('./lib/vacancyReminder');
 const { checkAutoNewlist } = require('./lib/autoNewlistScheduler');
 const { checkAllGroupsInactivity } = require('./lib/inactivityCheck');
 const { interpretMessage, formatTodayForPrompt, formatRegularPlayersForPrompt } = require('./lib/geminiCommand');
+const { speakAsSnoopy } = require('./lib/snoopyVoice');
 const spam = require('./spam');
 const ai = require('./ai');
 const activity = require('./activity');
@@ -954,7 +955,20 @@ async function handleMessage(sock, msg, upsertType) {
     activity.recordActivity(groupId, senderId);
   }
 
-  const reply = (body) => sock.sendMessage(groupId, { text: body }, { quoted: msg });
+  // Every reply, from every handler (typed command or @-mention alike,
+  // including the AI layer's own fallback/clarifying-question replies -
+  // see handleAiMention above, which receives this same closure), is
+  // restyled into Snoopy's voice via a live Gemini call before it goes
+  // out - see lib/snoopyVoice.js's own doc comment for exactly what that
+  // does and doesn't touch, and how it falls back to the plain (already
+  // hand-written, Snoopy-flavored) text whenever Gemini isn't configured,
+  // errors, or times out. Deliberately NOT applied to postList below - the
+  // posted list is a data display, not a conversational reply (see
+  // lib/snoopyVoice.js's file comment for the full reasoning).
+  const reply = async (body) => {
+    const styled = await speakAsSnoopy(body);
+    return sock.sendMessage(groupId, { text: styled }, { quoted: msg });
+  };
   const postList = () => sock.sendMessage(groupId, { text: formatList(groupId) });
   // Best-effort reaction on the mentioning message itself - a failure here
   // (e.g. the message was deleted, or WhatsApp briefly rejects it) is
