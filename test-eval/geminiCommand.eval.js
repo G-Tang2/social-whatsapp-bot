@@ -178,6 +178,25 @@ evalTest('"add me and stella to the tournament" tournament-flags BOTH the sender
   assert.match(stellaAction.argText, /^tournament\s*,/i, 'the tournament flag must lead Stella\'s argText too, not just the sender\'s');
 });
 
+// --- A bare, single-word message that's JUST the command's own verb (no
+// name, no other words at all) must still be read as the sender alone,
+// high confidence - not dropped to "low"/"none" for being too sparse.
+// Real bug report: someone replying "paid" on its own wasn't recognized
+// as them marking themselves paid - see SELF+OTHERS SPLIT's added
+// bare-verb sentence in SHARED_ARG_RULES. ---
+
+evalTest('a bare "paid" with nothing else maps to a high-confidence "paid" action for the sender alone (empty argText)', async () => {
+  const listText =
+    '*Attendance* (0/10)\n\n(empty - use !in to add your name)\n\n'
+    + '──────────\n*Payment*\n\n*19th Aug Wed*\n1. Ryan';
+  const result = await interpretMessage('paid', { listText });
+  assert.ok(result, 'expected a parsed result, not null');
+  assert.equal(result.actions.length, 1, `expected exactly 1 action, got: ${JSON.stringify(result.actions)}`);
+  assert.equal(result.actions[0].command, 'paid');
+  assert.equal(result.actions[0].confidence, 'high');
+  assert.equal(result.actions[0].argText.trim(), '', 'expected an empty argText (the sender alone), not a guessed/invented name');
+});
+
 // --- "social only" phrased WITH an explicit verb ("add X to social only")
 // must be recognized the same as the bare "<name> social only" form - never
 // tournament-flagged. Real bug report: "add Nguyn and Hannah to social
