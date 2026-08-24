@@ -632,7 +632,12 @@ function formatOffTopicReply(offTopicReply) {
   return `${offTopicReply}\n\n${OFF_TOPIC_REMINDER}`;
 }
 
-async function handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList }) {
+// Shared setup for a natural-language @-mention interpretation call -
+// used by both handleAiMention (the live path, below) and
+// handleAiMentionCatchUp (the offline-backlog path, further below), so
+// the two stay in lockstep on exactly what context the model sees rather
+// than risking them silently drifting apart.
+function buildAiMentionPromptContext({ sock, msg, groupId, text }) {
   const mentioned = getMentionedJids(msg);
   const cleanedText = stripMentionTokens(text, mentioned);
   // Same numbered Attendance/Waitlist/payment-due text the group is
@@ -663,6 +668,11 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   const priorBotMessage = quotedParticipant && botJids.includes(normalizeJid(quotedParticipant))
     ? getQuotedMessageText(msg) || undefined
     : undefined;
+  return { cleanedText, listText, todayLabel, regularPlayersText, priorBotMessage };
+}
+
+async function handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList }) {
+  const { cleanedText, listText, todayLabel, regularPlayersText, priorBotMessage } = buildAiMentionPromptContext({ sock, msg, groupId, text });
   const interpretation = await interpretMessage(cleanedText, { listText, todayLabel, regularPlayersText, priorBotMessage });
 
   const actions = interpretation && interpretation.actions;
@@ -801,6 +811,81 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   }
 }
 
+// The offline-backlog ('append') counterpart to handleAiMention above -
+// e.g. someone sent "@Snoopy sign me up" while the bot was disconnected,
+// and it's only now being redelivered as part of the reconnect catch-up.
+// Deliberately much narrower than the live path: interpretation still
+// runs (unlike a bare "!command", which needs no interpretation at all),
+// but only ever DISPATCHES an action that resolves to "in"/"out"/"paid"
+// with "high" confidence - the exact same CATCH_UP_COMMANDS boundary
+// index.js's typed-command gate already enforces (see its own doc
+// comment), just applied to whatever the natural-language message
+// resolves to instead of to the raw command word. Anything else the
+// message might also contain - an admin command, a low-confidence guess,
+// off-topic chat - is silently dropped, same "re-running a
+// non-self-service action after an unpredictable delay could do more
+// harm than the missed message itself" reasoning that already excludes
+// those from the typed path; there's no clarifying question, no
+// offTopicReply, no error reply - a catch-up redelivery gets no
+// per-message feedback of any kind (see handleMessage below), only
+// ever folding into the eventual combined "here's what happened while I
+// was offline" summary via lib/catchUpQueue.js, same as a genuinely
+// typed "!in" sent during the outage would.
+// No `reply`/`postList` params, unlike handleAiMention - called from
+// handleMessage's early catch-up gate below, BEFORE those closures even
+// exist yet (they're only built further down, for a genuinely live
+// message), and every handler this dispatches to already skips calling
+// either one whenever upsertType is 'append' (see commands/list.js's
+// isCatchUp handling) - there's nothing for them to do here regardless.
+async function handleAiMentionCatchUp({ sock, msg, groupId, senderId, senderName, text }) {
+  const { cleanedText, listText, todayLabel, regularPlayersText, priorBotMessage } = buildAiMentionPromptContext({ sock, msg, groupId, text });
+  let interpretation;
+  try {
+    interpretation = await interpretMessage(cleanedText, { listText, todayLabel, regularPlayersText, priorBotMessage });
+  } catch (err) {
+    console.error(`[bot] Error interpreting a caught-up @-mention in ${groupId} (from ${senderId}):`, err);
+    return;
+  }
+
+  const actions = interpretation && interpretation.actions;
+  const safeActions = (actions || []).filter(
+    (a) => a.confidence === 'high' && CATCH_UP_COMMANDS.has(`${COMMAND_PREFIX}${a.command}`)
+  );
+
+  // Same "never silently vanish with zero trace" reasoning as the typed-
+  // command/off-!ai diagnostic logs in the catch-up gate that calls this -
+  // a real bug report ("I @-mentioned the bot and got no response at
+  // all") turned out to have no trace anywhere at default log verbosity.
+  // Only logged when interpretation genuinely found nothing safe to act
+  // on - a message that DID resolve to a real in/out/paid action needs no
+  // such log, since it's about to actually dispatch below.
+  if (!safeActions.length) {
+    console.log(
+      `[bot] Dropped an @-mention or reply to me in ${groupId} (from ${senderId}) because it arrived as a catch-up ('append') redelivery and didn't resolve to a real ${[...CATCH_UP_COMMANDS].join('/')} request - only those self-service actions are honored on catch-up (see the README's "Catching up after a network outage"). If this was a genuine request, the sender needs to send it again.`
+    );
+  }
+
+  for (const action of safeActions) {
+    // The undo-tracked `commands` table (unlike handleAiMention's own
+    // live dispatch, which deliberately bypasses it via `rawCommands` to
+    // wrap a whole multi-action batch in ONE combined undo snapshot
+    // instead) - each caught-up action here gets its own separate undo
+    // point, same as if it had arrived as its own separate typed
+    // "!in"/"!out"/"!paid" catch-up message, which is exactly what it's
+    // standing in for.
+    const handler = commands[`${COMMAND_PREFIX}${action.command}`];
+    if (!handler) continue; // defensive - CATCH_UP_COMMANDS is a fixed, known-valid set, shouldn't happen in practice
+    try {
+      const result = await handler({
+        sock, msg, groupId, senderId, senderName, argText: action.argText || '', upsertType: 'append',
+      });
+      if (result) catchUpQueue.bufferCatchUpResult(groupId, () => currentSock, result);
+    } catch (err) {
+      console.error(`[bot] Error dispatching a caught-up @-mention action ("${action.command}") in ${groupId} (from ${senderId}):`, err);
+    }
+  }
+}
+
 async function handleMessage(sock, msg, upsertType) {
   if (DEBUG) {
     // Logs EVERY incoming message before any filtering, so you can see
@@ -879,43 +964,60 @@ async function handleMessage(sock, msg, upsertType) {
 
   // Catch-up messages (upsertType === 'append', see the messages.upsert
   // listener above) are handled far more conservatively than live ones:
-  // only !in, !out, and !paid are honored - the self-service commands
-  // where missing one is most disruptive to someone trying to join,
-  // leave, or pay. Everything else about a catch-up message - spam
-  // filtering and every other command - is intentionally NOT processed:
-  // re-running an admin command like !newlist or !limit after an
-  // arbitrary delay, or backdating someone's spam status against a
-  // message that's no longer really "now", would do more harm than the
-  // missed message itself.
+  // only !in, !out, and !paid (typed OR resolved via a natural-language
+  // @-mention - see handleAiMentionCatchUp above) are honored - the
+  // self-service actions where missing one is most disruptive to someone
+  // trying to join, leave, or pay. Everything else about a catch-up
+  // message - spam filtering and every other command, admin or
+  // otherwise - is intentionally NOT processed: re-running an admin
+  // command like !newlist or !limit after an arbitrary delay, or
+  // backdating someone's spam status against a message that's no longer
+  // really "now", would do more harm than the missed message itself. A
+  // real @-mention still goes through the SAME natural-language
+  // interpretation the live path uses (so "@Snoopy sign me up" catches up
+  // exactly like a typed "!in" would), but ONLY a resulting action that
+  // resolves to "in"/"out"/"paid" at "high" confidence ever actually
+  // dispatches - anything else (an admin command, a low-confidence guess,
+  // off-topic chat) is silently skipped, same reasoning as the typed
+  // case, and gets no reply/clarifying question/error message of any
+  // kind (a catch-up redelivery gets no per-message feedback - see
+  // handleAiMentionCatchUp's own doc comment).
   if (upsertType === 'append' && !CATCH_UP_COMMANDS.has(rawCmd)) {
-    // Worth an operator-visible trace (not DEBUG-gated) whenever this drops
-    // something that genuinely looked actionable - either a real, known
-    // command (any of `commands` other than !in/!out/!paid - e.g. !limit,
-    // !allow, !newlist, !update, ...) sent while the bot's socket was
-    // briefly disconnected/reconnecting, or a genuine @-mention of the bot
-    // that would otherwise have triggered natural-language command
-    // interpretation (see handleAiMention below - that feature only ever
-    // acts on live ('notify') messages, by design, see its own gate
-    // further down). Both cases were previously dropped with ZERO trace
-    // anywhere at default log verbosity - real reports of "I sent
-    // !allow/!limit and got no response" and "I @-mentioned the bot and
-    // got no response at all" both turned out to have exactly this as
-    // their most likely explanation. The `commands[rawCmd]` check (a real
-    // dispatch-table lookup) and messageMentionsBot() (cheap, synchronous,
-    // no network call) - not text heuristics - keep this from firing for
-    // ordinary catch-up chat/typos that were never going to do anything
-    // regardless. The @-mention branch also requires ai.isEnabled() itself,
-    // so a group with the feature off doesn't get a misleading
-    // "blame the catch-up" log when the real reason it wouldn't have
-    // worked either way is that !ai is off.
     if (text.startsWith(COMMAND_PREFIX) && commands[rawCmd]) {
+      // A real, known command other than !in/!out/!paid (e.g. !limit,
+      // !allow, !newlist, !update, ...) - worth an operator-visible trace
+      // (not DEBUG-gated) rather than vanishing with zero trace at
+      // default log verbosity, same reasoning bareMention/@-mention
+      // logging below has - a real report of "I sent !allow/!limit and
+      // got no response" turned out to have exactly this as the most
+      // likely explanation.
       console.log(
         `[bot] Dropped "${rawCmd}" in ${groupId} (from ${senderId}) because it arrived as a catch-up ('append') redelivery, not live - only ${[...CATCH_UP_COMMANDS].join('/')} are honored on catch-up (see the README's "Catching up after a network outage"). If this was a genuine request, the sender needs to send it again.`
       );
-    } else if (!text.startsWith(COMMAND_PREFIX) && ai.isEnabled(groupId) && messageMentionsBot(sock, msg)) {
-      console.log(
-        `[bot] Dropped an @-mention or reply to me in ${groupId} (from ${senderId}) because it arrived as a catch-up ('append') redelivery, not live - natural-language commands only ever act on live messages. If this was a genuine request, the sender needs to send it again.`
-      );
+    } else if (!text.startsWith(COMMAND_PREFIX) && messageMentionsBot(sock, msg)) {
+      const bareMention = !stripMentionTokens(text, getMentionedJids(msg)).trim();
+      if (bareMention) {
+        // No language to interpret at all - same "@Snoopy on its own
+        // means sign me up" shortcut the live path uses (see bareMention
+        // further below), so this skips straight to !in without needing
+        // a Gemini call, exactly like a bare "!in" catch-up message would.
+        try {
+          const result = await commands[`${COMMAND_PREFIX}in`]({ sock, msg, groupId, senderId, senderName, argText: '', upsertType });
+          if (result) catchUpQueue.bufferCatchUpResult(groupId, () => currentSock, result);
+        } catch (err) {
+          console.error(`[bot] Error dispatching a caught-up bare @-mention (treated as ${COMMAND_PREFIX}in) in ${groupId} (from ${senderId}):`, err);
+        }
+      } else if (ai.isEnabled(groupId)) {
+        await handleAiMentionCatchUp({ sock, msg, groupId, senderId, senderName, text });
+      } else {
+        // Group never turned natural-language commands on - nothing
+        // could have happened here even live, so this isn't really a
+        // catch-up-specific loss; log it as such rather than implying
+        // the outage was the reason.
+        console.log(
+          `[bot] Dropped an @-mention or reply to me in ${groupId} (from ${senderId}) because ${COMMAND_PREFIX}ai is off for this group - natural-language commands only work once an admin turns it on with ${COMMAND_PREFIX}ai on (this applies to catch-up redeliveries the same as live messages).`
+        );
+      }
     }
     return;
   }
@@ -1021,13 +1123,16 @@ async function handleMessage(sock, msg, upsertType) {
     const bareMention = mentionsBot && !stripMentionTokens(text, getMentionedJids(msg)).trim();
 
     // Natural-language command interpretation (see lib/geminiCommand.js
-    // and handleAiMention above) - deliberately narrow trigger: only a
-    // genuinely live message (never catch-up/'append' - re-running an
-    // AI-guessed interpretation against a message that's no longer really
-    // "now" is exactly what CATCH_UP_COMMANDS avoids for real commands
-    // too), only in a group that's explicitly opted in with !ai on, and
-    // only when the message actually @-mentions the bot - never triggered
-    // by ordinary chat, however list-related it might sound.
+    // and handleAiMention above) - deliberately narrow trigger: only in a
+    // group that's explicitly opted in with !ai on, and only when the
+    // message actually @-mentions the bot - never triggered by ordinary
+    // chat, however list-related it might sound. This branch only ever
+    // runs for a genuinely LIVE ('notify') message - a caught-up
+    // ('append') @-mention is handled entirely by the earlier catch-up
+    // gate above instead (see handleAiMentionCatchUp), which narrows what
+    // can actually dispatch down to CATCH_UP_COMMANDS, same as it already
+    // does for typed commands - so by the time execution reaches here, any
+    // append-type message has already either been handled or returned on.
     if (upsertType === 'notify' && bareMention) {
       await setPresence('composing');
       try {

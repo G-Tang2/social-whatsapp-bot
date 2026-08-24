@@ -968,11 +968,15 @@ current state. Every group starts off - each one opts in individually.
   chat that merely sounds list-related - "I'm out of milk" in normal
   conversation is never at risk of being misread as `!out`, because the
   bot was never mentioned.
-- **Never for a caught-up (offline-backlog) message.** Same reasoning as
-  the self-service catch-up commands below: acting on an AI's *guess*
+- **Interpreted even for a caught-up (offline-backlog) message, but only
+  ever DISPATCHED if it resolves to `!in`/`!out`/`!paid`.** Same boundary
+  as the self-service catch-up commands below - acting on an AI's *guess*
   against a message that's no longer really "now" is riskier than just
-  missing it, so a mention that arrives as part of an offline backlog is
-  not interpreted at all.
+  missing it for anything beyond those three self-service actions, so an
+  @-mention that would have mapped to an admin command, or that came back
+  low-confidence, is silently skipped on catch-up exactly like a typed
+  admin command is - no clarifying question, no reply of any kind. See
+  "Catching up after a network outage" below for the full behavior.
 - **Confidence-gated, and never guesses out loud.** If the interpretation
   is fully confident about both the command and who it's for, it's
   dispatched immediately, same as a real typed command (including all the
@@ -1087,29 +1091,41 @@ phone that was briefly offline catches up on messages once it reconnects,
 WhatsApp queues messages server-side for the bot's (disconnected) linked
 device and redelivers them once it's back online.
 
-**But the bot only acts on that catch-up for `!in`, `!out`, and `!paid`.**
-Those are the self-service commands where missing one is most disruptive -
-someone trying to join, leave, or pay shouldn't have their command
-silently vanish just because the bot happened to be offline for a moment.
-Everything else that arrived during the gap is intentionally ignored:
+**But the bot only acts on that catch-up for `!in`, `!out`, and `!paid`** -
+typed, or resolved from a natural-language `@Snoopy` mention (see
+"Natural-language commands" above). Those are the self-service actions
+where missing one is most disruptive - someone trying to join, leave, or
+pay shouldn't have their request silently vanish just because the bot
+happened to be offline for a moment, and that's just as true whether they
+typed `!in` or said "@Snoopy sign me up". Everything else that arrived
+during the gap is intentionally ignored:
 
-- Other commands (`!clear`, `!newlist`, `!limit`, `!courts`, and so on)
-  are NOT replayed. Re-running an admin command after an arbitrary,
+- Other typed commands (`!clear`, `!newlist`, `!limit`, `!courts`, and so
+  on) are NOT replayed. Re-running an admin command after an arbitrary,
   unpredictable delay could do more harm than the missed command itself -
   imagine a `!newlist` or `!clear` firing minutes (or longer) later than
   the admin intended, possibly after other changes have already happened
   in between.
+- A `@Snoopy` mention still gets interpreted the same way a live one
+  would (same Gemini call, same list context) - but only actually
+  dispatches if it resolves to `in`/`out`/`paid` at high confidence,
+  exactly the same boundary as the typed case just above. An @-mention
+  that would have mapped to an admin command, or that came back
+  low-confidence, is silently skipped too - no clarifying question, no
+  "not capable of doing that" reply, nothing - a caught-up redelivery
+  gets no per-message feedback of any kind, live or not.
 - Plain chat during the gap isn't checked for spam - that's about *when*
   something happened, and a message resurfacing well after the fact would
   misrepresent that.
 
 This distinction comes from how WhatsApp/Baileys tag messages: a live,
 just-arrived message comes through as `'notify'`; a message the bot missed
-and is now catching up on comes through as `'append'`. `!in`/`!out`/`!paid`
-are honored for both; everything else only for `'notify'`. If you're
-debugging with `DEBUG=true` (see the troubleshooting section below), the
-debug log line for each incoming message includes this as `upsertType`, so
-you can tell the two cases apart.
+and is now catching up on comes through as `'append'`. Whatever ultimately
+resolves to `!in`/`!out`/`!paid` is honored for both; everything else only
+for `'notify'`. If you're debugging with `DEBUG=true` (see the
+troubleshooting section below), the debug log line for each incoming
+message includes this as `upsertType`, so you can tell the two cases
+apart.
 
 **One combined summary, not a burst of reposts.** A caught-up `!in`/`!out`/
 `!paid` doesn't post its own reply or updated list the moment it's

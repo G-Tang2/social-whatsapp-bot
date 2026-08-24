@@ -1403,15 +1403,42 @@ test('e2e: pasting an edited copy of the list as plain chat during a catch-up (a
   assert.equal(fakeSockInstance.sentMessages.length, 0);
 });
 
-test('e2e: an AI-eligible mention in a catch-up (append) message is never interpreted', async () => {
+test('e2e: an @-mention in a catch-up (append) message IS interpreted, and dispatches if it resolves to a real !in/!out/!paid action - regression for a real report ("I @-mentioned the bot while it was offline and nothing happened")', async () => {
   ai.setEnabled(GROUP_ID, true);
   const callsBefore = geminiCallCount;
+  setNextGeminiResponse({ command: 'in', argText: '', confidence: 'high' });
   fakeSockInstance.sentMessages.length = 0;
 
-  await deliver('put me down please', { from: 'jordan@s.whatsapp.net', type: 'append', mentions: [BOT_JID] });
+  await deliver('put me down please', { from: 'catchupaiprobe@s.whatsapp.net', type: 'append', mentions: [BOT_JID] });
 
-  assert.equal(geminiCallCount, callsBefore, 'Gemini should never be called for a catch-up/append message');
-  assert.equal(fakeSockInstance.sentMessages.length, 0);
+  assert.equal(geminiCallCount, callsBefore + 1, 'expected the caught-up @-mention to actually be interpreted');
+  assert.equal(fakeSockInstance.sentMessages.length, 0, 'a caught-up @-mention must not post its own immediate reply/list, same as a caught-up !in');
+
+  await new Promise((resolve) => setTimeout(resolve, 400)); // let the catch-up summary flush
+  const posted = fakeSockInstance.sentMessages.find((m) => /catchupaiprobe/i.test(m.content.text || ''));
+  assert.ok(posted, 'expected the "in" action to have actually been honored once the catch-up summary/list flushes');
+});
+
+test('e2e: an @-mention in a catch-up (append) message that resolves to something unsafe (e.g. an admin command) is silently skipped, same as a typed admin command would be', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'clear', argText: '', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('clear the list please', { from: 'admin@s.whatsapp.net', type: 'append', mentions: [BOT_JID] });
+
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(fakeSockInstance.sentMessages.length, 0, 'an admin action resolved from a caught-up @-mention must never dispatch');
+});
+
+test('e2e: an @-mention in a catch-up (append) message that resolves to LOW confidence is silently skipped - never a clarifying question for an offline-backlog message', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'in', argText: '', confidence: 'low', question: 'Did you mean to sign up?' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('maybe put me down?', { from: 'jordan@s.whatsapp.net', type: 'append', mentions: [BOT_JID] });
+
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(fakeSockInstance.sentMessages.length, 0, 'a low-confidence action must never dispatch or ask a clarifying question for a caught-up message');
 });
 
 // --- Diagnostic logging for silently-dropped @-mentions ------------------
