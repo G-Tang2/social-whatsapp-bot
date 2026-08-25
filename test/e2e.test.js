@@ -132,35 +132,11 @@ require.cache[baileysPath].loaded = true;
 let geminiCallCount = 0;
 let geminiResponseQueue = [];
 let lastGeminiCallArgs = null; // captures the last generateContent({...}) call - see getLastGeminiPromptText() below
-// lib/snoopyVoice.js's speakAsSnoopy() (see index.js's shared `reply`
-// closure) ALSO goes through this same fake module - GEMINI_API_KEY is
-// set (see the top of this file) for the interpretMessage tests below, so
-// every reply() call in the WHOLE file now attempts a restyle call too.
-// Deliberately kept entirely separate from geminiCallCount/
-// lastGeminiCallArgs/geminiResponseQueue above (all reserved for
-// interpretMessage's own schema-bearing calls) via the one real
-// structural difference between the two call shapes: only
-// interpretMessage's ever sets `config.responseJsonSchema`. A restyle
-// call instead gets its own simple default here - echo the original
-// message straight back, extracted from the prompt's own "Message: "..."
-// wrapper (see lib/snoopyVoice.js's buildPrompt()) - so isSafeRestyle()
-// passes trivially and every EXISTING interpretMessage-focused test in
-// this file keeps seeing the exact reply text it always expected,
-// completely unaffected by this second call now happening. See the
-// dedicated speakAsSnoopy tests further down for real restyle-behavior
-// coverage instead.
-function defaultRestyleEcho(args) {
-  const match = args.contents && args.contents.match(/Message: "([\s\S]*)"$/);
-  return { text: match ? match[1] : '' };
-}
 const fakeGenaiModule = {
   GoogleGenAI: class {
     constructor() {
       this.models = {
         generateContent: async (args) => {
-          const isRestyleCall = !(args.config && args.config.responseJsonSchema);
-          if (isRestyleCall) return defaultRestyleEcho(args);
-
           geminiCallCount += 1;
           lastGeminiCallArgs = args;
           const next = geminiResponseQueue.shift();
