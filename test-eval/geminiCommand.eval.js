@@ -218,6 +218,27 @@ evalTest('"add me to competition and social" is a single tournament-flagged acti
   assert.equal(inActions[0].argText.trim().toLowerCase(), 'tournament', `expected the sole action to be tournament-flagged for the sender alone, got argText: "${inActions[0].argText}"`);
 });
 
+// --- "allow N extra to the limit" must raise the LIMIT itself (compute
+// current + N from the list header), not be misread as the "allow"
+// command just because it contains the word "allow" - "allow" specifically
+// does NOT change the cap, which is the opposite of what this phrasing
+// asks for. Real bug report: "allow 2 extra to the limit" against a
+// current limit of 36 mapped to "allow" (pulled 1 person off the
+// waitlist, limit stayed 36) instead of "limit" with argText "38" - see
+// the added disambiguation on "limit"/"allow" in COMMAND_ARG_GUIDE. ---
+
+evalTest('"allow 2 extra to the limit" raises the limit itself (36 -> 38), not the "allow" command', async () => {
+  const listText = '*Attendance* (34/36)\n\n' + Array.from({ length: 34 }, (_, i) => `${i + 1}. Player${i + 1}`).join('\n')
+    + '\n\n*Waitlist* (1)\n\n1. Waiter1';
+  const result = await interpretMessage('allow 2 extra to the limit', { listText });
+  assert.ok(result, 'expected a parsed result, not null');
+  const limitAction = findAction(result, 'limit');
+  const allowAction = findAction(result, 'allow');
+  assert.ok(limitAction, `expected a "limit" action, got: ${JSON.stringify(result.actions)}`);
+  assert.equal(limitAction.argText.trim(), '38', `expected the new limit to be computed as current (36) + 2, got argText: "${limitAction.argText}"`);
+  assert.ok(!allowAction, `must NOT map to "allow" just because the word "allow" appears - that command never changes the cap, which is the opposite of what was asked, got: ${JSON.stringify(result.actions)}`);
+});
+
 // --- A bare, single-word message that's JUST the command's own verb (no
 // name, no other words at all) must still be read as the sender alone,
 // high confidence - not dropped to "low"/"none" for being too sparse.
