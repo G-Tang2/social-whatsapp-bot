@@ -56,6 +56,27 @@ function fakeClientThatTimesOut() {
   };
 }
 
+// Simulates the SDK's own ApiError for a SERVER-SIDE HTTP error response
+// (confirmed against node_modules/@google/genai's source: err.name ===
+// 'ApiError', err.status === the real numeric HTTP status) - as opposed to
+// fakeClientThatTimesOut() above, which is a CLIENT-SIDE giving-up. A real
+// bug report (`@Snoopy add me ...`, a perfectly parseable message) got the
+// misleading "I'm not capable of doing that" reply because a persistent
+// 504 after retries fell through to the generic null/failure branch
+// instead of being treated the same as a client-side timeout.
+function fakeClientThatFailsWithApiError(status, message) {
+  return {
+    models: {
+      generateContent: async () => {
+        const err = new Error(JSON.stringify({ error: { code: status, message, status: 'ERROR' } }));
+        err.name = 'ApiError';
+        err.status = status;
+        throw err;
+      },
+    },
+  };
+}
+
 // Captures the `config` object interpretMessage() passed to
 // generateContent, so a test can assert on what WE asked the SDK for
 // (e.g. retryOptions) without needing to exercise the real SDK's actual
@@ -190,6 +211,26 @@ test('interpretMessage: returns { actions: [], timedOut: true } (not null, not a
   const client = fakeClientThatTimesOut();
   const result = await interpretMessage('put me down', { client });
   assert.deepEqual(result, { actions: [], timedOut: true });
+});
+
+test('interpretMessage: also returns { actions: [], timedOut: true } for a persistent server-side 504 (Gemini itself timing out after retries), not just a client-side abort', async () => {
+  const client = fakeClientThatFailsWithApiError(504, 'Deadline expired before operation could complete.');
+  const result = await interpretMessage('add me Jason t, Kyle, lee, Han, +1, Dean', { client });
+  assert.deepEqual(result, { actions: [], timedOut: true });
+});
+
+test('interpretMessage: treats every transient HTTP status the SDK itself already retried (408/429/500/502/503/504) as timedOut: true after retries are exhausted', async () => {
+  for (const status of [408, 429, 500, 502, 503, 504]) {
+    const client = fakeClientThatFailsWithApiError(status, 'transient failure');
+    const result = await interpretMessage('put me down', { client });
+    assert.deepEqual(result, { actions: [], timedOut: true }, `status ${status} should be treated as timedOut`);
+  }
+});
+
+test('interpretMessage: still returns plain null for a non-transient server-side error (e.g. a 400 bad request), not timedOut: true', async () => {
+  const client = fakeClientThatFailsWithApiError(400, 'API key not valid');
+  const result = await interpretMessage('put me down', { client });
+  assert.equal(result, null);
 });
 
 test('interpretMessage: asks the SDK to retry transient failures (retryOptions.attempts > 1) rather than giving up on the first hiccup', async () => {
