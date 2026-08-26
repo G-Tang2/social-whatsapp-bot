@@ -527,8 +527,19 @@ function writeAll(data) {
   fs.renameSync(tmpFile, DATA_FILE);
 }
 
+// Zero-width/invisible characters that show up in real WhatsApp text with
+// no visible trace at all - most commonly U+2060 WORD JOINER, which
+// WhatsApp itself silently inserts around a name typed right after a
+// contact-autocomplete suggestion was dismissed. A real bug report: a
+// payment list typed with entries like "Priya" that actually carried a
+// leading U+2060 never matched someone typing a plain "priya" to pay -
+// same visible text, different string. Stripped everywhere (not just
+// leading/trailing) since these have no width and can't collide with a
+// real letter, so removing one is always safe.
+const INVISIBLE_CHARS_RE = /[\u200B\u200C\u200D\u2060\uFEFF]/g;
+
 function normalizeName(name) {
-  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+  return name.replace(INVISIBLE_CHARS_RE, '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 function getCurrentEvent(groupId) {

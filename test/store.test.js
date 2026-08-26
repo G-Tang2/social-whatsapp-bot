@@ -236,6 +236,24 @@ test('markPaid removes someone from duePayments', () => {
   assert.equal(again.reason, 'not_found');
 });
 
+// Real bug report: a payment list typed on a phone had entries like
+// "⁠Priya" - a leading U+2060 WORD JOINER, invisible in WhatsApp but
+// present in the actual text (WhatsApp inserts it around a name typed
+// right after a contact-autocomplete suggestion was dismissed). Someone
+// typing a plain "priya" to pay got "not on the payment list", even
+// though the name was right there - see normalizeName()'s own comment in
+// store.js for the full list of invisible characters now stripped.
+test('markPaid matches even when the due-payment entry carries an invisible zero-width character WhatsApp silently inserted', () => {
+  const groupId = freshGroupId();
+  store.addEntry(groupId, '\u2060Priya', 'p@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {});
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 1);
+
+  const result = store.markPaid(groupId, 'Priya');
+  assert.equal(result.ok, true);
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
+});
+
 // markPaidEarly - paying ahead of !newlist even archiving this cycle into
 // duePayments yet (see its own doc comment in store.js).
 
