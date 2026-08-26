@@ -31,6 +31,7 @@ const {
   formatPromotedMessage,
   formatList,
   resolveDuePaymentNumber,
+  resolveAttendanceOrWaitlistNumber,
 } = require('../lib/helpers');
 const store = require('../store');
 const adminCheck = require('../lib/adminCheck');
@@ -494,6 +495,65 @@ test('resolveDuePaymentNumber returns null when the SAME number appears in more 
 
   const due = store.getCurrentEvent(groupId).duePayments;
   assert.equal(resolveDuePaymentNumber(due, 1), null);
+});
+
+// --- resolveAttendanceOrWaitlistNumber: "!out 7" resolves against the
+// printed list - real request: "!out 7,8" should remove whoever the
+// posted Attendance list currently prints as "7." and "8.".
+
+test('resolveAttendanceOrWaitlistNumber matches a plain (non-tournament) Attendance entry by its printed position', () => {
+  const groupId = freshRegularPlayersGroupId();
+  ['Harry', 'Dean', 'Ken'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 1).name, 'Harry');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 3).name, 'Ken');
+});
+
+test('resolveAttendanceOrWaitlistNumber matches against the SAME reordered numbering formatList() prints once tournament is on (tournament opt-ins first, Social only continuing the count)', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.setTournamentEnabled(groupId, true);
+  store.setTournamentLimit(groupId, 2);
+  store.addEntry(groupId, 'Wendy', 'wendy@s.whatsapp.net', false, true, false); // social-only, joined FIRST
+  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // tournament, joined second
+  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // tournament, joined third
+
+  // Displayed as "1. Keith, 2. Bao" (tournament block) then "3. Wendy"
+  // (Social only) - NOT join order, which would put Wendy first.
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 1).name, 'Keith');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 2).name, 'Bao');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 3).name, 'Wendy');
+});
+
+test('resolveAttendanceOrWaitlistNumber matches a Waitlist entry by its OWN printed position (numbered independently from Attendance)', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.setLimit(groupId, 1);
+  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false); // Attendance "1."
+  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false); // over the limit - Waitlist "1."
+  store.addEntry(groupId, 'Jamie', 'jamie@s.whatsapp.net', false); // also waitlisted - Waitlist "2.", no Attendance "2." to collide with
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 2).name, 'Jamie');
+});
+
+test('resolveAttendanceOrWaitlistNumber returns null when the SAME number is printed in BOTH Attendance and Waitlist - independently numbered sections, so guessing which one was meant would be wrong', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.setLimit(groupId, 1);
+  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false); // Attendance "1."
+  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false); // over the limit - Waitlist "1."
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 1), null);
+});
+
+test('resolveAttendanceOrWaitlistNumber returns null for a number outside both lists\' ranges', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 99), null);
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 0), null);
 });
 
 test('formatElapsed renders compact day/hour/minute durations', () => {

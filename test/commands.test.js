@@ -264,6 +264,36 @@ test('handlePaid: a bare number that is out of range still gets the ordinary "no
   assert.match(replies[0], /99 is not on the payment list/);
 });
 
+// Real request: "!out 7,8" on a posted Attendance list should remove
+// whoever's printed as "7." and "8." - the same numbers a reader
+// actually sees, not fail with "7 - not on the list" (treating "7" as a
+// literal name, which !out always did before).
+test('handleOut: "!out 7,8" removes whoever the Attendance list currently prints as "7." and "8."', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setLimit(groupId, 18);
+  ['Harry', 'Dean', 'Ken', 'Lai', 'Mukesh', 'Jenny', 'Priya', 'Steven'].forEach((name) =>
+    store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false)
+  );
+
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: '7,8' });
+  await listCommands.handleOut(ctx);
+
+  const remaining = store.getCurrentEvent(groupId).entries.map((e) => e.name);
+  assert.deepEqual(remaining, ['Harry', 'Dean', 'Ken', 'Lai', 'Mukesh', 'Jenny']);
+});
+
+test('handleOut: a bare number that is out of range still gets the ordinary "not on the list" rejection, not a different error', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.addEntry(groupId, 'Harry', 'harry@s.whatsapp.net', false);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: '99' });
+  await listCommands.handleOut(ctx);
+
+  assert.match(replies[0], /99 - not on the list/);
+});
+
 test('handleOut: promotion off the waitlist sends a tagged mention message', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});

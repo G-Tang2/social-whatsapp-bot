@@ -29,6 +29,7 @@ const {
   formatPromotedMessage,
   formatTournamentPromotedMessage,
   resolveDuePaymentNumber,
+  resolveAttendanceOrWaitlistNumber,
 } = require('../lib/helpers');
 
 // Bare-self resolution against the payment-due list, shared by handleIn/
@@ -152,6 +153,27 @@ function resolveAdditiveGuestNames(groupId, senderId, senderName, guestCount) {
 function resolvePaidToken(due, token) {
   if (!/^\d+$/.test(token.trim())) return token;
   const match = resolveDuePaymentNumber(due, Number(token.trim()));
+  return match ? match.name : token;
+}
+
+// Same idea as resolvePaidToken above, but for !out - a purely-numeric
+// token (e.g. "!out 7,8") is resolved against the Attendance/Waitlist
+// section's OWN printed numbering (resolveAttendanceOrWaitlistNumber in
+// lib/helpers.js) instead of being looked up as a literal name. Same
+// "leave anything that doesn't resolve to exactly one entry alone"
+// fallback - out of range, or ambiguous between Attendance and Waitlist
+// both having an entry at that position, just flows into the ordinary
+// literal-name lookup and fails with the existing "not on the list"
+// rejection.
+//
+// Takes `event` as a pre-fetched snapshot for the same reason
+// resolvePaidToken takes `due` pre-fetched - callers resolve every token
+// in a batch against ONE snapshot, taken before any of them are actually
+// removed, so removing "7" can't shift "8" into a different person
+// before it's looked up.
+function resolveOutToken(event, token) {
+  if (!/^\d+$/.test(token.trim())) return token;
+  const match = resolveAttendanceOrWaitlistNumber(event, Number(token.trim()));
   return match ? match.name : token;
 }
 
@@ -610,6 +632,11 @@ async function handleOut(ctx) {
     names = [own[0].name];
   } else {
     names = parseNames(rest, senderName);
+    // One snapshot, taken before any name in this batch is actually
+    // removed - see resolveOutToken's own doc comment for why re-fetching
+    // per token would corrupt "!out 7,8" the moment 7 is removed.
+    const event = getCurrentEvent(groupId);
+    names = names.map((name) => resolveOutToken(event, name));
   }
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
