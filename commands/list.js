@@ -28,6 +28,7 @@ const {
   stripLeadingInKeywords,
   formatPromotedMessage,
   formatTournamentPromotedMessage,
+  resolveDuePaymentNumber,
 } = require('../lib/helpers');
 
 // Bare-self resolution against the payment-due list, shared by handleIn/
@@ -125,6 +126,33 @@ function resolveAdditiveGuestNames(groupId, senderId, senderName, guestCount) {
     names.push(`${baseName}+${existingMax + i}`);
   }
   return names;
+}
+
+// A purely-numeric token in a !paid name list (e.g. "!paid 7,8") is
+// resolved against the Payment section's OWN printed numbering (see
+// resolveDuePaymentNumber in lib/helpers.js) instead of being looked up
+// as a literal name - so referring to whoever the posted list currently
+// shows as "7." works the same as typing their name. A non-numeric
+// token, or a number resolveDuePaymentNumber can't resolve to exactly
+// one entry (out of range, or the same number appearing in more than one
+// payment-date group), is returned completely unchanged - it just flows
+// into the ordinary literal-name lookup below and fails with the same
+// "not on the payment list" rejection a nonsense name already gets,
+// rather than a separate, more confusing error for what looks to the
+// sender like the same kind of mistake either way.
+//
+// Takes `due` as a pre-fetched snapshot rather than fetching it itself -
+// callers resolve every token in a batch against the SAME snapshot,
+// taken before any of them are actually applied. Re-fetching fresh per
+// token would let marking "7" paid shift everyone after it down one
+// position, so "8" (originally the very next name) silently resolves to
+// whoever *became* 8 only after 7 was removed - a real, sender-invisible
+// mismatch for exactly the multi-name case ("!paid 7,8") this exists to
+// support.
+function resolvePaidToken(due, token) {
+  if (!/^\d+$/.test(token.trim())) return token;
+  const match = resolveDuePaymentNumber(due, Number(token.trim()));
+  return match ? match.name : token;
 }
 
 // Applies a leading "paid" keyword (see stripLeadingInKeywords) for
@@ -700,8 +728,13 @@ async function handlePaid(ctx) {
 
   const paid = [];
   const rejected = [];
+  // One snapshot, taken before any name in this batch is actually marked
+  // paid - see resolvePaidToken's own doc comment for why re-fetching per
+  // token would corrupt "!paid 7,8" the moment 7 is removed.
+  const dueSnapshot = getCurrentEvent(groupId).duePayments || [];
 
-  for (const name of names) {
+  for (const rawName of names) {
+    const name = resolvePaidToken(dueSnapshot, rawName);
     const result = markPaid(groupId, name);
     if (!result.ok) {
       rejected.push(

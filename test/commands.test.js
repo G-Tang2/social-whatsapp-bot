@@ -231,6 +231,39 @@ test('handlePaid: "!paid +2" marks the sender and both of their guest entries pa
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
 });
 
+// Real bug report: "!paid 7,8" on a posted payment list numbered 1-14
+// should mark whoever's printed as "7." and "8." paid - the same numbers
+// a reader actually sees - not fail with "7 is not on the payment list"
+// (treating "7" as a literal name, which !paid always did before).
+test('handlePaid: "!paid 7,8" marks whoever the payment list currently prints as "7." and "8." paid', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setLimit(groupId, 18);
+  ['Harry', 'Dean', 'Ken', 'Lai', 'Mukesh', 'Jenny', 'Priya', 'Steven'].forEach((name) =>
+    store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false)
+  );
+  store.newList(groupId, '2026-08-20', {}); // archives all 8 into duePayments, printed 1-8
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 8);
+
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: '7,8' });
+  await listCommands.handlePaid(ctx);
+
+  const remaining = store.getCurrentEvent(groupId).duePayments.map((e) => e.name);
+  assert.deepEqual(remaining.sort(), ['Dean', 'Harry', 'Jenny', 'Ken', 'Lai', 'Mukesh'].sort());
+});
+
+test('handlePaid: a bare number that is out of range still gets the ordinary "not on the payment list" rejection, not a different error', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.addEntry(groupId, 'Harry', 'harry@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {});
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: '99' });
+  await listCommands.handlePaid(ctx);
+
+  assert.match(replies[0], /99 is not on the payment list/);
+});
+
 test('handleOut: promotion off the waitlist sends a tagged mention message', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});

@@ -30,6 +30,7 @@ const {
   formatElapsed,
   formatPromotedMessage,
   formatList,
+  resolveDuePaymentNumber,
 } = require('../lib/helpers');
 const store = require('../store');
 const adminCheck = require('../lib/adminCheck');
@@ -453,6 +454,46 @@ test('formatList: dated payment groups are sorted MOST RECENT first, and a "No d
   // NEWER date (Jordan, 8/20) before the older one (Alex, 8/13) - never
   // oldest-first and never interleaved.
   assert.match(paymentSection, /^\*No date\*\n1\. Casey\n\n\*20th Aug Thu\*\n1\. Jordan\n\n\*13th Aug Thu\*\n1\. Alex/);
+});
+
+// --- resolveDuePaymentNumber: "!paid 7" resolves against the printed list -
+// real bug report: "!paid 7,8" on a payment list numbered 1-14 should mark
+// whoever is printed as "7." and "8." paid, the same numbers a reader
+// actually sees (see resolvePaidToken in commands/list.js).
+
+test('resolveDuePaymentNumber matches an entry by its printed position within a single payment group', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.setDate(groupId, '2026-08-13');
+  ['Harry', 'Dean', 'Ken'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
+  store.newList(groupId, '2026-08-20', {});
+
+  const due = store.getCurrentEvent(groupId).duePayments;
+  assert.equal(resolveDuePaymentNumber(due, 1).name, 'Harry');
+  assert.equal(resolveDuePaymentNumber(due, 3).name, 'Ken');
+});
+
+test('resolveDuePaymentNumber returns null for a number outside the printed range', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.setDate(groupId, '2026-08-13');
+  store.addEntry(groupId, 'Harry', 'h@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {});
+
+  const due = store.getCurrentEvent(groupId).duePayments;
+  assert.equal(resolveDuePaymentNumber(due, 99), null);
+  assert.equal(resolveDuePaymentNumber(due, 0), null);
+});
+
+test('resolveDuePaymentNumber returns null when the SAME number appears in more than one payment-date group - the printed list itself has two different lines both starting "N.", so guessing would be wrong', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.setDate(groupId, '2026-08-13');
+  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Alex -> owes since 8/13, printed as "1. Alex"
+
+  store.addEntry(groupId, 'Jordan', 'jordan@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-27', {}); // Jordan -> owes since 8/20, ALSO printed as "1. Jordan"
+
+  const due = store.getCurrentEvent(groupId).duePayments;
+  assert.equal(resolveDuePaymentNumber(due, 1), null);
 });
 
 test('formatElapsed renders compact day/hour/minute durations', () => {
