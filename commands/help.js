@@ -77,8 +77,6 @@ const TIPS_TEXT = [
   '*Payments*',
   `_• Lead with "paid" on ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out to confirm payment in one message, e.g. ${COMMAND_PREFIX}in paid Alex, Sam_`,
   '',
-  `_• Already on the list? ${COMMAND_PREFIX}paid works even before you're actually due for payment - pay early and you'll show up "(paid)" on the list, skipped automatically once the next list carries payments over_`,
-  '',
   '*Tournament*',
   `_• If tournament's on, lead with "tournament" on ${COMMAND_PREFIX}in to opt in while joining (or upgrade an existing entry) - combines with "paid" in either order. ${COMMAND_PREFIX}settournament shows who's in; ${COMMAND_PREFIX}tournament shows the rules_`,
   '',

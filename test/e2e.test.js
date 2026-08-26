@@ -1070,22 +1070,6 @@ test('e2e: an admin @-mentioning "sign me up for the tournament" dispatches to t
   assert.match(posted.content.text, /e2etournamentprobe2/i);
 });
 
-test('e2e: an admin @-mentioning "Chakriya paid" for someone confirmed on the tournament list, but not yet due for payment, dispatches to the real !paid handler and pays EARLY instead of refusing', async () => {
-  ai.setEnabled(GROUP_ID, true);
-  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
-  await deliver('!in tournament Chakriya', { from: 'admin@s.whatsapp.net', type: 'notify' });
-  setNextGeminiResponse({ command: 'paid', argText: 'Chakriya', confidence: 'high' });
-  fakeSockInstance.sentMessages.length = 0;
-
-  await deliver('Chakriya paid', { from: 'admin@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
-
-  const posted = fakeSockInstance.sentMessages.find((m) => /Chakriya \(paid\)/.test(m.content.text || ''));
-  assert.ok(posted, 'expected the reposted list to show Chakriya tagged "(paid)"');
-  const refused = fakeSockInstance.sentMessages.some((m) => /couldn't mark paid/i.test(m.content.text || ''));
-  assert.equal(refused, false, 'expected the early-pay fallback to succeed, not a rejection');
-  assert.equal(store.getCurrentEvent(GROUP_ID).entries.find((e) => e.name === 'Chakriya').paidEarly, true);
-});
-
 test('e2e: !tournamentwinners sets the "Congrats to ..." banner, which then shows above every posted list', async () => {
   await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
   await deliver('!tournamentwinners E2eWinnerA, E2eWinnerB', { from: 'admin@s.whatsapp.net', type: 'notify' });

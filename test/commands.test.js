@@ -335,19 +335,17 @@ test('handleOut: "tournament" combines with "paid", either order, same as !in - 
   assert.deepEqual(aOutcome.tournamentLeft, ['A']);
   assert.deepEqual(bOutcome.tournamentLeft, ['B']);
   // Nobody's actually in duePayments yet in this scenario (that only gets
-  // populated by !newlist archiving) - but they're both still on the
-  // attendance list at this point (removed from the tournament, not the
-  // list itself - see the tournamentLeft assertions above), so "paid"
-  // falls back to tagging their confirmed entry as paid EARLY instead of
-  // being rejected (see store.js's markPaidEarly/commands/list.js's
-  // markPaidAnywhere) - proof that "paid" ran at all, alongside
-  // "tournament", not silently dropped.
-  assert.deepEqual(aOutcome.paid, ['A']);
-  assert.deepEqual(bOutcome.paid, ['B']);
-  assert.deepEqual(aOutcome.paidRejected, []);
-  assert.deepEqual(bOutcome.paidRejected, []);
-  assert.equal(entries.find((e) => e.name === 'A').paidEarly, true);
-  assert.equal(entries.find((e) => e.name === 'B').paidEarly, true);
+  // populated by !newlist archiving) - so both are reported as rejected,
+  // same as standalone !paid would for a not-yet-due name. The point being
+  // tested is that "paid" ran at all, alongside "tournament", not silently
+  // dropped - not the payment-tracking mechanics themselves (covered
+  // elsewhere).
+  assert.deepEqual(aOutcome.paidRejected, [
+    'A is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid',
+  ]);
+  assert.deepEqual(bOutcome.paidRejected, [
+    'B is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid',
+  ]);
 });
 
 test('handleOut: "tournament" on a name not on the list at all is rejected, not silently ignored', async () => {
@@ -2024,77 +2022,6 @@ test('handlePaid: marks the sender\'s own due entry paid when no name given', as
   const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', argText: '' });
   await listCommands.handlePaid(ctx);
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
-});
-
-// --- Paying EARLY: a name not (yet) on the payment-due list at all, but
-// on the confirmed attendance/tournament list, gets tagged paidEarly
-// instead of rejected - see store.js's markPaidEarly and
-// commands/list.js's markPaidAnywhere/resolveOwnAttendanceEntry. ---
-
-test('handlePaid: an explicit name not on the payment-due list, but on the attendance list, pays EARLY instead of being rejected', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({});
-  store.addEntry(groupId, 'Ryan', 'ryan@s.whatsapp.net', false); // on the list, nobody's owed anything yet (no !newlist has run)
-
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'someone@s.whatsapp.net', argText: 'Ryan' });
-  const outcome = await listCommands.handlePaid(ctx);
-
-  assert.deepEqual(outcome.paid, ['Ryan']);
-  assert.deepEqual(outcome.rejected, []);
-  assert.equal(store.getCurrentEvent(groupId).entries[0].paidEarly, true);
-  assert.ok(!replies.some((r) => /couldn't mark paid/i.test(r)));
-});
-
-test('handlePaid: a bare "!paid" (no name) for a sender not on the payment-due list, but on the attendance list, pays EARLY by identity', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({});
-  store.addEntry(groupId, 'Ryan', 'ryan@s.whatsapp.net', false, true); // self: true
-
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'ryan@s.whatsapp.net', argText: '' });
-  await listCommands.handlePaid(ctx);
-
-  assert.equal(store.getCurrentEvent(groupId).entries[0].paidEarly, true);
-  assert.ok(!replies.some((r) => /not on the payment list/i.test(r)));
-});
-
-test('handlePaid: someone due for a REAL past cycle still gets that actual debt cleared, not shunted into paying early against their new entry', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({});
-  store.addEntry(groupId, 'Ryan', 'ryan@s.whatsapp.net', false, true);
-  store.newList(groupId, '2026-08-20', {}); // Ryan now genuinely owes for the outgoing cycle
-  store.addEntry(groupId, 'Ryan', 'ryan@s.whatsapp.net', false, true); // and is also back on the new list already
-
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'ryan@s.whatsapp.net', argText: '' });
-  await listCommands.handlePaid(ctx);
-
-  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0); // the real debt was cleared
-  assert.equal(store.getCurrentEvent(groupId).entries[0].paidEarly, false); // not touched - never even consulted
-});
-
-test('handlePaid: a name on neither the payment-due list nor the attendance list is still rejected, same message as before', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({});
-
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'someone@s.whatsapp.net', argText: 'Ghost' });
-  const outcome = await listCommands.handlePaid(ctx);
-
-  assert.deepEqual(outcome.paid, []);
-  assert.deepEqual(outcome.rejected, [
-    'Ghost is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid',
-  ]);
-  assert.match(replies[0], /couldn't mark paid/i);
-});
-
-test('handlePaid: paying early is reflected in the posted list as a "(paid)" tag next to the name', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({});
-  store.addEntry(groupId, 'Ryan', 'ryan@s.whatsapp.net', false);
-
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'someone@s.whatsapp.net', argText: 'Ryan' });
-  await listCommands.handlePaid(ctx);
-
-  const posted = formatList(groupId);
-  assert.match(posted, /Ryan \(paid\)/);
 });
 
 test('handleIn: leading "paid" adds the explicit name(s) AND marks them paid, in one message', async () => {

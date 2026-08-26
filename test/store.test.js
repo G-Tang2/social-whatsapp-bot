@@ -254,65 +254,6 @@ test('markPaid matches even when the due-payment entry carries an invisible zero
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
 });
 
-// markPaidEarly - paying ahead of !newlist even archiving this cycle into
-// duePayments yet (see its own doc comment in store.js).
-
-test('markPaidEarly tags a confirmed attendance entry as paid, and is idempotent', () => {
-  const groupId = freshGroupId();
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  assert.equal(store.getCurrentEvent(groupId).entries[0].paidEarly, false);
-
-  const result = store.markPaidEarly(groupId, 'Alex');
-  assert.equal(result.ok, true);
-  assert.equal(store.getCurrentEvent(groupId).entries[0].paidEarly, true);
-
-  const again = store.markPaidEarly(groupId, 'Alex'); // idempotent, not an error
-  assert.equal(again.ok, true);
-  assert.equal(store.getCurrentEvent(groupId).entries[0].paidEarly, true);
-});
-
-test('markPaidEarly fails for a name not on the attendance list at all', () => {
-  const groupId = freshGroupId();
-  const result = store.markPaidEarly(groupId, 'Ghost');
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, 'not_found');
-});
-
-test('markPaidEarly never matches the waitlist - only confirmed attendance', () => {
-  const groupId = freshGroupId();
-  store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Sam', 's@s.whatsapp.net', false); // over the limit - waitlisted
-  assert.deepEqual(store.getCurrentEvent(groupId).waitlist.map((e) => e.name), ['Sam']);
-
-  const result = store.markPaidEarly(groupId, 'Sam');
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, 'not_found');
-});
-
-test('newList skips a paidEarly entry entirely when carrying attendance into duePayments - they never show up owing anything', () => {
-  const groupId = freshGroupId();
-  store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Chakriya', 'c@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.markPaidEarly(groupId, 'Chakriya');
-  store.newList(groupId, '2026-08-20', {});
-
-  const due = store.getCurrentEvent(groupId).duePayments;
-  assert.deepEqual(due.map((e) => e.name), ['Alex']);
-});
-
-test('newList never carries paidEarly forward onto the fresh cycle\'s own (unrelated, brand new) entries', () => {
-  const groupId = freshGroupId();
-  store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Chakriya', 'c@s.whatsapp.net', false);
-  store.markPaidEarly(groupId, 'Chakriya');
-  store.newList(groupId, '2026-08-20', {});
-  store.addEntry(groupId, 'Chakriya', 'c@s.whatsapp.net', false); // signs up again, fresh cycle
-
-  assert.equal(store.getCurrentEvent(groupId).entries[0].paidEarly, false);
-});
-
 test('clearDuePayments wipes duePayments but keeps entries/waitlist and header fields', () => {
   const groupId = freshGroupId();
   store.setLocation(groupId, 'EBC');
