@@ -264,7 +264,6 @@ const config = require('./lib/config');
 const { getMessageText, formatList, getMentionedJids, getQuotedParticipant, getQuotedMessageText, stripMentionTokens, normalizeJid } = require('./lib/helpers');
 const { parseListSections } = require('./lib/listParser');
 const { getRegularPlayers, getUndoableState, saveUndoSnapshot, getUndoSnapshot, restoreUndoableState } = require('./store');
-const { getApprovedGroups, isGroupApproved, recordPendingGroup } = require('./lib/allowedGroups');
 const { isGroupAdmin } = require('./lib/adminCheck');
 const catchUpQueue = require('./lib/catchUpQueue');
 const { updateLastSeenStatus } = require('./lib/lastSeenStatus');
@@ -279,6 +278,7 @@ const { commands, rawCommands, CATCH_UP_COMMANDS } = require('./commands');
 
 const {
   AUTH_DIR,
+  ALLOWED_GROUPS,
   COMMAND_PREFIX,
   DEBUG,
   LAST_SEEN_STATUS_ENABLED,
@@ -439,7 +439,7 @@ async function handleMessageEdit(sock, key, update) {
   const groupId = key.remoteJid;
   if (!groupId || !groupId.endsWith('@g.us')) return; // only group chats are moderated at all
   if (key.fromMe) return; // same "ignore our own messages" rule as a fresh message
-  if (!isGroupApproved(groupId)) return;
+  if (ALLOWED_GROUPS.length && !ALLOWED_GROUPS.includes(groupId)) return;
 
   const cached = lastLiveMessageByGroup.get(groupId);
   if (!cached || cached.msg.key.id !== key.id) {
@@ -535,14 +535,13 @@ async function start() {
         // a reconnect, which is exactly when it's most useful to be current.
         updateLastSeenStatus(sock);
       }
-      const approvedGroups = getApprovedGroups();
-      if (!approvedGroups.length) {
+      if (!ALLOWED_GROUPS.length) {
         console.log(
-          '[bot] No groups approved yet - the bot will log group JIDs it sees but will not moderate any group yet.'
+          '[bot] ALLOWED_GROUPS is not set - the bot will log group JIDs it sees but will not moderate any group yet.'
         );
-        console.log('[bot] Send any command in the target group, then run "node manage-groups.js list" and "node manage-groups.js approve <jid>" - no restart needed.');
+        console.log('[bot] Send any message in the target group, then check the logs for its JID.');
       } else {
-        console.log('[bot] Moderating groups:', approvedGroups.join(', '));
+        console.log('[bot] Moderating groups:', ALLOWED_GROUPS.join(', '));
       }
     }
 
@@ -1061,18 +1060,15 @@ async function handleMessage(sock, msg, upsertType) {
   const senderName = msg.pushName || senderId.split('@')[0];
   const text = getMessageText(msg).trim();
 
-  if (!isGroupApproved(groupId)) {
-    // Not approved to moderate yet - stay fully passive (no moderation),
-    // except recording and logging a command's group JID so an operator
-    // can discover and approve it (see lib/allowedGroups.js's
-    // recordPendingGroup and manage-groups.js at the repo root) - no .env
-    // edit or restart needed either way. Covers BOTH "nothing approved at
-    // all yet" and "some other group is approved, but not this one" -
-    // the two used to be handled inconsistently (only the former ever
-    // logged anything at all; a group simply missing from an otherwise
-    // non-empty list vanished with zero trace). Gated on an actual
-    // command (not every message) to keep the pending list and console
-    // usable, same restraint as before.
+  if (ALLOWED_GROUPS.length && !ALLOWED_GROUPS.includes(groupId)) {
+    return; // not a group we're configured to moderate
+  }
+
+  if (!ALLOWED_GROUPS.length) {
+    // Not configured yet - stay fully passive (no moderation), except
+    // logging a command's group JID so an admin can copy it into .env.
+    // Gated on an actual command (not every message) to keep the console
+    // usable while the bot is still unconfigured.
     if (text.startsWith(COMMAND_PREFIX)) {
       let subject = groupId;
       try {
@@ -1080,12 +1076,9 @@ async function handleMessage(sock, msg, upsertType) {
       } catch (_) {
         /* ignore */
       }
-      recordPendingGroup(groupId, subject);
-      console.log(
-        `[bot] Saw a command in a not-yet-approved group "${subject}" -> JID: ${groupId}. Run "node manage-groups.js approve ${groupId}" to start moderating it - no restart needed.`
-      );
+      console.log(`[bot] Saw a command in unconfigured group "${subject}" -> JID: ${groupId}`);
     }
-    return; // safe default: do nothing until this group is approved
+    return; // safe default: do nothing until ALLOWED_GROUPS is configured
   }
 
   // Remembers this as the group's most recently seen LIVE message, so a
@@ -1098,8 +1091,8 @@ async function handleMessage(sock, msg, upsertType) {
   // effectiveUpsertType) - a catch-up ('append') redelivery could be
   // hours old by the time it's processed, which isn't "the last thing
   // that just happened" in any sense an edit-and-reprocess should trust.
-  // Placed after the group-approval check above so a not-yet-approved
-  // group's messages are never cached for no reason.
+  // Placed after the ALLOWED_GROUPS/unconfigured checks above so an
+  // unmonitored group's messages are never cached for no reason.
   if (upsertType === 'notify') {
     lastLiveMessageByGroup.set(groupId, { msg, senderId, senderName });
   }

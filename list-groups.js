@@ -1,16 +1,8 @@
 // list-groups.js
 // One-off utility: connects using the bot's existing linked WhatsApp session
-// and prints every group that account is a member of, with its JID - so you
-// can find a group's JID without having to send a message in it first.
-//
-// Usually you don't need this: once the bot is actually RUNNING, just send
-// any command in the target group and its JID shows up on its own - either
-// in the console log, or via `node manage-groups.js list` (which also lets
-// you approve it right then, with no restart - see that file's own doc
-// comment and the README's "Adding the bot to a new group" section). This
-// script is for the narrower case where you want a group's JID WITHOUT
-// sending anything there first (e.g. picking one out of many the account is
-// already in).
+// and prints every group that account is a member of, with its JID -
+// so you can find the right value for ALLOWED_GROUPS without having to send
+// a message in the target group first.
 //
 // Usage:
 //   node list-groups.js
@@ -70,7 +62,7 @@ async function main() {
               console.log(`${g.subject}\n  JID: ${g.id}\n`);
             });
           console.log(`(${entries.length} group${entries.length === 1 ? '' : 's'} total)`);
-          console.log('\nApprove the JID(s) you want with: node manage-groups.js approve <jid>');
+          console.log('\nCopy the JID(s) you want into ALLOWED_GROUPS in your .env file.');
         }
       } catch (err) {
         console.error('[list-groups] Failed to fetch groups:', err.message);

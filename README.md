@@ -1375,11 +1375,12 @@ A few things worth knowing about how this works:
   "just seen" baseline the moment the feature is turned on for their group.
   Turning it off and back on later re-baselines everyone again, so time
   spent with it off never counts against anyone.
-- **Requires the group to be approved.** The bot can only track activity
-  in groups it's actually approved to moderate - see "Adding the bot to a
-  new group" below. `!inactivity on` still works if you run it in a
-  not-yet-approved group, but the periodic check never reaches a group
-  that isn't approved, so nothing will actually happen there.
+- **Requires `ALLOWED_GROUPS` to include the group.** The bot can only
+  track activity in groups it's actually configured to watch - see
+  "Configure the group and list name" below. `!inactivity on` still works
+  if you run it in an unconfigured group, but the periodic check never
+  reaches a group that isn't in `ALLOWED_GROUPS`, so nothing will actually
+  happen there.
 - **`!stale`** shows everyone currently warned, sorted most-overdue first,
   tagged so it's obvious at a glance who needs a decision - and marks
   anyone past `INACTIVITY_REMOVE_AFTER_DAYS` since their warning as
@@ -1393,9 +1394,8 @@ A few things worth knowing about how this works:
   the logs (`pm2 logs`, or your terminal if running it directly) instead of
   guessing - check for these lines around when a warning was expected. A
   sweep that never logs at all for a group usually means that group isn't
-  approved yet (see "Adding the bot to a new group" below), or the bot's
-  socket was disconnected right at that tick (it just tries again on the
-  next one).
+  in `ALLOWED_GROUPS`, or the bot's socket was disconnected right at that
+  tick (it just tries again on the next one).
 - **Resilient to a flaky/incomplete `groupMetadata()` response.** Each
   sweep re-fetches the group's member list from WhatsApp to refresh
   tracking. A fetch that comes back completely empty (0 participants,
@@ -1459,37 +1459,18 @@ A QR code will print in your terminal. On the WhatsApp account you want the
 bot to use: **Settings > Linked Devices > Link a Device**, and scan it.
 
 Once connected you'll see `[bot] Connected to WhatsApp.` in the log. Now
-find the JID (WhatsApp's internal ID) of the group you want to moderate,
-and approve it - two ways to do that, and **neither one needs the bot
-stopped or restarted** (see "Adding the bot to a new group" below for the
-full mechanism):
+find the JID (WhatsApp's internal ID) of the group you want to moderate -
+two ways to do that:
 
-**Option A - send a command in the group (recommended).** With the bot
-running (`npm start`), send any `!` command (e.g. `!list`) in the target
-group from your phone. The terminal logs that group's JID:
-
-```
-[bot] Saw a command in a not-yet-approved group "Saturday Football" -> JID: 120363012345678901@g.us. Run "node manage-groups.js approve 120363012345678901@g.us" to start moderating it - no restart needed.
-```
-
-Run that command it gives you, in a **second** terminal window (leave the
-bot running in the first one):
-
-```bash
-node manage-groups.js approve 120363012345678901@g.us
-```
-
-Send `!list` again - the bot responds immediately.
-
-**Option B - list every group at once, if you'd rather not send a message
-first.** This one DOES need the bot stopped (Ctrl+C) - it briefly reuses
-the same linked session:
+**Option A - list every group at once (recommended).** Stop the bot
+(Ctrl+C), then run:
 
 ```bash
 npm run list-groups
 ```
 
-This prints every group the account is in, with its name and JID, e.g.:
+This reuses the session you just linked and prints every group the account
+is in, with its name and JID, e.g.:
 
 ```
 Saturday Football
@@ -1498,26 +1479,35 @@ Saturday Football
 (1 group total)
 ```
 
-Copy the JID you want, start the bot again (`npm start`), then approve it
-the same way as Option A:
+Copy the JID for the group(s) you want. (Don't run this at the same time as
+`npm start` - only one process can use the linked session at once.)
 
-```bash
-node manage-groups.js approve 120363012345678901@g.us
+**Option B - send a command in the group.** With the bot running
+(`npm start`) and `ALLOWED_GROUPS` still unset, send any `!` command (e.g.
+`!list`) in the target group from your phone. The terminal logs that
+group's JID:
+
+```
+[bot] Saw a command in unconfigured group "Saturday Football" -> JID: 120363012345678901@g.us
 ```
 
-A folder called `auth_info/` was created along the way - this holds your
-linked-device session so you don't have to scan the QR code again. **Keep
-it private**; anyone with those files can act as that WhatsApp account.
+Stop the bot (Ctrl+C) once you have the JID. A folder called `auth_info/` was
+created - this holds your linked-device session so you don't have to scan
+the QR code again. **Keep it private**; anyone with those files can act as
+that WhatsApp account.
 
-## 2. Configure the list name
+## 2. Configure the group and list name
 
 Copy `.env.example` to `.env` (same folder as `index.js`) and edit it in
 Notepad or any text editor:
 
 ```
+ALLOWED_GROUPS=120363012345678901@g.us
 LIST_TITLE=Saturday Football Signups
 ```
 
+- `ALLOWED_GROUPS` - the group JID(s) from step 1, comma-separated if more
+  than one
 - `LIST_TITLE` - optional, defaults to "Signup list" - currently unused (it
   used to name the bot in the `!help` message, which now has a static
   "Commands" header instead); harmless to set, but has no effect. It never
@@ -1525,53 +1515,8 @@ LIST_TITLE=Saturday Football Signups
   date/location/courts/time - is set per-group with `!newlist` or
   `!location`/`!courts`/`!time`)
 
-(`.env`'s `ALLOWED_GROUPS` from earlier versions of this README still
-works, but only as a one-time seed the very first time the bot ever runs -
-see "Adding the bot to a new group" below. `manage-groups.js` is the
-actual, ongoing way to approve/remove groups now, and needs no `.env` edit
-or restart.)
-
-`index.js` loads `.env` automatically. Your group should already be
-responding to `!in`, `!list`, etc. from step 1 above - no restart needed to
-pick up `LIST_TITLE` either, though it currently has no visible effect
-either way (see above).
-
-## Adding the bot to a new group
-
-Whenever you want the bot to moderate ANOTHER group later - not just the
-first-time setup in step 1 above - the process is the same, and never
-needs the bot stopped or restarted:
-
-1. Add the bot's WhatsApp account to the new group, same as adding any
-   other member.
-2. Send any `!` command there (e.g. `!list`). The bot doesn't act on it
-   yet, but logs the JID and records it as "pending":
-   ```
-   [bot] Saw a command in a not-yet-approved group "New Group Name" -> JID: 120363099999999999@g.us. Run "node manage-groups.js approve 120363099999999999@g.us" to start moderating it - no restart needed.
-   ```
-3. In a separate terminal (the bot keeps running the whole time):
-   ```bash
-   node manage-groups.js approve 120363099999999999@g.us
-   ```
-4. Send another command in the group - the bot responds immediately.
-
-**Lost track of a group's JID, or want to see everything at a glance?**
-Run `node manage-groups.js list` any time - it shows every currently
-approved group, plus every "pending" one (seen a command, not approved
-yet) with its name and when it was first/last seen, no need to dig through
-console logs. `node manage-groups.js remove <jid>` does the reverse -
-stops the bot moderating a group immediately, without touching that
-group's actual list data (re-approving later picks up right where it left
-off).
-
-Under the hood, this all reads/writes `data/allowedGroups.json` directly
-(see `lib/allowedGroups.js`) - the SAME file the running bot itself
-re-reads fresh on every single message, which is what makes "no restart"
-actually true rather than just "eventually, next time you restart it
-anyway." `.env`'s `ALLOWED_GROUPS` (from earlier versions of this project)
-still works exactly as before for a first-ever run - it seeds that file
-once - but has no effect after that; `manage-groups.js` is the real,
-ongoing way to manage groups from here on.
+`index.js` loads `.env` automatically. Run `npm start` again to confirm the
+bot now responds to `!in`, `!list`, etc. in your group.
 
 ## 3. Run it 24/7 on your own computer
 
@@ -1628,9 +1573,9 @@ of OS:
    npm install
    ```
 
-4. **First run - link WhatsApp and approve your group.** If you haven't
-   done step 1/2 from above yet, do that now (`npm start`, scan the QR
-   code, `node manage-groups.js approve <jid>`).
+4. **First run - link WhatsApp and set your group.** If you haven't done
+   step 1/2 from above yet, do that now (`npm start`, scan the QR code, copy
+   the group JID into `.env`).
 
 5. **Copy the pm2 config, then install pm2 and start the bot under it:**
    ```powershell
@@ -1684,9 +1629,9 @@ version of the steps.
    npm install
    ```
 
-4. **First run - link WhatsApp and approve your group.** If you haven't
-   done step 1/2 from above yet, do that now (`npm start`, scan the QR
-   code, `node manage-groups.js approve <jid>`). The first time you run it, macOS may prompt
+4. **First run - link WhatsApp and set your group.** If you haven't done
+   step 1/2 from above yet, do that now (`npm start`, scan the QR code, copy
+   the group JID into `.env`). The first time you run it, macOS may prompt
    you to allow Terminal/Node network access - allow it.
 
 5. **Copy the pm2 config, then install pm2 and start the bot under it:**
@@ -1749,12 +1694,12 @@ Check these in order:
    solo, you need a *second* WhatsApp account (e.g. your personal one) that's
    also a member of the group, and send the command from that one.
 
-2. **Is this group actually approved?** A command from a not-yet-approved
-   group always logs a JID (regardless of how many OTHER groups are
-   already approved - see "Adding the bot to a new group" above) and gets
-   recorded as "pending" - run `node manage-groups.js list` to see it, and
-   `node manage-groups.js approve <jid>` to fix it. No restart needed
-   either way.
+2. **Is `ALLOWED_GROUPS` already set to something in your `.env`?** Once it
+   has any value, the bot stops logging "unconfigured group" messages for
+   groups that don't match - it just silently ignores them. If you're still
+   trying to find a JID, clear `ALLOWED_GROUPS=` back to empty, restart the
+   bot (or run `npm run list-groups` instead, which doesn't care about
+   `ALLOWED_GROUPS` at all).
 
 3. **Is the bot actually connected?** Check the terminal/`pm2 logs` for
    `[bot] Connected to WhatsApp.` If you don't see it, the bot isn't
@@ -1862,15 +1807,6 @@ project.
    ```bash
    fly secrets set ALLOWED_GROUPS="120363012345678901@g.us" LIST_TITLE="Saturday Football Signups"
    ```
-   `ALLOWED_GROUPS` here only matters as a one-time seed the very first time
-   the bot starts (see "Adding the bot to a new group" above) - since the
-   persistent volume keeps `data/allowedGroups.json` around across
-   redeploys, this secret has no effect on any run after the first. To
-   approve another group later without a redeploy, either `fly ssh console`
-   in and run `node manage-groups.js approve <jid>` there directly, or set
-   an updated `ALLOWED_GROUPS` secret and delete `data/allowedGroups.json`
-   from the volume first (via the same `fly ssh console`) to force a
-   fresh seed - the CLI approach is simpler.
 
 5. **Deploy:**
    ```bash
@@ -1905,8 +1841,7 @@ fly ssh console            # shell into the running machine if you need to debug
 The list is stored as a JSON file - `data/lists.json` when running locally
 (including under pm2), or on the Fly volume at `/data/list-data/lists.json`
 if you deploy there - keyed by group JID, so one bot can moderate multiple
-groups' lists independently if you approve more JIDs (see "Adding the bot
-to a new group" above). Within
+groups' lists independently if you add more JIDs to `ALLOWED_GROUPS`. Within
 each group's entry, `current` is the active list `!in`/`!out`/`!list`
 operate on (with its `location`/`courts`/`courtCount`/`time` header fields
 set by `!location`/`!courts`/`!time`, its own `limit`/`waitlist` set by
@@ -1941,14 +1876,6 @@ reminders feature (see "Reminding inactive members" above) - a per-group
 on/off flag plus, once turned on, each tracked participant's last-seen
 timestamp and warning state. A group that's never run `!inactivity on`
 has no entry here at all.
-
-There's a fifth JSON file, `data/allowedGroups.json`, tracking which
-groups the bot actually moderates (`approved`) and which it's merely seen
-a command in but isn't approved for yet (`pending`) - see "Adding the bot
-to a new group" above and `manage-groups.js`. Worth including in whatever
-you back up: losing it doesn't lose any list data, but it does mean
-re-approving every group by hand (`.env`'s `ALLOWED_GROUPS` only seeds it
-once, the very first time it's ever created).
 
 If you're upgrading from an older copy of this bot (before `!newlist`,
 `!paid`, `!paymentlabel`, `!limit`/`!allow`, or the `!location`/`!courts`/
@@ -1989,11 +1916,9 @@ one giant switch statement. The actual work is split across two folders:
   status heartbeat" above), `vacancyReminder.js` (the low-signup
   52-hour/26-hour warnings - see "Vacancy warnings" above),
   `autoNewlistScheduler.js` (auto-starting next week's list - see
-  "Auto-starting next week's list" above), `inactivityCheck.js` (the
+  "Auto-starting next week's list" above), and `inactivityCheck.js` (the
   periodic background sweep for the inactivity-reminders feature - see
-  "Reminding inactive members" above), and `allowedGroups.js` (the
-  runtime-mutable, always-fresh-read group allowlist `manage-groups.js`
-  at the repo root manages - see "Adding the bot to a new group" above).
+  "Reminding inactive members" above).
 - `commands/` - one file per group of related commands (`list.js` for
   `!in`/`!out`/`!list`/`!paid`, `admin.js` for the list-management
   commands, `inactivity.js`, `spamfilter.js`, `help.js`), plus
