@@ -78,15 +78,23 @@ function findAction(result, command) {
 }
 
 // --- Position-based resolution must resolve a referenced position to the
-// right name. ---
+// right person - either as bare numbers (the NUMBERED LIST REFERENCES
+// convention, deferred to the deterministic resolver) or as their real
+// name, never anything invented. ---
 
-evalTest('position-based removal ("remove 1 and 2") resolves to the right names', async () => {
+evalTest('position-based removal ("remove 1 and 2") resolves to the right people, as numbers or names', async () => {
   const listText = '*Attendance* (2/10)\n\n1. Sam\n2. Andy';
   const result = await interpretMessage('remove 1 and 2', { listText });
   const out = findAction(result, 'out');
   assert.ok(out, `expected an "out" action, got: ${JSON.stringify(result && result.actions)}`);
-  assert.match(out.argText, /\bSam\b/i);
-  assert.match(out.argText, /\bAndy\b/i);
+  const tokens = out.argText.split(',').map((t) => t.trim()).filter(Boolean);
+  const realNames = ['sam', 'andy'];
+  for (const token of tokens) {
+    const isNumber = /^\d+$/.test(token);
+    const isRealName = realNames.includes(token.toLowerCase());
+    assert.ok(isNumber || isRealName, `argText token "${token}" is neither a bare number nor a real name from the list`);
+  }
+  assert.equal(tokens.length, 2, `expected exactly 2 tokens (both people), got: "${out.argText}"`);
 });
 
 // Updated for the added NUMBERED LIST REFERENCES rule (SHARED_ARG_RULES):

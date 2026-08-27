@@ -129,6 +129,32 @@ function resolveAdditiveGuestNames(groupId, senderId, senderName, guestCount) {
   return names;
 }
 
+// Widest a single "N-M" range token is ever expanded to (see
+// expandRangeToken below) - well beyond any legitimate bulk removal, but
+// bounded regardless so a wildly large range ("remove 1-99999") can't
+// balloon into an enormous per-name loop. A range past this is treated as
+// a literal (unmatched) token instead, same as any other malformed input -
+// safe, just not smoothed over.
+const MAX_RANGE_EXPANSION = 50;
+
+// Expands a "N-M" range token (e.g. "1-5") into its individual numbers as
+// separate string tokens ("1","2","3","4","5"). The model is told to do
+// this expansion itself (see NUMBERED LIST REFERENCES in
+// lib/geminiCommand.js), but doesn't always - the deterministic resolver
+// below shouldn't depend on that compliance to stay correct, so it
+// re-expands here too if a raw range token slips through unexpanded.
+// Returns [token] unchanged for anything that isn't exactly this shape.
+function expandRangeToken(token) {
+  const match = token.trim().match(/^(\d+)\s*-\s*(\d+)$/);
+  if (!match) return [token];
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  if (start > end || end - start + 1 > MAX_RANGE_EXPANSION) return [token];
+  const expanded = [];
+  for (let n = start; n <= end; n += 1) expanded.push(String(n));
+  return expanded;
+}
+
 // A purely-numeric token in a !paid name list (e.g. "!paid 7,8") is
 // resolved against the Payment section's OWN printed numbering (see
 // resolveDuePaymentNumber in lib/helpers.js) instead of being looked up
@@ -150,13 +176,18 @@ function resolveAdditiveGuestNames(groupId, senderId, senderName, guestCount) {
 // whoever *became* 8 only after 7 was removed - a real, sender-invisible
 // mismatch for exactly the multi-name case ("!paid 7,8") this exists to
 // support.
-function resolvePaidToken(due, token) {
-  if (!/^\d+$/.test(token.trim())) return token;
-  const match = resolveDuePaymentNumber(due, Number(token.trim()));
-  return match ? match.name : token;
+//
+// Returns an ARRAY - almost always one item, but a raw "N-M" range token
+// (see expandRangeToken above) expands into several.
+function resolvePaidTokens(due, token) {
+  return expandRangeToken(token).map((piece) => {
+    if (!/^\d+$/.test(piece.trim())) return piece;
+    const match = resolveDuePaymentNumber(due, Number(piece.trim()));
+    return match ? match.name : piece;
+  });
 }
 
-// Same idea as resolvePaidToken above, but for !out - a purely-numeric
+// Same idea as resolvePaidTokens above, but for !out - a purely-numeric
 // token (e.g. "!out 7,8") is resolved against the Attendance/Waitlist
 // section's OWN printed numbering (resolveAttendanceOrWaitlistNumber in
 // lib/helpers.js) instead of being looked up as a literal name. Same
@@ -167,14 +198,18 @@ function resolvePaidToken(due, token) {
 // rejection.
 //
 // Takes `event` as a pre-fetched snapshot for the same reason
-// resolvePaidToken takes `due` pre-fetched - callers resolve every token
+// resolvePaidTokens takes `due` pre-fetched - callers resolve every token
 // in a batch against ONE snapshot, taken before any of them are actually
 // removed, so removing "7" can't shift "8" into a different person
 // before it's looked up.
-function resolveOutToken(event, token) {
-  if (!/^\d+$/.test(token.trim())) return token;
-  const match = resolveAttendanceOrWaitlistNumber(event, Number(token.trim()));
-  return match ? match.name : token;
+//
+// Returns an ARRAY - see resolvePaidTokens above for why.
+function resolveOutTokens(event, token) {
+  return expandRangeToken(token).map((piece) => {
+    if (!/^\d+$/.test(piece.trim())) return piece;
+    const match = resolveAttendanceOrWaitlistNumber(event, Number(piece.trim()));
+    return match ? match.name : piece;
+  });
 }
 
 // Applies a leading "paid" keyword (see stripLeadingInKeywords) for
@@ -633,10 +668,13 @@ async function handleOut(ctx) {
   } else {
     names = parseNames(rest, senderName);
     // One snapshot, taken before any name in this batch is actually
-    // removed - see resolveOutToken's own doc comment for why re-fetching
-    // per token would corrupt "!out 7,8" the moment 7 is removed.
+    // removed - see resolveOutTokens' own doc comment for why re-fetching
+    // per token would corrupt "!out 7,8" the moment 7 is removed. flatMap,
+    // not map - a raw "N-M" range token (see expandRangeToken) expands
+    // into several names, and the MAX_NAMES_PER_COMMAND check right below
+    // needs to see the real, expanded count.
     const event = getCurrentEvent(groupId);
-    names = names.map((name) => resolveOutToken(event, name));
+    names = names.flatMap((name) => resolveOutTokens(event, name));
   }
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
@@ -716,6 +754,10 @@ async function handlePaid(ctx) {
   // can clear it. Admin status is only checked below for the bulk-name
   // cap, not for authorization.
   let names;
+  // One snapshot, taken before any name in this batch is actually marked
+  // paid - see resolvePaidTokens' own doc comment for why re-fetching per
+  // token would corrupt "!paid 7,8" the moment 7 is removed.
+  const dueSnapshot = getCurrentEvent(groupId).duePayments || [];
 
   if (!argText) {
     // No name given - mark "myself" paid. Delegates to resolveOwnDue()
@@ -743,6 +785,10 @@ async function handlePaid(ctx) {
     names = resolved.names;
   } else {
     names = parseNames(argText, senderName);
+    // flatMap, not map - a raw "N-M" range token (see expandRangeToken)
+    // expands into several names, and the MAX_NAMES_PER_COMMAND check
+    // right below needs to see the real, expanded count.
+    names = names.flatMap((name) => resolvePaidTokens(dueSnapshot, name));
   }
 
   const senderIsAdmin = await isGroupAdmin(sock, groupId, senderId);
@@ -755,13 +801,8 @@ async function handlePaid(ctx) {
 
   const paid = [];
   const rejected = [];
-  // One snapshot, taken before any name in this batch is actually marked
-  // paid - see resolvePaidToken's own doc comment for why re-fetching per
-  // token would corrupt "!paid 7,8" the moment 7 is removed.
-  const dueSnapshot = getCurrentEvent(groupId).duePayments || [];
 
-  for (const rawName of names) {
-    const name = resolvePaidToken(dueSnapshot, rawName);
+  for (const name of names) {
     const result = markPaid(groupId, name);
     if (!result.ok) {
       rejected.push(

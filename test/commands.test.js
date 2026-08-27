@@ -252,6 +252,53 @@ test('handlePaid: "!paid 7,8" marks whoever the payment list currently prints as
   assert.deepEqual(remaining.sort(), ['Dean', 'Harry', 'Jenny', 'Ken', 'Lai', 'Mukesh'].sort());
 });
 
+// The model is told to expand a spoken range ("1 to 3") into individual
+// comma-separated numbers itself (see NUMBERED LIST REFERENCES in
+// lib/geminiCommand.js), but doesn't always - !paid falls back to
+// expanding a raw "N-M" token itself (expandRangeToken in commands/list.js)
+// so this stays correct either way.
+test('handlePaid: "!paid 1-3" expands the range itself and marks positions 1 through 3 paid', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setLimit(groupId, 18);
+  ['Harry', 'Dean', 'Ken', 'Lai', 'Mukesh'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
+  store.newList(groupId, '2026-08-20', {});
+
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: '1-3' });
+  await listCommands.handlePaid(ctx);
+
+  const remaining = store.getCurrentEvent(groupId).duePayments.map((e) => e.name);
+  assert.deepEqual(remaining.sort(), ['Lai', 'Mukesh'].sort());
+});
+
+test('handlePaid: a range that expands past MAX_NAMES_PER_COMMAND is rejected as "too many" for a non-admin, same as any other bulk request', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setLimit(groupId, 18);
+  const names = Array.from({ length: 10 }, (_, i) => `Name${i}`);
+  names.forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
+  store.newList(groupId, '2026-08-20', {}); // archives all 10 into duePayments, printed 1-10
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: '1-10' });
+  await listCommands.handlePaid(ctx);
+
+  assert.match(replies[0], /up to/i);
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 10); // untouched
+});
+
+test('handlePaid: a range far past the internal expansion cap falls back to a literal (harmless, unmatched) token rather than iterating without bound', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.addEntry(groupId, 'Harry', 'harry@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {});
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '1-99999' });
+  await listCommands.handlePaid(ctx);
+
+  assert.match(replies[0], /1-99999 is not on the payment list/);
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 1); // untouched
+});
+
 test('handlePaid: a bare number that is out of range still gets the ordinary "not on the payment list" rejection, not a different error', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
@@ -281,6 +328,22 @@ test('handleOut: "!out 7,8" removes whoever the Attendance list currently prints
 
   const remaining = store.getCurrentEvent(groupId).entries.map((e) => e.name);
   assert.deepEqual(remaining, ['Harry', 'Dean', 'Ken', 'Lai', 'Mukesh', 'Jenny']);
+});
+
+// Same fallback reasoning as !paid's matching test above - the model
+// doesn't always expand a spoken range itself, so !out re-expands a raw
+// "N-M" token too (expandRangeToken in commands/list.js).
+test('handleOut: "!out 1-3" expands the range itself and removes positions 1 through 3', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setLimit(groupId, 18);
+  ['Harry', 'Dean', 'Ken', 'Lai', 'Mukesh'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
+
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: '1-3' });
+  await listCommands.handleOut(ctx);
+
+  const remaining = store.getCurrentEvent(groupId).entries.map((e) => e.name);
+  assert.deepEqual(remaining, ['Lai', 'Mukesh']);
 });
 
 test('handleOut: a bare number that is out of range still gets the ordinary "not on the list" rejection, not a different error', async () => {
