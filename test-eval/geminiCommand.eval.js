@@ -306,9 +306,13 @@ evalTest('"add Nguyn and Hannah to social only" adds them WITHOUT the tournament
 // dates must resolve against the given "Today is ..." reference. ---
 
 evalTest('a compound message ("new list for next Wednesday ... cap it at 12 ... add X, Y, Z") splits into 3 ordered actions with the date correctly resolved', async () => {
-  // Saturday 15/08/2026. "next Wednesday" said on a Saturday must skip the
-  // Wednesday later THIS week (19/08) and land on the FOLLOWING week's
-  // Wednesday (26/08) - see SYSTEM_PROMPT's RELATIVE DATES rules.
+  // Saturday 15/08/2026. "next Wednesday" said on a Saturday means the very
+  // next Wednesday (19/08), same as bare "Wednesday"/"this Wednesday" would -
+  // NOT skip a whole extra week. Confirmed with the user directly: despite
+  // an earlier version of this test/rule claiming "next" always skips to the
+  // FOLLOWING week's occurrence, that's not what most people mean by it (and
+  // the model itself consistently resisted that reading even with an
+  // explicit worked example) - see SYSTEM_PROMPT's RELATIVE DATES rules.
   const result = await interpretMessage(
     'create a new list for next Wednesday at Noble Park courts 1,2. Cap it at 12. Add Keith, Tu and Bao',
     { todayLabel: 'Saturday 15/08' }
@@ -316,7 +320,7 @@ evalTest('a compound message ("new list for next Wednesday ... cap it at 12 ... 
   assert.ok(result, 'expected a parsed result, not null');
   assert.equal(result.actions.length, 3, `expected 3 actions, got: ${JSON.stringify(result.actions)}`);
   assert.equal(result.actions[0].command, 'newlist');
-  assert.match(result.actions[0].argText, /^26\/08/, 'expected "next Wednesday" from Sat 15/08 to resolve to 26/08');
+  assert.match(result.actions[0].argText, /^19\/08/, 'expected "next Wednesday" from Sat 15/08 to resolve to 19/08, the very next Wednesday');
   assert.equal(result.actions[1].command, 'limit');
   assert.equal(result.actions[1].argText.trim(), '12');
   assert.equal(result.actions[2].command, 'in');
