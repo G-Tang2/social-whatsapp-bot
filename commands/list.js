@@ -84,6 +84,25 @@ function resolveOwnDue(groupId, senderId, senderName) {
   return { noEntry: true };
 }
 
+// Whether `senderId`/`name` is found on the CURRENT attendance list or
+// waitlist (tournament entries included - they're stored in `entries`
+// too, see store.js's addEntry) - used by handlePaid below to tell apart
+// two genuinely different reasons a "!paid" attempt comes up empty:
+// actually not owing anything (the honest "you're all clear" case) versus
+// trying to pay EARLY, for a list that hasn't been archived into the
+// payment-due list yet (see store.js's newList() - that only happens when
+// the NEXT !newlist runs). Same ID-then-name matching order as every
+// other bare-self lookup in this file (see resolveOwnDue's doc comment
+// above for why ID is checked first) - `senderId` is optional so an
+// explicit "!paid <name>" (no sender identity involved) can still check
+// by name alone.
+function isOnCurrentAttendance(event, senderId, name) {
+  const all = [...event.entries, ...(event.waitlist || [])];
+  if (senderId && all.some((e) => e.addedBy === senderId && e.self !== false)) return true;
+  if (name) return all.some((e) => normalizeName(e.name) === normalizeName(name));
+  return false;
+}
+
 // Matches "me, +N" or "+N, me" (ME_TOKEN/PLUS_N_TOKEN, both from
 // lib/helpers.js) as the ENTIRE `rest` of an !in command - the sender
 // explicitly asking to be added alongside N unnamed guests, in either
@@ -262,6 +281,15 @@ async function runPaidIfFlagged(groupId, senderId, senderName, paidFlag, explici
     names = resolved.names;
   }
 
+  // Only fetched if actually needed below (a rejection occurs) - see
+  // isOnCurrentAttendance's doc comment (near resolveOwnDue above) for
+  // what this is for: telling "genuinely not owed anything" apart from
+  // "trying to pay EARLY, before this list is archived into a real
+  // payment-due one" - the same distinction handlePaid's own standalone
+  // path makes, applied here too since "!in paid"/"!out paid" is just as
+  // common a way to attempt paying early as bare "!paid" is.
+  let event = null;
+
   const paid = [];
   const paidRejected = [];
   for (const name of names) {
@@ -269,9 +297,14 @@ async function runPaidIfFlagged(groupId, senderId, senderName, paidFlag, explici
     if (result.ok) {
       paid.push(name.trim());
     } else {
-      paidRejected.push(
-        `${name.trim()} is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid`
-      );
+      if (!event) event = getCurrentEvent(groupId);
+      if (isOnCurrentAttendance(event, null, name)) {
+        paidRejected.push(`${name.trim()} isn't on the payment list yet - they're on the CURRENT list, which only turns into the payment list once it wraps up and ${COMMAND_PREFIX}newlist starts the next one`);
+      } else {
+        paidRejected.push(
+          `${name.trim()} is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid`
+        );
+      }
     }
   }
   return { paid, paidRejected, paidAmbiguous: null };
@@ -799,8 +832,12 @@ async function handlePaid(ctx) {
   let names;
   // One snapshot, taken before any name in this batch is actually marked
   // paid - see resolvePaidTokens' own doc comment for why re-fetching per
-  // token would corrupt "!paid 7,8" the moment 7 is removed.
-  const dueSnapshot = getCurrentEvent(groupId).duePayments || [];
+  // token would corrupt "!paid 7,8" the moment 7 is removed. Also doubles
+  // as the source for isOnCurrentAttendance's entries/waitlist check below
+  // - nothing in this function ever touches attendance, so one snapshot is
+  // safe to reuse throughout.
+  const event = getCurrentEvent(groupId);
+  const dueSnapshot = event.duePayments || [];
 
   // "me" (ME_TOKEN, lib/helpers.js) said on its own is the explicit way to
   // mark yourself paid - treated exactly like no argText at all.
@@ -813,9 +850,20 @@ async function handlePaid(ctx) {
     const resolved = resolveOwnDue(groupId, senderId, senderName);
     if (resolved.noEntry) {
       if (!isCatchUp) {
-        await reply(
-          `Good news - you're not on the payment list! If your WhatsApp name doesn't match what's on the list, mention @Snoopy with "paid <name>".`
-        );
+        // Two genuinely different reasons this comes up empty - see
+        // isOnCurrentAttendance's own doc comment: actually owing nothing
+        // (the plain "good news" case) versus being on the CURRENT list
+        // already, which reads as trying to pay EARLY, before this list
+        // has even been archived into a real payment-due one.
+        if (isOnCurrentAttendance(event, senderId, senderName)) {
+          await reply(
+            `Whoa, eager! The payment list isn't up yet for this one - it only gets created once this list wraps up and ${COMMAND_PREFIX}newlist starts the next one. Nothing to pay right now - check back once the new list's up.`
+          );
+        } else {
+          await reply(
+            `Good news - you're not on the payment list! If your WhatsApp name doesn't match what's on the list, mention @Snoopy with "paid <name>".`
+          );
+        }
       }
       return { command: 'paid', senderName, argText, noEntry: true };
     }
@@ -850,9 +898,18 @@ async function handlePaid(ctx) {
   for (const name of names) {
     const result = markPaid(groupId, name);
     if (!result.ok) {
-      rejected.push(
-        `${name.trim()} is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid`
-      );
+      // Same "trying to pay early" distinction as the bare-self branch
+      // above (see isOnCurrentAttendance's doc comment) - a name that's on
+      // the CURRENT attendance/waitlist but not yet due gets a clearer,
+      // more accurate reason than the generic "not on the payment list"
+      // one, which would otherwise wrongly suggest a typo/wrong name.
+      if (isOnCurrentAttendance(event, null, name)) {
+        rejected.push(`${name.trim()} isn't on the payment list yet - they're on the CURRENT list, which only turns into the payment list once it wraps up and ${COMMAND_PREFIX}newlist starts the next one`);
+      } else {
+        rejected.push(
+          `${name.trim()} is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid`
+        );
+      }
     } else {
       paid.push(name.trim());
     }

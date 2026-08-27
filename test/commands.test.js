@@ -20,6 +20,7 @@ process.env.DATA_DIR = tmpDir;
 process.env.GEMINI_API_KEY = 'test-key-not-real';
 
 const store = require('../store');
+const { COMMAND_PREFIX } = require('../lib/config');
 const spam = require('../spam');
 const ai = require('../ai');
 const autoNewlist = require('../autoNewlist');
@@ -525,15 +526,19 @@ test('handleOut: "tournament" combines with "paid", either order, same as !in - 
   assert.deepEqual(bOutcome.tournamentLeft, ['B']);
   // Nobody's actually in duePayments yet in this scenario (that only gets
   // populated by !newlist archiving) - so both are reported as rejected,
-  // same as standalone !paid would for a not-yet-due name. The point being
-  // tested is that "paid" ran at all, alongside "tournament", not silently
-  // dropped - not the payment-tracking mechanics themselves (covered
-  // elsewhere).
+  // same as standalone !paid would for a not-yet-due name. Both are still
+  // on the attendance list (leaving the TOURNAMENT doesn't remove them
+  // from it - see the tournament assertion above), so this is exactly the
+  // "trying to pay early" case isOnCurrentAttendance detects, getting the
+  // clearer reason rather than the generic "not on the payment list" one.
+  // The point being tested is that "paid" ran at all, alongside
+  // "tournament", not silently dropped - not the payment-tracking
+  // mechanics themselves (covered elsewhere).
   assert.deepEqual(aOutcome.paidRejected, [
-    'A is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid',
+    `A isn't on the payment list yet - they're on the CURRENT list, which only turns into the payment list once it wraps up and ${COMMAND_PREFIX}newlist starts the next one`,
   ]);
   assert.deepEqual(bOutcome.paidRejected, [
-    'B is not on the payment list, perhaps they signed up under a different name or someone already marked them as paid',
+    `B isn't on the payment list yet - they're on the CURRENT list, which only turns into the payment list once it wraps up and ${COMMAND_PREFIX}newlist starts the next one`,
   ]);
 });
 
@@ -1286,6 +1291,68 @@ test('handlePaid: a bare "!paid" (no name) with entries under TWO DIFFERENT name
 
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 2); // nothing cleared
   assert.match(replies[0], /more than one entry/i);
+});
+
+// --- "Trying to pay early": a bare or named "!paid" that comes up empty
+// gets a different, more accurate reply when the target is actually on
+// the CURRENT attendance/waitlist (just not archived into the payment
+// list yet) versus genuinely not owing anything at all - see
+// isOnCurrentAttendance's doc comment in commands/list.js. ---
+
+test('handlePaid: bare "!paid" from someone on the CURRENT list (not due yet) gets the "payment list isn\'t up yet" reply, not "good news"', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.addEntry(groupId, 'Isaac', 'isaac@s.whatsapp.net', false, true); // on THIS list, nothing archived yet
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'isaac@s.whatsapp.net', senderName: 'Isaac', argText: '' });
+  await listCommands.handlePaid(ctx);
+
+  assert.match(replies[0], /payment list isn't up yet/i);
+  assert.ok(!/good news/i.test(replies[0]));
+});
+
+test('handlePaid: bare "!paid" from someone NOT on the list at all, and not due, still gets the plain "good news" reply', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'ghost@s.whatsapp.net', senderName: 'Ghost', argText: '' });
+  await listCommands.handlePaid(ctx);
+
+  assert.match(replies[0], /good news - you're not on the payment list/i);
+});
+
+test('handlePaid: someone on the WAITLIST (not just entries) still counts as "on the current list" for the early-payment message', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setLimit(groupId, 0); // force straight onto the waitlist
+  store.addEntry(groupId, 'Kyra', 'kyra@s.whatsapp.net', false, true);
+  assert.equal(store.getCurrentEvent(groupId).waitlist.length, 1); // sanity-check the setup
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'kyra@s.whatsapp.net', senderName: 'Kyra', argText: '' });
+  await listCommands.handlePaid(ctx);
+
+  assert.match(replies[0], /payment list isn't up yet/i);
+});
+
+test('handlePaid: an explicitly named "!paid <name>" for someone on the CURRENT list gets the clearer "not up yet" reason, not the generic one', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.addEntry(groupId, 'Lincoln', 'lincoln@s.whatsapp.net', false, true);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'Lincoln' });
+  await listCommands.handlePaid(ctx);
+
+  assert.match(replies[0], /Lincoln isn't on the payment list yet - they're on the CURRENT list/);
+});
+
+test('handlePaid: an explicitly named "!paid <name>" for a genuinely unknown name still gets the original, generic rejection', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'Nobody' });
+  await listCommands.handlePaid(ctx);
+
+  assert.match(replies[0], /Nobody is not on the payment list, perhaps they signed up under a different name/);
 });
 
 // --- Tournament sub-feature: !settournament, !tournament, !tournamentlimit,
