@@ -1257,6 +1257,12 @@ async function handleMessage(sock, msg, upsertType) {
     // since nothing was actually sent back for it to confirm.
     if (mentionsBot) await react('💬');
     let responded = false;
+    // Tracked separately from `responded` (which only means "something was
+    // sent back") so the closing reaction below (see its own doc comment)
+    // can tell a genuine failure apart from ordinary success - both branches
+    // that can throw (bareMention/AI-mention dispatch, just below) set this
+    // in their own catch block.
+    let errored = false;
 
     // A message that mentions the bot and, once every @-mention token is
     // stripped back out, has nothing else left at all - just "@Snoopy" on
@@ -1286,6 +1292,7 @@ async function handleMessage(sock, msg, upsertType) {
       } catch (err) {
         console.error(`[bot] Error handling a bare @-mention (treated as ${COMMAND_PREFIX}in) in ${groupId} (from ${senderId}):`, err);
         await reply(UNEXPECTED_ERROR_REPLY);
+        errored = true;
       } finally {
         await setPresence('available');
       }
@@ -1297,6 +1304,7 @@ async function handleMessage(sock, msg, upsertType) {
       } catch (err) {
         console.error(`[bot] Error handling an AI mention in ${groupId} (from ${senderId}):`, err);
         await reply(UNEXPECTED_ERROR_REPLY);
+        errored = true;
       } finally {
         await setPresence('available');
       }
@@ -1340,18 +1348,23 @@ async function handleMessage(sock, msg, upsertType) {
         'Nice try, but scribbling on the list yourself doesn\'t actually fool me - that doesn\'t update anything, so nothing was recorded! Just mention me with what you\'d like instead, e.g. "@Snoopy add me".'
       );
     }
-    if (mentionsBot && responded) await react('✅');
+    // ❌ instead of the usual ✅ if either dispatch above threw - same
+    // "don't lie about what just happened" reasoning as the typed-command
+    // path below, just tracked via `errored` here since this branch has
+    // two separate try/catches (bareMention vs. a real AI mention) rather
+    // than one.
+    if (mentionsBot && responded) await react(errored ? '❌' : '✅');
     return;
   }
 
   const handler = commands[rawCmd];
   if (!handler) return; // unknown command - stay quiet to avoid being noisy in busy group chats
 
-  // Same 💬-then-✅ acknowledgment as an @-mention (see above) - only for a
-  // genuinely live typed command, never a catch-up ('append') redelivery:
+  // Same 💬-then-✅/❌ acknowledgment as an @-mention (see above) - only for
+  // a genuinely live typed command, never a catch-up ('append') redelivery:
   // those stay quiet on their own (see the doc comments below) and get
   // batched into ONE combined summary later, so there's no single "the bot
-  // responded to THIS message" moment to mark with a ✅ here.
+  // responded to THIS message" moment to mark with a ✅/❌ here.
   if (upsertType === 'notify') await react('💬');
   // Same "only for a genuinely live message" scoping as the 💬/✅ reaction
   // just above - a catch-up ('append') redelivery gets no per-message
@@ -1370,9 +1383,14 @@ async function handleMessage(sock, msg, upsertType) {
     // offline-backlog message, and posting an error reply for a delayed
     // redelivery would be a confusing non-sequitur days/hours after the
     // fact.
+    //
+    // ❌ rather than the usual ✅ - a thrown error means the command did
+    // NOT actually complete, so reacting with the success checkmark here
+    // would be a flat-out lie about what just happened, even with
+    // UNEXPECTED_ERROR_REPLY spelling it out in words right above it.
     if (upsertType === 'notify') {
       await reply(UNEXPECTED_ERROR_REPLY);
-      await react('✅');
+      await react('❌');
     }
     return;
   } finally {

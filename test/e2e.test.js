@@ -361,6 +361,7 @@ test('e2e: a typed command whose handler throws replies with an unexpected-error
     throw new Error('simulated handler crash');
   };
   fakeSockInstance.sentMessages.length = 0;
+  fakeSockInstance.reactions.length = 0;
 
   try {
     await deliver(key, { from: 'admin@s.whatsapp.net', type: 'notify' });
@@ -370,6 +371,15 @@ test('e2e: a typed command whose handler throws replies with an unexpected-error
 
   assert.equal(fakeSockInstance.sentMessages.length, 1);
   assert.match(fakeSockInstance.sentMessages[0].content.text, /something went wrong/i);
+  // ❌, not the usual ✅ - a thrown error means the command did NOT
+  // actually complete (see index.js's catch block around this dispatch).
+  assert.deepEqual(fakeSockInstance.reactions.map((r) => r.emoji), ['💬', '❌']);
+});
+
+test('e2e: a typed command that succeeds reacts with ✅, not ❌', async () => {
+  fakeSockInstance.reactions.length = 0;
+  await deliver(`${COMMAND_PREFIX}help`, { from: 'admin@s.whatsapp.net', type: 'notify' });
+  assert.deepEqual(fakeSockInstance.reactions.map((r) => r.emoji), ['💬', '✅']);
 });
 
 test('e2e: a catch-up (append) command whose handler throws stays quiet, same as it does on success', async () => {
@@ -398,6 +408,7 @@ test('e2e: an AI-dispatched action whose handler throws replies with an unexpect
     throw new Error('simulated handler crash');
   };
   fakeSockInstance.sentMessages.length = 0;
+  fakeSockInstance.reactions.length = 0;
 
   try {
     await deliver('show me the list', { from: 'admin@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
@@ -407,6 +418,27 @@ test('e2e: an AI-dispatched action whose handler throws replies with an unexpect
 
   assert.equal(fakeSockInstance.sentMessages.length, 1);
   assert.match(fakeSockInstance.sentMessages[0].content.text, /something went wrong/i);
+  // ❌, not ✅ - same "don't lie about what just happened" reasoning as the
+  // typed-command path (see index.js's `errored` tracking for AI mentions).
+  assert.deepEqual(fakeSockInstance.reactions.map((r) => r.emoji), ['💬', '❌']);
+});
+
+test('e2e: a bare @-mention whose handler throws reacts with ❌, not ✅', async () => {
+  ai.setEnabled(GROUP_ID, false);
+  const key = `${COMMAND_PREFIX}in`;
+  const original = commands[key];
+  commands[key] = async () => {
+    throw new Error('simulated handler crash');
+  };
+  fakeSockInstance.reactions.length = 0;
+
+  try {
+    await deliver('@bot', { from: 'admin@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+  } finally {
+    commands[key] = original;
+  }
+
+  assert.deepEqual(fakeSockInstance.reactions.map((r) => r.emoji), ['💬', '❌']);
 });
 
 // --- Bare @-mention ("just tag me") is a quick sign-up shortcut ----------
