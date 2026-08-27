@@ -256,7 +256,6 @@ const {
   fetchLatestBaileysVersion,
   DisconnectReason,
   toNumber,
-  proto,
 } = require('@whiskeysockets/baileys');
 const P = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -767,68 +766,6 @@ function formatOffTopicReply(offTopicReply) {
   return `${offTopicReply}\n\n${OFF_TOPIC_REMINDER}`;
 }
 
-// EXPERIMENTAL, unsupported: tappable "quick actions" shortcuts (WhatsApp
-// buttons) for the everyday self-service commands. Real WhatsApp buttons
-// are a Business API feature - the officially-maintained @whiskeysockets/
-// baileys library this bot connects with (a personal/consumer account, not
-// a verified Business API one) doesn't even provide a way to BUILD one
-// anymore: the high-level content constructor for buttonsMessage/
-// templateMessage was removed from the library entirely, leaving only the
-// code to decode a tap someone else sends (see handleMessage's
-// selectedButtonId handling below). What follows hand-constructs the raw
-// protobuf message and sends it via sock.relayMessage() directly,
-// bypassing Baileys' own (button-less) high-level sendMessage() content
-// builder - undocumented, unsupported by the library authors, and there is
-// NO guarantee WhatsApp actually renders this on every client, or accepts
-// it at all; if it's silently dropped or ignored, that's expected right
-// now, not a bug to chase. Deliberately scoped to ONLY the live postList()
-// below (not the catch-up-summary/auto-newlist list reposts in
-// lib/catchUpQueue.js/lib/autoNewlistScheduler.js) to keep the blast
-// radius of something this uncertain as small as possible while unproven -
-// worth widening once it's confirmed to actually work in practice.
-const SHORTCUT_BUTTONS = [
-  { id: 'shortcut_in', command: `${COMMAND_PREFIX}in`, label: '✅ Add me' },
-  { id: 'shortcut_out', command: `${COMMAND_PREFIX}out`, label: '❌ Remove me' },
-  { id: 'shortcut_paid', command: `${COMMAND_PREFIX}paid`, label: '💰 Mark me paid' },
-];
-// id -> command, the one thing handleMessage's selectedButtonId handling
-// (below) actually needs - built once from SHORTCUT_BUTTONS above so the
-// id/command/label mapping only has to be written out in one place.
-const SHORTCUT_BUTTON_COMMANDS = Object.fromEntries(SHORTCUT_BUTTONS.map((b) => [b.id, b.command]));
-
-// Sends the 3-button "quick actions" message for `groupId` - always the
-// bare self-service form (add/remove/mark PAID yourself), since a button
-// tap can't carry a typed name the way !in <name> can; see
-// SHORTCUT_BUTTON_COMMANDS above for the id -> command mapping
-// handleMessage's selectedButtonId handling reads back on a tap. A plain,
-// best-effort send: if WhatsApp declines/ignores this message entirely
-// (the expected failure mode for an unsupported message type - see this
-// section's own doc comment above), the group still has the ordinary list
-// message postList() just sent moments before completely unaffected -
-// this is a pure addition, never a replacement for it.
-async function postShortcutButtons(sock, groupId) {
-  try {
-    await sock.relayMessage(
-      groupId,
-      {
-        buttonsMessage: {
-          contentText: 'Quick actions - tap one to act on yourself',
-          footerText: `Someone else, or a guest? Use ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid <name> instead`,
-          headerType: proto.Message.ButtonsMessage.HeaderType.EMPTY,
-          buttons: SHORTCUT_BUTTONS.map((b) => ({
-            buttonId: b.id,
-            buttonText: { displayText: b.label },
-            type: proto.Message.ButtonsMessage.Button.Type.RESPONSE,
-          })),
-        },
-      },
-      {}
-    );
-  } catch (err) {
-    console.error(`[bot] Failed to send shortcut buttons in ${groupId} (experimental - see this feature's own doc comment):`, err.message);
-  }
-}
-
 // Shared setup for a natural-language @-mention interpretation call -
 // used by both handleAiMention (the live path, below) and
 // handleAiMentionCatchUp (the offline-backlog path, further below), so
@@ -1121,20 +1058,7 @@ async function handleMessage(sock, msg, upsertType) {
 
   const senderId = msg.key.participant || msg.key.remoteJid;
   const senderName = msg.pushName || senderId.split('@')[0];
-  // A tap on one of postShortcutButtons' EXPERIMENTAL quick-action buttons
-  // (see that function's own doc comment) arrives as a buttonsResponseMessage,
-  // not ordinary text - getMessageText() doesn't read that field at all, so
-  // without this a tap would just look like an empty message and vanish.
-  // Translating the tapped id straight into the equivalent typed command's
-  // OWN text (e.g. "!in") is deliberate: everything below this line -
-  // catch-up gating, the command lookup, the 💬/✅/❌ reactions, undo
-  // tracking, catch-up-queue buffering - already exists and is already
-  // tested for a real typed command, so a button tap gets ALL of that for
-  // free by looking exactly like one from here on, rather than needing its
-  // own separate, parallel dispatch path.
-  const shortcutButtonId = msg.message.buttonsResponseMessage?.selectedButtonId;
-  const shortcutCommand = shortcutButtonId && SHORTCUT_BUTTON_COMMANDS[shortcutButtonId];
-  const text = (shortcutCommand || getMessageText(msg)).trim();
+  const text = getMessageText(msg).trim();
 
   if (ALLOWED_GROUPS.length && !ALLOWED_GROUPS.includes(groupId)) {
     return; // not a group we're configured to moderate
@@ -1293,14 +1217,7 @@ async function handleMessage(sock, msg, upsertType) {
   // messages (see formatOffTopicReply above) - everything else, including
   // every dispatched command's confirmation, stays fully hand-written.
   const reply = async (body) => sock.sendMessage(groupId, { text: body }, { quoted: msg });
-  const postList = async () => {
-    await sock.sendMessage(groupId, { text: formatList(groupId) });
-    // EXPERIMENTAL, best-effort - see postShortcutButtons' own doc comment.
-    // Deliberately awaited AFTER the real list has already gone out, so
-    // the list itself is never delayed by (or made to fail alongside) an
-    // unproven message type.
-    await postShortcutButtons(sock, groupId);
-  };
+  const postList = () => sock.sendMessage(groupId, { text: formatList(groupId) });
   // Best-effort reaction on the mentioning message itself - a failure here
   // (e.g. the message was deleted, or WhatsApp briefly rejects it) is
   // cosmetic and must never take down the actual command handling below.

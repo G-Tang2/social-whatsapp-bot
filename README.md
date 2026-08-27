@@ -850,36 +850,6 @@ A few things worth knowing about how this works:
   remove anyone from the group. If a group needs stronger handling of
   repeat spammers, that's a manual admin call for now.
 
-## Quick-action buttons (experimental, unsupported)
-
-Every posted list is followed by a small "Quick actions" message with
-three tappable buttons - ✅ Add me, ❌ Remove me, 💰 Mark me paid - a
-shortcut for the bare `!in`/`!out`/`!paid` self-service commands (they
-can't carry a name, so they only ever act on whoever tapped them; add/
-remove/pay someone else, or a guest, the normal typed/@-mention way).
-
-**Read this before relying on it.** Real, officially-supported tappable
-buttons are a WhatsApp *Business API* feature. This bot connects as an
-ordinary personal WhatsApp account (see "Important: how this connects to
-WhatsApp" below), which was never an intended sender for that message
-type - in fact, the Baileys library this bot is built on doesn't even
-provide a way to construct one anymore; the code for it exists only by
-directly hand-building the underlying protocol message, bypassing the
-library's own (button-less) send path entirely. That means:
-
-- There's **no guarantee WhatsApp delivers or renders this** on any given
-  device/client - it might work perfectly, might silently never appear,
-  or might stop working after a WhatsApp update with no warning. If the
-  buttons don't show up for your group, that's the expected failure mode,
-  not a bug to chase - the ordinary posted list right above them is
-  completely unaffected either way.
-- It's a pure *addition* - every list still posts exactly as it always
-  has. Nobody loses functionality if the buttons never render for them;
-  they just keep using `!in`/`!out`/`!paid` or `@bot` like normal.
-- If this stops working reliably, or WhatsApp's handling of it changes for
-  the worse, it can simply be removed without affecting anything else -
-  see index.js's `postShortcutButtons`/`SHORTCUT_BUTTON_COMMANDS`.
-
 ## Natural-language commands
 
 A separate, per-group, **OFF by default** feature (unlike spam filtering

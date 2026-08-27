@@ -61,7 +61,6 @@ function buildFakeSock() {
   const reactions = [];
   const statusUpdates = [];
   const presenceUpdates = [];
-  const relayedMessages = [];
   const admins = new Set(['admin@s.whatsapp.net']);
   const participants = new Set(['admin@s.whatsapp.net', 'alex@s.whatsapp.net', 'sam@s.whatsapp.net']);
 
@@ -71,7 +70,6 @@ function buildFakeSock() {
     reactions,
     statusUpdates,
     presenceUpdates,
-    relayedMessages,
     // The bot's own JID - used by index.js's messageMentionsBot() to tell
     // whether an incoming message @-mentions the bot (see the natural-
     // language command feature below). Includes a device-id suffix, same
@@ -105,14 +103,6 @@ function buildFakeSock() {
     sendPresenceUpdate: async (type, jid) => {
       presenceUpdates.push({ type, jid });
     },
-    // Real Baileys' relayMessage(jid, message, options) - the low-level
-    // send path index.js's postShortcutButtons() uses directly, bypassing
-    // sendMessage()'s own (button-less) content builder. See that
-    // function's doc comment for why.
-    relayMessage: async (jid, message, options) => {
-      relayedMessages.push({ jid, message, options });
-      return `fake-relay-${relayedMessages.length}`;
-    },
   };
   return sock;
 }
@@ -130,18 +120,6 @@ const fakeBaileysModule = {
   // or passes a plain number through - see index.js's effectiveUpsertType(),
   // the only thing that actually calls this.
   toNumber: (t) => (typeof t === 'object' && t ? (typeof t.toNumber === 'function' ? t.toNumber() : t.low) : t || 0),
-  // Minimal stand-in for the real WAProto enums index.js's
-  // postShortcutButtons() reads (proto.Message.ButtonsMessage.HeaderType/
-  // Button.Type) - just enough shape for that one call site, not a real
-  // protobuf implementation.
-  proto: {
-    Message: {
-      ButtonsMessage: {
-        HeaderType: { EMPTY: 1 },
-        Button: { Type: { RESPONSE: 1 } },
-      },
-    },
-  },
 };
 
 const baileysPath = require.resolve('@whiskeysockets/baileys');
@@ -275,23 +253,6 @@ async function deliverEdit(originalMsg, newText, { messageTimestamp } = {}) {
   ]);
 }
 
-// Simulates tapping one of postShortcutButtons' quick-action buttons (see
-// index.js's own doc comment on that EXPERIMENTAL feature) - a real tap
-// arrives as a buttonsResponseMessage, not ordinary text.
-async function deliverButtonTap(buttonId, { from = 'alex@s.whatsapp.net', type = 'notify' } = {}) {
-  const upsertHandler = capturedHandlers['messages.upsert'];
-  assert.ok(upsertHandler, 'expected index.js to have registered a messages.upsert handler');
-  fakeMsgCounter += 1;
-  const msg = {
-    key: { remoteJid: GROUP_ID, participant: from, fromMe: false, id: `E2E${fakeMsgCounter}` },
-    pushName: from.split('@')[0],
-    message: { buttonsResponseMessage: { selectedButtonId: buttonId, selectedDisplayText: buttonId } },
-    messageTimestamp: Math.floor(Date.now() / 1000),
-  };
-  await upsertHandler({ messages: [msg], type });
-  return msg;
-}
-
 test('e2e: a live !in command is processed and posts the updated list', async () => {
   fakeSockInstance.sentMessages.length = 0;
   await deliver('!in', { from: 'alex@s.whatsapp.net', type: 'notify' });
@@ -300,78 +261,6 @@ test('e2e: a live !in command is processed and posts the updated list', async ()
   // -insensitively rather than assuming a particular capitalization.
   const posted = fakeSockInstance.sentMessages.find((m) => /alex/i.test(m.content.text || ''));
   assert.ok(posted, 'expected the list (containing alex) to have been posted');
-});
-
-// --- EXPERIMENTAL: tappable "quick actions" shortcut buttons attached to
-// every posted list (index.js's postShortcutButtons/SHORTCUT_BUTTON_COMMANDS)
-// - see that function's own doc comment for why this is a hand-built,
-// unsupported message the library authors don't provide a way to
-// construct normally. A tap comes back as a buttonsResponseMessage,
-// translated into the equivalent typed command's own text so it flows
-// through the exact same dispatch path a real "!in"/"!out"/"!paid" would. ---
-
-test('e2e: postList() also sends a 3-button "quick actions" message via relayMessage, one per self-service command', async () => {
-  fakeSockInstance.relayedMessages.length = 0;
-  // A sender not used anywhere else in this file - reusing "alex" (already
-  // on the list from the very first test above) would hit the "already on
-  // the list" no-op path instead of a genuine add, which doesn't repost
-  // the list at all.
-  await deliver('!in', { from: 'quinn@s.whatsapp.net', type: 'notify' });
-
-  assert.equal(fakeSockInstance.relayedMessages.length, 1);
-  const { jid, message } = fakeSockInstance.relayedMessages[0];
-  assert.equal(jid, GROUP_ID);
-  const buttons = message.buttonsMessage.buttons;
-  assert.deepEqual(
-    buttons.map((b) => b.buttonId),
-    ['shortcut_in', 'shortcut_out', 'shortcut_paid']
-  );
-  assert.ok(buttons.every((b) => typeof b.buttonText.displayText === 'string' && b.buttonText.displayText.length > 0));
-});
-
-test('e2e: tapping the "Add me" shortcut button adds the tapper, same as bare !in', async () => {
-  await deliverButtonTap('shortcut_in', { from: 'kiara@s.whatsapp.net' });
-  assert.ok(store.getCurrentEvent(GROUP_ID).entries.some((e) => e.name === 'kiara'));
-});
-
-test('e2e: tapping the "Remove me" shortcut button removes the tapper, same as bare !out', async () => {
-  await deliver('!in', { from: 'lauren@s.whatsapp.net', type: 'notify' });
-  assert.ok(store.getCurrentEvent(GROUP_ID).entries.some((e) => e.name === 'lauren'));
-
-  await deliverButtonTap('shortcut_out', { from: 'lauren@s.whatsapp.net' });
-  assert.ok(!store.getCurrentEvent(GROUP_ID).entries.some((e) => e.name === 'lauren'));
-});
-
-test('e2e: tapping the "Mark me paid" shortcut button marks the tapper paid, same as bare !paid', async () => {
-  store.addEntry(GROUP_ID, 'megan', 'megan@s.whatsapp.net', false, true);
-  store.newList(GROUP_ID, '2026-08-20', {}); // archives megan into duePayments
-  assert.equal(store.getCurrentEvent(GROUP_ID).duePayments.filter((e) => e.name === 'megan').length, 1);
-
-  await deliverButtonTap('shortcut_paid', { from: 'megan@s.whatsapp.net' });
-  assert.equal(store.getCurrentEvent(GROUP_ID).duePayments.filter((e) => e.name === 'megan').length, 0);
-});
-
-test('e2e: an unrecognized button id is a silent no-op, not a crash', async () => {
-  fakeSockInstance.sentMessages.length = 0;
-  await deliverButtonTap('some_other_button_id', { from: 'noah@s.whatsapp.net' });
-  assert.equal(fakeSockInstance.sentMessages.length, 0);
-});
-
-test('e2e: relayMessage failing (WhatsApp declining the experimental button message) never blocks the real list from posting', async () => {
-  const originalRelay = fakeSockInstance.relayMessage;
-  fakeSockInstance.relayMessage = async () => {
-    throw new Error('simulated WhatsApp rejection of an unsupported message type');
-  };
-  fakeSockInstance.sentMessages.length = 0;
-
-  try {
-    await deliver('!in', { from: 'preston@s.whatsapp.net', type: 'notify' });
-  } finally {
-    fakeSockInstance.relayMessage = originalRelay;
-  }
-
-  const posted = fakeSockInstance.sentMessages.find((m) => /preston/i.test(m.content.text || ''));
-  assert.ok(posted, 'expected the real list to still post even though the button message failed');
 });
 
 // --- "typing..." presence while a live message is being processed ---
