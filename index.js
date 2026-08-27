@@ -255,6 +255,7 @@ const {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   DisconnectReason,
+  toNumber,
 } = require('@whiskeysockets/baileys');
 const P = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -285,6 +286,7 @@ const {
   VACANCY_REMINDER_INTERVAL_MS,
   INACTIVITY_CHECK_INTERVAL_MS,
   TIMEZONE,
+  LIVE_MESSAGE_MAX_AGE_MS,
 } = config;
 
 // Last-resort safety net. Without these, a single unexpected rejection or
@@ -352,6 +354,32 @@ function scheduleReconnect() {
   // alive in contexts where nothing else is (e.g. tests) - has no effect
   // on the deployed bot, where the goal IS to keep retrying indefinitely.
   if (typeof reconnectTimer.unref === 'function') reconnectTimer.unref();
+}
+
+// Cross-checks a 'notify'-tagged message against its OWN timestamp before
+// trusting it as genuinely live - see LIVE_MESSAGE_MAX_AGE_MS's doc comment
+// (lib/config.js) for the real bug this guards against: WhatsApp/Baileys
+// occasionally redelivers (or relabels) an already-handled message as
+// 'notify' well after the fact, making the bot fully "wake up" and respond
+// to something long since resolved, sometimes hours later. A genuinely
+// live message is never more than a few seconds old by the time it reaches
+// here, so anything older than LIVE_MESSAGE_MAX_AGE_MS gets treated as if
+// it had arrived 'append' instead - the same conservative, quiet,
+// self-service-commands-only handling a real offline-backlog redelivery
+// already gets (see handleMessage's catch-up gate below), rather than the
+// full live pipeline (reactions, natural-language interpretation, replies,
+// list reposts) firing for something that isn't actually current anymore.
+// 'append' is passed through unchanged - it's already the conservative
+// path, and messageTimestamp on a genuine backlog redelivery is expected
+// to be old, so there's nothing to cross-check there. No usable timestamp
+// at all (missing/zero - toNumber() defaults to 0, see Baileys' own
+// generics.js) leaves `type` as given rather than guessing either way.
+function effectiveUpsertType(msg, type) {
+  if (type !== 'notify') return type;
+  const timestampSeconds = toNumber(msg.messageTimestamp);
+  if (!timestampSeconds) return type;
+  const ageMs = Date.now() - timestampSeconds * 1000;
+  return ageMs > LIVE_MESSAGE_MAX_AGE_MS ? 'append' : type;
 }
 
 async function start() {
@@ -456,7 +484,7 @@ async function start() {
 
     for (const msg of messages) {
       try {
-        await handleMessage(sock, msg, type);
+        await handleMessage(sock, msg, effectiveUpsertType(msg, type));
       } catch (err) {
         console.error('[bot] Error handling message:', err);
       }

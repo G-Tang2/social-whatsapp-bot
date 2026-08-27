@@ -1156,6 +1156,18 @@ intact picks the batch back up; a fully logged-out session loses the
 underlying WhatsApp messages themselves; no amount of local persistence can
 recover those.
 
+**Guarding against a stale message masquerading as live.** WhatsApp/Baileys
+tags a message "live" vs "offline backlog" itself (see above), but that
+labeling isn't perfectly reliable - occasionally an already-handled message
+gets redelivered well after the fact still tagged as live, which would
+otherwise make the bot fully "wake up" and respond (react, reply, repost
+the list) to something long since resolved, sometimes hours later. As a
+safety net, the bot cross-checks every "live" message against its own
+timestamp; anything older than `LIVE_MESSAGE_MAX_AGE_SECONDS` (120s/2
+minutes by default) is treated as an offline-backlog redelivery instead -
+the same quiet, `!in`/`!out`/`!paid`-only handling described above, rather
+than a live response to something no longer current.
+
 ## Last seen status heartbeat
 
 The bot keeps its own WhatsApp profile About text updated with the current

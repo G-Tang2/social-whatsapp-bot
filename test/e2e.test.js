@@ -116,6 +116,10 @@ const fakeBaileysModule = {
   useMultiFileAuthState: async () => ({ state: {}, saveCreds: async () => {} }),
   fetchLatestBaileysVersion: async () => ({ version: [2, 0, 0] }),
   DisconnectReason: { loggedOut: 401 },
+  // Real Baileys' own generics.js: unwraps a protobuf Long (via .toNumber())
+  // or passes a plain number through - see index.js's effectiveUpsertType(),
+  // the only thing that actually calls this.
+  toNumber: (t) => (typeof t === 'object' && t ? (typeof t.toNumber === 'function' ? t.toNumber() : t.low) : t || 0),
 };
 
 const baileysPath = require.resolve('@whiskeysockets/baileys');
@@ -203,7 +207,7 @@ const { COMMAND_PREFIX } = require('../lib/config');
 const { formatList } = require('../lib/helpers');
 
 let fakeMsgCounter = 0;
-function makeMsg({ from, text, fromMe = false, mentions, quotedParticipant, quotedMessageText }) {
+function makeMsg({ from, text, fromMe = false, mentions, quotedParticipant, quotedMessageText, messageTimestamp }) {
   fakeMsgCounter += 1;
   const contextInfo = {};
   if (mentions && mentions.length) contextInfo.mentionedJid = mentions;
@@ -213,13 +217,19 @@ function makeMsg({ from, text, fromMe = false, mentions, quotedParticipant, quot
     key: { remoteJid: GROUP_ID, participant: from, fromMe, id: `E2E${fakeMsgCounter}` },
     pushName: from ? from.split('@')[0] : undefined,
     message: Object.keys(contextInfo).length ? { extendedTextMessage: { text, contextInfo } } : { conversation: text },
+    // Real Baileys messages always carry this (seconds since epoch, set
+    // server-side) - defaults to "right now" so every existing test gets a
+    // realistic, genuinely-live timestamp without having to think about it.
+    // See effectiveUpsertType() (index.js) for the one thing this actually
+    // affects: a 'notify' message old enough gets treated as 'append'.
+    messageTimestamp: messageTimestamp != null ? messageTimestamp : Math.floor(Date.now() / 1000),
   };
 }
 
-async function deliver(text, { from = 'alex@s.whatsapp.net', type = 'notify', mentions, quotedParticipant, quotedMessageText } = {}) {
+async function deliver(text, { from = 'alex@s.whatsapp.net', type = 'notify', mentions, quotedParticipant, quotedMessageText, messageTimestamp } = {}) {
   const upsertHandler = capturedHandlers['messages.upsert'];
   assert.ok(upsertHandler, 'expected index.js to have registered a messages.upsert handler');
-  await upsertHandler({ messages: [makeMsg({ from, text, mentions, quotedParticipant, quotedMessageText })], type });
+  await upsertHandler({ messages: [makeMsg({ from, text, mentions, quotedParticipant, quotedMessageText, messageTimestamp })], type });
 }
 
 test('e2e: a live !in command is processed and posts the updated list', async () => {
@@ -251,6 +261,37 @@ test('e2e: a catch-up (append) command does not touch presence at all', async ()
   fakeSockInstance.presenceUpdates.length = 0;
   await deliver(`${COMMAND_PREFIX}in`, { from: 'alex@s.whatsapp.net', type: 'append' });
   assert.equal(fakeSockInstance.presenceUpdates.length, 0);
+});
+
+// --- Real observed bug: WhatsApp/Baileys occasionally redelivers (or
+// relabels) an already-handled message as 'notify' well after the fact,
+// making the bot fully "wake up" and respond - react, reply, repost the
+// list - to something long since resolved, sometimes hours later. index.js's
+// effectiveUpsertType() cross-checks 'notify' against the message's OWN
+// messageTimestamp and downgrades it to 'append' (the same quiet,
+// self-service-only handling a genuine offline-backlog redelivery already
+// gets) once it's older than LIVE_MESSAGE_MAX_AGE_MS - see that constant's
+// doc comment in lib/config.js. ---
+
+test('e2e: a "notify" message far older than LIVE_MESSAGE_MAX_AGE_MS is treated as a quiet catch-up, not a live response', async () => {
+  fakeSockInstance.presenceUpdates.length = 0;
+  fakeSockInstance.reactions.length = 0;
+  const twoHoursAgo = Math.floor(Date.now() / 1000) - 2 * 60 * 60;
+  await deliver(`${COMMAND_PREFIX}in`, { from: 'alex@s.whatsapp.net', type: 'notify', messageTimestamp: twoHoursAgo });
+  // Same assertions as the genuine 'append' test above - no live-only
+  // side effects (reactions, presence) fired for this message.
+  assert.equal(fakeSockInstance.presenceUpdates.length, 0);
+  assert.equal(fakeSockInstance.reactions.length, 0);
+});
+
+test('e2e: a "notify" message within LIVE_MESSAGE_MAX_AGE_MS is still treated as genuinely live', async () => {
+  fakeSockInstance.presenceUpdates.length = 0;
+  const justNow = Math.floor(Date.now() / 1000) - 1;
+  await deliver(`${COMMAND_PREFIX}in`, { from: 'alex@s.whatsapp.net', type: 'notify', messageTimestamp: justNow });
+  assert.deepEqual(fakeSockInstance.presenceUpdates, [
+    { type: 'composing', jid: GROUP_ID },
+    { type: 'available', jid: GROUP_ID },
+  ]);
 });
 
 test('e2e: a typed command whose handler throws still resets presence back to available', async () => {
