@@ -89,13 +89,27 @@ evalTest('position-based removal ("remove 1 and 2") resolves to the right names'
   assert.match(out.argText, /\bAndy\b/i);
 });
 
-evalTest('an out-of-range position reference ("remove 1-5" on a 3-person list) never comes back as a confident (high) guess', async () => {
+// Updated for the added NUMBERED LIST REFERENCES rule (SHARED_ARG_RULES):
+// the model is now explicitly told to pass bare numbers straight through
+// rather than resolve them to names itself, deferring range-validation to
+// commands/list.js's deterministic resolver - so "high" confidence with
+// the numbers passed through as-is (even the out-of-range 4/5) is now
+// CORRECT, expected behavior, not a bug: the resolver safely discards 4
+// and 5 downstream (see test/helpers.test.js's own coverage of that). The
+// invariant that actually matters here is narrower - argText must never
+// invent a 4th/5th NAME that was never on the list at all.
+evalTest('an out-of-range position reference ("remove 1-5" on a 3-person list) never invents a name that was never on the list', async () => {
   const listText = '*Attendance* (3/10)\n\n1. Sam\n2. Chris\n3. Linda';
   const result = await interpretMessage('remove 1-5', { listText });
   assert.ok(result, 'expected a parsed result, not null');
   const out = findAction(result, 'out');
-  if (out) {
-    assert.notEqual(out.confidence, 'high', 'an unresolvable position range must not be confidently guessed at');
+  if (!out) return; // "low" confidence with no "out" action at all is also fine
+  const tokens = out.argText.split(',').map((t) => t.trim()).filter(Boolean);
+  const realNames = ['sam', 'chris', 'linda'];
+  for (const token of tokens) {
+    const isNumber = /^\d+$/.test(token);
+    const isRealName = realNames.includes(token.toLowerCase());
+    assert.ok(isNumber || isRealName, `argText token "${token}" is neither a bare number nor a real name from the list - looks like an invented match`);
   }
 });
 
@@ -431,4 +445,30 @@ evalTest('"no 9 to 11 paid" resolves against the PAYMENT section\'s own numberin
     `expected argText to be either "9, 10, 11" or the correct payment-section names (harry+1/2/3), got: "${argText}"`
   );
   assert.doesNotMatch(argText, /\bseum\b/i, 'must not resolve the range against Attendance\'s numbering (seum is Attendance\'s #9, not the payment section\'s)');
+});
+
+// --- FLEXIBLE NAME MATCHING (SHARED_ARG_RULES): a nickname/short form
+// should resolve to the one real entry it can only plausibly mean, using
+// that entry's EXACT spelling (never the sender's own shorthand) - but
+// fall back to a specific clarifying question, not a guess, the moment
+// there's more than one plausible candidate on the list. ---
+
+evalTest('an unambiguous nickname ("Kev") resolves to the one real entry it can only mean ("Kevin"), spelled exactly as on the list', async () => {
+  const listText = '*Attendance* (3/18)\n\n1. Kevin\n2. Chris\n3. Jason T';
+  const result = await interpretMessage('remove Kev', { listText });
+  assert.ok(result, 'expected a parsed result, not null');
+  const action = result.actions.find((a) => a.command === 'out' && a.confidence === 'high');
+  assert.ok(action, `expected a high-confidence "out" action, got: ${JSON.stringify(result.actions)}`);
+  assert.match(action.argText, /^Kevin$/, `expected argText to be exactly "Kevin", got: "${action.argText}"`);
+});
+
+evalTest('a nickname matching TWO different entries ("Kev" against both "Kevin" and "Kev L") asks which one, rather than guessing', async () => {
+  const listText = '*Attendance* (3/18)\n\n1. Kevin\n2. Kev L\n3. Chris';
+  const result = await interpretMessage('remove Kev', { listText });
+  assert.ok(result, 'expected a parsed result, not null');
+  const uncertain = result.actions.find((a) => a.confidence === 'low' && a.command !== 'none');
+  assert.ok(uncertain, `expected a low-confidence, non-"none" action, got: ${JSON.stringify(result.actions)}`);
+  assert.ok(uncertain.question && uncertain.question.trim(), 'expected a non-empty "question"');
+  assert.match(uncertain.question, /kevin/i, 'expected the question to name "Kevin" as one of the real candidates');
+  assert.match(uncertain.question, /kev l/i, 'expected the question to name "Kev L" as the other real candidate');
 });
