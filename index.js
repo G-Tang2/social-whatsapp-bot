@@ -272,6 +272,7 @@ const { checkAutoNewlist } = require('./lib/autoNewlistScheduler');
 const { checkAllGroupsInactivity } = require('./lib/inactivityCheck');
 const { interpretMessage, formatTodayForPrompt, formatRegularPlayersForPrompt } = require('./lib/geminiCommand');
 const spam = require('./spam');
+const welcome = require('./welcome');
 const ai = require('./ai');
 const activity = require('./activity');
 const { commands, rawCommands, CATCH_UP_COMMANDS } = require('./commands');
@@ -475,6 +476,49 @@ async function handleMessageEdit(sock, key, update) {
   await handleMessage(sock, editedMsg, 'notify');
 }
 
+// Greets whoever just joined a moderated group - see welcome.js for the
+// per-group on/off toggle (!welcome, ON by default) and Baileys'
+// 'group-participants.update' event (registered in start() below) for
+// where `update` (an { id, author, participants, action } object) comes
+// from. Only `action === 'add'` is a join - 'remove'/'promote'/'demote'
+// fire the same event for leaving/admin changes, which this ignores
+// entirely (no message, nothing recorded).
+//
+// `participants` can hold more than one JID at once - WhatsApp batches
+// several people joining together (an admin adding a few people in one
+// go, or a burst of invite-link joins) into a single event - so this
+// sends ONE combined, tagged welcome covering everyone in the batch,
+// rather than one message per person.
+async function handleGroupParticipantsUpdate(sock, update) {
+  const { id: groupId, action, participants } = update;
+  if (action !== 'add') return; // only a join is welcomed - not a remove/promote/demote
+  if (!groupId || !groupId.endsWith('@g.us')) return; // only group chats are moderated at all
+  if (ALLOWED_GROUPS.length && !ALLOWED_GROUPS.includes(groupId)) return;
+  if (!welcome.isEnabled(groupId)) return;
+
+  // The bot's own account shows up in `participants` too, the moment it's
+  // first added to a group (it's "joining" right along with everyone
+  // else in that same event) - filtered out so it never welcomes itself.
+  // Same both-JID-forms comparison messageMentionsBot() (below) already
+  // needs, for the same classic-JID-vs-LID reason - see its own doc
+  // comment.
+  const botJids = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
+  const newcomers = (participants || []).filter((jid) => !botJids.includes(normalizeJid(jid)));
+  if (!newcomers.length) return;
+
+  const tags = newcomers.map((jid) => `@${jid.split('@')[0]}`).join(' ');
+  const text =
+    `👋 Welcome, ${tags}!\n\n` +
+    `I'm Snoopy, running the signup list here. Type ${COMMAND_PREFIX}in to join the next social (or @-mention me and say "sign me up" if plain English's turned on) - ${COMMAND_PREFIX}out to leave, ${COMMAND_PREFIX}paid once you've paid up. ${COMMAND_PREFIX}help any time for the full rundown.\n\n` +
+    `Here's the current list:\n\n${formatList(groupId)}`;
+
+  try {
+    await sock.sendMessage(groupId, { text, mentions: newcomers });
+  } catch (err) {
+    console.error(`[bot] Failed to send the welcome message in ${groupId}:`, err.message);
+  }
+}
+
 async function start() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
@@ -595,6 +639,17 @@ async function start() {
       } catch (err) {
         console.error('[bot] Error handling message edit:', err);
       }
+    }
+  });
+
+  // Fires for every membership/admin-status change in a group - joins,
+  // leaves, promotions, demotions - see handleGroupParticipantsUpdate's own
+  // doc comment for how it narrows this down to just "someone joined."
+  sock.ev.on('group-participants.update', async (update) => {
+    try {
+      await handleGroupParticipantsUpdate(sock, update);
+    } catch (err) {
+      console.error('[bot] Error handling group-participants.update:', err);
     }
   });
 }

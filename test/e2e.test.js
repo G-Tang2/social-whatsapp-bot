@@ -196,6 +196,7 @@ function getLastGeminiPromptText() {
 
 require('../index'); // runs start() -> captures the 'messages.upsert' handler
 const ai = require('../ai'); // same DATA_DIR as index.js, so toggling here is visible to it
+const welcome = require('../welcome'); // same DATA_DIR as index.js, so toggling here is visible to it
 const store = require('../store'); // same DATA_DIR as index.js, so seeding regularPlayers here is visible to it
 // Same module-cache instance index.js itself dispatches through - mutating
 // a handler on these objects (see the "unexpected error" tests below) is
@@ -253,6 +254,15 @@ async function deliverEdit(originalMsg, newText, { messageTimestamp } = {}) {
   ]);
 }
 
+// Simulates Baileys' 'group-participants.update' event (see index.js's
+// handleGroupParticipantsUpdate) - `jids` joined/left/were promoted/demoted
+// together in ONE event, per real WhatsApp's own batching.
+async function deliverGroupParticipantsUpdate(jids, { groupId = GROUP_ID, action = 'add' } = {}) {
+  const handler = capturedHandlers['group-participants.update'];
+  assert.ok(handler, 'expected index.js to have registered a group-participants.update handler');
+  await handler({ id: groupId, author: jids[0], participants: jids, action });
+}
+
 test('e2e: a live !in command is processed and posts the updated list', async () => {
   fakeSockInstance.sentMessages.length = 0;
   await deliver('!in', { from: 'alex@s.whatsapp.net', type: 'notify' });
@@ -261,6 +271,88 @@ test('e2e: a live !in command is processed and posts the updated list', async ()
   // -insensitively rather than assuming a particular capitalization.
   const posted = fakeSockInstance.sentMessages.find((m) => /alex/i.test(m.content.text || ''));
   assert.ok(posted, 'expected the list (containing alex) to have been posted');
+});
+
+// --- Welcoming a new member: index.js's handleGroupParticipantsUpdate,
+// triggered by Baileys' 'group-participants.update' event (see
+// deliverGroupParticipantsUpdate above) - welcome.js's own doc comment
+// covers the per-group ON-by-default toggle (!welcome). ---
+
+test('e2e: someone joining the group gets a tagged welcome message with the current list', async () => {
+  welcome.setEnabled(GROUP_ID, true);
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliverGroupParticipantsUpdate(['newperson@s.whatsapp.net']);
+
+  const posted = fakeSockInstance.sentMessages.find((m) => /[Ww]elcome/.test(m.content.text || ''));
+  assert.ok(posted, 'expected a welcome message to have been posted');
+  assert.deepEqual(posted.content.mentions, ['newperson@s.whatsapp.net']);
+  assert.match(posted.content.text, /newperson/);
+  assert.ok(posted.content.text.includes(`${COMMAND_PREFIX}in`)); // mentions how to join
+  assert.match(posted.content.text, /\*Attendance\*/); // includes the current list
+});
+
+test('e2e: multiple people joining together get ONE combined welcome message, not one each', async () => {
+  welcome.setEnabled(GROUP_ID, true);
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliverGroupParticipantsUpdate(['newperson1@s.whatsapp.net', 'newperson2@s.whatsapp.net']);
+
+  const welcomeMessages = fakeSockInstance.sentMessages.filter((m) => /[Ww]elcome/.test(m.content.text || ''));
+  assert.equal(welcomeMessages.length, 1, 'expected exactly one combined welcome message');
+  assert.deepEqual(welcomeMessages[0].content.mentions, ['newperson1@s.whatsapp.net', 'newperson2@s.whatsapp.net']);
+  assert.match(welcomeMessages[0].content.text, /newperson1/);
+  assert.match(welcomeMessages[0].content.text, /newperson2/);
+});
+
+test('e2e: the bot\'s own JID being added (it just joined the group) never welcomes itself', async () => {
+  welcome.setEnabled(GROUP_ID, true);
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliverGroupParticipantsUpdate([BOT_JID]);
+
+  const welcomeMessages = fakeSockInstance.sentMessages.filter((m) => /[Ww]elcome/.test(m.content.text || ''));
+  assert.equal(welcomeMessages.length, 0, 'expected no welcome message for the bot\'s own JID');
+});
+
+test('e2e: the bot\'s own JID is filtered out of a mixed batch, leaving only the real newcomer welcomed', async () => {
+  welcome.setEnabled(GROUP_ID, true);
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliverGroupParticipantsUpdate([BOT_JID, 'newperson3@s.whatsapp.net']);
+
+  const welcomeMessages = fakeSockInstance.sentMessages.filter((m) => /[Ww]elcome/.test(m.content.text || ''));
+  assert.equal(welcomeMessages.length, 1);
+  assert.deepEqual(welcomeMessages[0].content.mentions, ['newperson3@s.whatsapp.net']);
+});
+
+test('e2e: !welcome off silences the join message entirely', async () => {
+  welcome.setEnabled(GROUP_ID, false);
+  fakeSockInstance.sentMessages.length = 0;
+
+  try {
+    await deliverGroupParticipantsUpdate(['newperson4@s.whatsapp.net']);
+  } finally {
+    welcome.setEnabled(GROUP_ID, true); // restore for tests after this one
+  }
+
+  assert.equal(fakeSockInstance.sentMessages.length, 0);
+});
+
+test('e2e: a non-"add" action (someone leaving, or an admin promotion/demotion) never sends a welcome', async () => {
+  welcome.setEnabled(GROUP_ID, true);
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliverGroupParticipantsUpdate(['leaving@s.whatsapp.net'], { action: 'remove' });
+  await deliverGroupParticipantsUpdate(['promoted@s.whatsapp.net'], { action: 'promote' });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 0);
+});
+
+test('e2e: a join in a group the bot is not configured to moderate is silently ignored', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+  await deliverGroupParticipantsUpdate(['newperson5@s.whatsapp.net'], { groupId: 'someOtherUnconfiguredGroup@g.us' });
+  assert.equal(fakeSockInstance.sentMessages.length, 0);
 });
 
 // --- "typing..." presence while a live message is being processed ---

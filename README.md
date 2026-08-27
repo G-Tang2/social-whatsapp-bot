@@ -30,6 +30,7 @@ every change.
 | `!tournamentlimit [number]` | viewing: anyone; changing: group admins only | Caps how many people can be opted into the tournament - separate from the main `!limit`. With no number, shows the current tournament limit without changing it. `!tournamentlimit off` removes the cap |
 | `!tournamentwinners [Name1, Name2]` | viewing: anyone; changing: group admins only | Sets the two-name "Congrats to Name1 and Name2 for winning last week's tournament" banner shown above the list while the tournament is on. With no text, shows the currently set winners without changing them |
 | `!spamfilter [on\|off]` | viewing: anyone; changing: group admins only | Turns auto-deletion of stock/crypto spam (see "Spam filtering" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
+| `!welcome [on\|off]` | viewing: anyone; changing: group admins only | Turns the "someone just joined" welcome message (see "Welcoming new members" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!ai [on\|off]` | viewing: anyone; changing: group admins only | Turns natural-language command interpretation (see "Natural-language commands" below) on or off for *this* group. OFF by default everywhere, and requires `GEMINI_API_KEY` to be configured. With no argument, shows the current on/off state without changing it |
 | `!courtcanceller [@name]` | viewing: anyone; changing: group admins only | Sets who gets tagged with a reminder to cancel the courts if the list is still well short of people close to the start time (see "Vacancy warnings" below). Must be a real `@`-mention, not a typed name. `!courtcanceller off` turns it off. With no `@`-mention, shows who's currently set without changing it |
 | `!autonewlist [on\|off]` | viewing: anyone; changing: group admins only | Turns automatic "start next week's list once this one's social has ended" (see "Auto-starting next week's list" below) on or off for *this* group. OFF by default everywhere. With no argument, shows the current on/off state without changing it |
@@ -849,6 +850,48 @@ A few things worth knowing about how this works:
   doesn't warn the sender, doesn't count repeat offenses, and doesn't
   remove anyone from the group. If a group needs stronger handling of
   repeat spammers, that's a manual admin call for now.
+
+## Welcoming new members
+
+A separate, per-group feature, **ON by default**: whenever someone joins a
+group the bot moderates, it posts a tagged welcome message - a greeting,
+a quick pointer on how to join the social (`!in`, or `@bot sign me up`
+if natural-language commands are turned on), and the current list, so a
+new member never has to ask "how does this work?" or "who else is going?"
+
+```
+👋 Welcome, @NewPerson!
+
+I'm Snoopy, running the signup list here. Type !in to join the next
+social (or @-mention me and say "sign me up" if plain English's turned
+on) - !out to leave, !paid once you've paid up. !help any time for the
+full rundown.
+
+Here's the current list:
+
+[the current list, exactly as !list would show it]
+```
+
+**A per-group setting, turned on/off live in chat.** Run `!welcome off`
+(group admins only) for a group that would rather the bot stay quiet when
+people join, `!welcome on` to turn it back on, and bare `!welcome` to see
+the current state.
+
+A few things worth knowing about how this works:
+
+- **One combined message for a batch of joins, not one per person.**
+  WhatsApp itself batches several people joining together (an admin adding
+  a few people at once, or a burst of people joining via an invite link)
+  into a single notification - the bot mirrors that with one tagged
+  welcome covering everyone in the batch, rather than spamming the group
+  with a separate message per person.
+- **The bot never welcomes itself.** The same "someone joined" event fires
+  the moment the bot's own account is added to a brand new group (it's
+  "joining" too) - filtered out so it doesn't say hello to itself.
+- **Only fires for groups the bot is actually configured to moderate**
+  (`ALLOWED_GROUPS` - see "Configure the group and list name" above) -
+  someone joining an unconfigured group produces no message, same as every
+  other feature here.
 
 ## Natural-language commands
 
@@ -1877,6 +1920,11 @@ on/off flag plus, once turned on, each tracked participant's last-seen
 timestamp and warning state. A group that's never run `!inactivity on`
 has no entry here at all.
 
+There's a fifth JSON file, `data/welcome.json`, for the new-member welcome
+message (see "Welcoming new members" above) - just a per-group on/off flag,
+same shape as `data/spam.json`, since welcoming doesn't need to remember
+anything between messages either.
+
 If you're upgrading from an older copy of this bot (before `!newlist`,
 `!paid`, `!paymentlabel`, `!limit`/`!allow`, or the `!location`/`!courts`/
 `!time` header existed), no action is needed - the first time it reads your
@@ -1921,14 +1969,14 @@ one giant switch statement. The actual work is split across two folders:
   "Reminding inactive members" above).
 - `commands/` - one file per group of related commands (`list.js` for
   `!in`/`!out`/`!list`/`!paid`, `admin.js` for the list-management
-  commands, `inactivity.js`, `spamfilter.js`, `help.js`), plus
-  `commands/index.js`, which aggregates them into the dispatch table
+  commands, `inactivity.js`, `spamfilter.js`, `welcome.js`, `help.js`),
+  plus `commands/index.js`, which aggregates them into the dispatch table
   the top-level `index.js` uses. Each handler takes a single `ctx` object
   (`{ sock, msg, groupId, senderId, senderName, argText, reply, postList,
   ... }`) rather than a long parameter list.
 
-`store.js`, `spam.js`, and `activity.js` (the JSON-file-backed data
-modules) are unchanged by this split - they're already independent of
+`store.js`, `spam.js`, `welcome.js`, and `activity.js` (the JSON-file-backed
+data modules) are unchanged by this split - they're already independent of
 `index.js`.
 
 **Admin-status caching:** `sock.groupMetadata()` (needed to check if
