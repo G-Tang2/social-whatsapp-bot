@@ -50,16 +50,28 @@ test('parseNames splits comma-separated names and trims whitespace', () => {
   assert.deepEqual(parseNames('  Grace  ,, Henry ', 'fallback'), ['Grace', 'Henry']); // drops empty segments
 });
 
-test('parseNames expands a bare "+N" token into fallbackName plus N guest entries', () => {
-  assert.deepEqual(parseNames('+2', 'Preston'), ['Preston', 'Preston+1', 'Preston+2']);
-  assert.deepEqual(parseNames('+1', 'Preston'), ['Preston', 'Preston+1']);
-  assert.deepEqual(parseNames('+0', 'Preston'), ['Preston']); // 0 guests - just the sender
-  assert.deepEqual(parseNames('+ 3', 'Preston'), ['Preston', 'Preston+1', 'Preston+2', 'Preston+3']); // tolerates a space after "+"
+test('parseNames expands a bare "+N" token into N guest entries WITHOUT the sender', () => {
+  assert.deepEqual(parseNames('+2', 'Preston'), ['Preston+1', 'Preston+2']);
+  assert.deepEqual(parseNames('+1', 'Preston'), ['Preston+1']);
+  assert.deepEqual(parseNames('+0', 'Preston'), []); // 0 guests, no sender - nothing at all
+  assert.deepEqual(parseNames('+ 3', 'Preston'), ['Preston+1', 'Preston+2', 'Preston+3']); // tolerates a space after "+"
 });
 
-test('parseNames only expands a token that is ENTIRELY "+N" - an explicit "Henry+1" name is left untouched', () => {
+test('parseNames resolves a bare "me" token to fallbackName', () => {
+  assert.deepEqual(parseNames('me', 'Preston'), ['Preston']);
+  assert.deepEqual(parseNames('Me', 'Preston'), ['Preston']); // case-insensitive
+  assert.deepEqual(parseNames(' me ', 'Preston'), ['Preston']); // tolerates whitespace
+});
+
+test('parseNames combines "me" with "+N" to include the sender alongside N guest entries', () => {
+  assert.deepEqual(parseNames('me, +2', 'Preston'), ['Preston', 'Preston+1', 'Preston+2']);
+  assert.deepEqual(parseNames('+2, me', 'Preston'), ['Preston+1', 'Preston+2', 'Preston']); // order preserved, token-by-token
+});
+
+test('parseNames only expands a token that is ENTIRELY "+N"/"me" - an explicit "Henry+1"/"Amelia" name is left untouched', () => {
   assert.deepEqual(parseNames('Henry+1', 'fallback'), ['Henry+1']);
-  assert.deepEqual(parseNames('Alice, +2', 'Preston'), ['Alice', 'Preston', 'Preston+1', 'Preston+2']);
+  assert.deepEqual(parseNames('Amelia', 'fallback'), ['Amelia']); // contains "me" as a substring, not the whole token
+  assert.deepEqual(parseNames('Alice, +2', 'Preston'), ['Alice', 'Preston+1', 'Preston+2']); // "+2" still excludes the sender when mixed with a named other
 });
 
 test('stripLeadingPaidKeyword detects a bare leading "paid" and strips it', () => {

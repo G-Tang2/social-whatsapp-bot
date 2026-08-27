@@ -465,15 +465,31 @@ test('e2e: replying to someone OTHER than the bot does not trigger AI interpreta
   assert.equal(fakeSockInstance.sentMessages.length, 0);
 });
 
-test('e2e: "@bot add me and 2 friends" (mapped to argText "+2") adds the sender plus 2 guest entries via the real handler', async () => {
+test('e2e: "@bot add me and 2 friends" (mapped to argText "me, +2") adds the sender plus 2 guest entries via the real handler', async () => {
   ai.setEnabled(GROUP_ID, true);
-  setNextGeminiResponse({ command: 'in', argText: '+2', confidence: 'high' });
+  setNextGeminiResponse({ command: 'in', argText: 'me, +2', confidence: 'high' });
   fakeSockInstance.sentMessages.length = 0;
 
   await deliver('add me and 2 friends', { from: 'casey@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
 
   const posted = fakeSockInstance.sentMessages.find((m) => /casey\+2/i.test(m.content.text || ''));
   assert.ok(posted, 'expected the posted list to show casey, casey+1, and casey+2');
+});
+
+test('e2e: "@bot add 2 friends" (mapped to argText "+2", no "me") adds ONLY 2 guest entries, WITHOUT the sender', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'in', argText: '+2', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  // A sender not used anywhere else in this file - this suite shares ONE
+  // running list/GROUP_ID across tests (see GROUP_ID above), so reusing
+  // "casey" here would collide with that other test's leftover "casey,
+  // casey+1, casey+2" entries and make this assertion meaningless.
+  await deliver('add 2 friends', { from: 'wesley@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  const posted = fakeSockInstance.sentMessages.find((m) => /wesley\+2/i.test(m.content.text || ''));
+  assert.ok(posted, 'expected the posted list to show wesley+1 and wesley+2');
+  assert.ok(!/\bwesley\b(?!\+)/i.test(posted.content.text), 'the sender "wesley" alone should NOT be on the list');
 });
 
 test('e2e: the prompt sent to Gemini includes the current (numbered) list, so position references like "remove 1-3" can be resolved', async () => {

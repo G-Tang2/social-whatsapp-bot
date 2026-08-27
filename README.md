@@ -99,15 +99,19 @@ if one is a duplicate or blocked, the rest still go through - you'll get a
 reply listing anything that didn't make it, and the group's updated list
 is posted once at the end.
 
-**Bringing unnamed friends:** `!in +N` (e.g. `!in +2`) adds yourself plus
-`N` guests you haven't named individually, as "you", "you+1", "you+2", ...
-- shorthand for typing out `!in <your name>, <your name>+1, <your name>+2`
-yourself. Works the same way for `!out +N` (removes yourself and all `N`
-guest entries) and `!paid +N`. Only triggers on a bare `+N` token by
-itself - `!in Alice, +2` is read as the literal name "Alice" plus this
-shorthand for yourself-and-2-more, not as three named people, and if you
-DO want to name the friends individually just list them normally instead
-(e.g. `!in Grace, Alice, Bob`).
+**Bringing unnamed friends:** `!in +N` (e.g. `!in +2`) adds `N` guests you
+haven't named individually, as "you+1", "you+2", ... - shorthand for typing
+out `!in <your name>+1, <your name>+2` yourself. On its own, `+N` does NOT
+add you - only the `N` guests. To also sign yourself up alongside them,
+add `me` as its own comma-separated item, e.g. `!in me, +2` (or `+2, me` -
+order doesn't matter). Works the same way for `!out +N`/`!out me, +N`
+(removes just the `N` guest entries, or you plus all `N`, respectively)
+and `!paid +N`/`!paid me, +N`. `+N` expands wherever it appears in a comma
+list, so `!in Alice, +2` adds the literal name "Alice" plus 2 of your own
+unnamed guests (still not you, unless you also say `me`); if you DO want
+to name the friends individually just list them normally instead (e.g.
+`!in Grace, Alice, Bob`). `me` on its own (`!in me`) is just another way
+to write a bare `!in`.
 
 **Regular players:** save a group's regulars once with `!regulars Alice, Bob,
 Carla` (admins only to change; anyone can run bare `!regulars` to see the

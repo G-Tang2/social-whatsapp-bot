@@ -156,6 +156,34 @@ evalTest('"add 2 more friends" against a sender who already has Preston+1/+2 on 
   assert.equal(inAction.argText.trim(), '+2');
 });
 
+// --- "+N" no longer includes the sender by default - only combined with
+// an explicit "me" token does the sender get added alongside the N
+// guests. Real product decision: bare "+N" should mean "N friends of
+// mine", not "myself and N friends", since typing a plain guest count
+// kept accidentally re-adding people who were only trying to add friends
+// on someone else's behalf. ---
+
+evalTest('"add me and 2 friends" includes the sender, either as a single "me, +2" action or the SELF+OTHERS SPLIT two-action form ("" + "+2") - never bare "+2" alone (which would exclude the sender)', async () => {
+  const result = await interpretMessage('add me and 2 friends');
+  const inActions = (result.actions || []).filter((a) => a.command === 'in');
+  assert.ok(inActions.length, `expected at least one "in" action, got: ${JSON.stringify(result && result.actions)}`);
+  assert.ok(inActions.every((a) => a.confidence === 'high'), `expected "high" confidence, got: ${JSON.stringify(inActions)}`);
+
+  const combined = inActions.find((a) => /^(me\s*,\s*\+2|\+2\s*,\s*me)$/i.test(a.argText.trim()));
+  const split = inActions.some((a) => a.argText.trim() === '') && inActions.some((a) => a.argText.trim() === '+2');
+  assert.ok(
+    combined || split,
+    `expected either one action "me, +2"/"+2, me", or two actions "" + "+2", got: ${JSON.stringify(inActions)}`
+  );
+});
+
+evalTest('"add 2 friends" (no "me") maps to bare "+2" - the sender is NOT asking to be added themselves', async () => {
+  const result = await interpretMessage('add 2 friends');
+  const inAction = findAction(result, 'in');
+  assert.ok(inAction, `expected an "in" action, got: ${JSON.stringify(result && result.actions)}`);
+  assert.equal(inAction.argText.trim(), '+2');
+});
+
 // --- Explicitly naming someone ELSE's guests using the same "+1"/"+2"
 // convention the list itself displays must be read as literal names for
 // THAT person's party, never confused with the sender's own "+N" unnamed-
