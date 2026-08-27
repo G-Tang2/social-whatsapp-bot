@@ -561,40 +561,40 @@ test('e2e: a fully-low-confidence AI mention with a "question" from the model as
   ai.setEnabled(GROUP_ID, true);
   setNextGeminiResponse({
     command: 'out',
-    argText: 'Janelle',
+    argText: 'Megan',
     confidence: 'low',
-    question: 'Did you mean to remove Janelle from the payment list, or take her off the attendance list?',
+    question: 'Did you mean to remove Megan from the payment list, or take her off the attendance list?',
   });
   fakeSockInstance.sentMessages.length = 0;
 
-  await deliver('Janelle paid Janelle in', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+  await deliver('Megan paid Megan in', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
 
   assert.equal(fakeSockInstance.sentMessages.length, 1);
   const sent = fakeSockInstance.sentMessages[0];
-  assert.match(sent.content.text, /Did you mean to remove Janelle from the payment list, or take her off the attendance list\?/);
+  assert.match(sent.content.text, /Did you mean to remove Megan from the payment list, or take her off the attendance list\?/);
   assert.match(sent.content.text, /reply to this message/i);
   assert.doesNotMatch(sent.content.text, /not capable of doing that/i);
   // Same "quote the triggering message" mechanism every AI-mention reply
   // already uses - this is what lets a plain WhatsApp reply to it be
   // treated as a continuation (see messageMentionsBot() in index.js).
   assert.ok(sent.options && sent.options.quoted, 'expected the clarifying question to be sent as a quote-reply');
-  assert.equal(sent.options.quoted.message.extendedTextMessage.text, 'Janelle paid Janelle in');
+  assert.equal(sent.options.quoted.message.extendedTextMessage.text, 'Megan paid Megan in');
 });
 
 test('e2e: replying to the bot\'s own clarifying question includes it as REPLY CONTEXT in the follow-up prompt sent to Gemini', async () => {
   ai.setEnabled(GROUP_ID, true);
   setNextGeminiResponse({
     command: 'out',
-    argText: 'Janelle',
+    argText: 'Megan',
     confidence: 'low',
-    question: 'Did you mean to remove Janelle from the payment list, or take her off the attendance list?',
+    question: 'Did you mean to remove Megan from the payment list, or take her off the attendance list?',
   });
   fakeSockInstance.sentMessages.length = 0;
 
-  await deliver('Janelle paid Janelle in', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+  await deliver('Megan paid Megan in', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
   const clarifyingText = fakeSockInstance.sentMessages[0].content.text;
 
-  setNextGeminiResponse({ command: 'update', argText: 'remove Janelle from the payment list', confidence: 'high' });
+  setNextGeminiResponse({ command: 'update', argText: 'remove Megan from the payment list', confidence: 'high' });
   fakeSockInstance.sentMessages.length = 0;
 
   // A plain WhatsApp reply to the bot's own message - no fresh @-mention
@@ -609,7 +609,7 @@ test('e2e: replying to the bot\'s own clarifying question includes it as REPLY C
 
   const promptText = getLastGeminiPromptText();
   assert.match(promptText, /^REPLY CONTEXT:/m, 'expected an injected REPLY CONTEXT section on the follow-up prompt');
-  assert.match(promptText, /Did you mean to remove Janelle from the payment list/, 'expected the bot\'s own prior question to be quoted back into the prompt');
+  assert.match(promptText, /Did you mean to remove Megan from the payment list/, 'expected the bot\'s own prior question to be quoted back into the prompt');
 });
 
 // --- Admin commands via AI mention (lib/geminiCommand.js's MAPPABLE_COMMANDS
@@ -660,19 +660,19 @@ test('e2e: an admin @-mentioning "create a new list ... with <names>" dispatches
   // stub its output directly and confirm index.js/commands/admin.js
   // dispatch it correctly, same as every other admin-command e2e test in
   // this file.
-  setNextGeminiResponse({ command: 'newlist', argText: '19/08 with Peter, Chris, Linda', confidence: 'high' });
+  setNextGeminiResponse({ command: 'newlist', argText: '19/08 with Alice, Bob, Carla', confidence: 'high' });
   fakeSockInstance.sentMessages.length = 0;
 
-  await deliver('create a new list for next Wednesday with Peter, Chris, and Linda', {
+  await deliver('create a new list for next Wednesday with Alice, Bob, and Carla', {
     from: 'admin@s.whatsapp.net',
     type: 'notify',
     mentions: [BOT_JID],
   });
 
-  const posted = fakeSockInstance.sentMessages.find((m) => /Peter/.test(m.content.text || ''));
+  const posted = fakeSockInstance.sentMessages.find((m) => /Alice/.test(m.content.text || ''));
   assert.ok(posted, 'expected the posted list to show the pre-populated names');
-  assert.match(posted.content.text, /Chris/);
-  assert.match(posted.content.text, /Linda/);
+  assert.match(posted.content.text, /Bob/);
+  assert.match(posted.content.text, /Carla/);
 });
 
 test('e2e: the prompt sent to Gemini includes today\'s date/weekday, so relative dates like "next Wednesday" can be resolved for !newlist/!date', async () => {
@@ -806,9 +806,9 @@ test('e2e: a non-admin @-mentioning "undo that" is refused, exactly like typing 
 
 test('e2e: an admin @-mentioning a message that itself contains a pasted list dispatches to the real !update handler', async () => {
   ai.setEnabled(GROUP_ID, true);
-  await deliver('!in Alex', { from: 'alex@s.whatsapp.net', type: 'notify' });
+  await deliver('!in Grace', { from: 'alex@s.whatsapp.net', type: 'notify' });
 
-  const pastedEdit = 'here\'s the updated list:\n*Attendance*\n\n1. Alex\n2. AiUpdateProbe';
+  const pastedEdit = 'here\'s the updated list:\n*Attendance*\n\n1. Grace\n2. AiUpdateProbe';
   setNextGeminiResponse({ command: 'update', argText: pastedEdit, confidence: 'high' });
   fakeSockInstance.sentMessages.length = 0;
 
@@ -836,10 +836,10 @@ test('e2e: an admin @-mentioning a tournament-formatted pasted list (🏆 Tourna
   ai.setEnabled(GROUP_ID, true);
   store.setTournamentEnabled(GROUP_ID, true);
   store.setTournamentLimit(GROUP_ID, 2);
-  await deliver('!in Keith', { from: 'keith@s.whatsapp.net', type: 'notify' });
-  await deliver('!in Bao', { from: 'bao@s.whatsapp.net', type: 'notify' });
-  await deliver('!in Garvin', { from: 'garvin@s.whatsapp.net', type: 'notify' });
-  await deliver('!in tournament Keith, Bao', { from: 'admin@s.whatsapp.net', type: 'notify' }); // Garvin starts social-only
+  await deliver('!in Derek', { from: 'keith@s.whatsapp.net', type: 'notify' });
+  await deliver('!in Frank', { from: 'bao@s.whatsapp.net', type: 'notify' });
+  await deliver('!in Isaac', { from: 'isaac@s.whatsapp.net', type: 'notify' });
+  await deliver('!in tournament Derek, Frank', { from: 'admin@s.whatsapp.net', type: 'notify' }); // Isaac starts social-only
 
   const pastedEdit = [
     'update the list to be',
@@ -848,12 +848,12 @@ test('e2e: an admin @-mentioning a tournament-formatted pasted list (🏆 Tourna
     '',
     '🏆 *Tournament players* (2/2)',
     '',
-    '1. Keith',
-    '2. Garvin', // swapped in for Bao
+    '1. Derek',
+    '2. Isaac', // swapped in for Frank
     '',
     'Social only',
     '',
-    '3. Bao',
+    '3. Frank',
   ].join('\n');
   setNextGeminiResponse({ command: 'update', argText: pastedEdit, confidence: 'high' });
   fakeSockInstance.sentMessages.length = 0;
@@ -862,12 +862,12 @@ test('e2e: an admin @-mentioning a tournament-formatted pasted list (🏆 Tourna
 
   const summary = fakeSockInstance.sentMessages.find((m) => /Tournament:/.test(m.content.text || ''));
   assert.ok(summary, 'expected a "Tournament: ..." summary line, not "No changes found"');
-  assert.match(summary.content.text, /Garvin \(social only → tournament\)/);
-  assert.match(summary.content.text, /Bao \(tournament → social only\)/);
+  assert.match(summary.content.text, /Isaac \(social only → tournament\)/);
+  assert.match(summary.content.text, /Frank \(tournament → social only\)/);
 
   const entries = store.getCurrentEvent(GROUP_ID).entries;
-  assert.equal(entries.find((e) => e.name === 'Garvin').tournament, true);
-  assert.equal(entries.find((e) => e.name === 'Bao').tournament, false);
+  assert.equal(entries.find((e) => e.name === 'Isaac').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Frank').tournament, false);
   assert.equal(entries.length, 3); // still all on the list - this only ever touches tournament placement
 });
 
@@ -952,21 +952,21 @@ test('e2e: an admin @-mentioning a pasted list whose header block includes date/
 
 test('e2e: a plain typed !update that only renames someone does NOT spuriously change the date, even once the list\'s date is in the past relative to today - regression for a real report ("even !update doesn\'t work, even when just renaming a person")', async () => {
   store.newList(GROUP_ID, '2020-01-01', { location: 'Old Park', courts: { raw: '1-2', count: 2 }, time: '7pm-9pm' });
-  await deliver('!in Michael b', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  await deliver('!in Nathan b', { from: 'admin@s.whatsapp.net', type: 'notify' });
 
   const posted = formatList(GROUP_ID);
-  const edited = posted.replace('Michael b', 'Michael Brown');
+  const edited = posted.replace('Nathan b', 'Nathan Brown');
   fakeSockInstance.sentMessages.length = 0;
 
   await deliver(`!update ${edited}`, { from: 'admin@s.whatsapp.net', type: 'notify' });
 
-  const summaryMsg = fakeSockInstance.sentMessages.find((m) => /Added: Michael Brown/.test(m.content.text || ''));
+  const summaryMsg = fakeSockInstance.sentMessages.find((m) => /Added: Nathan Brown/.test(m.content.text || ''));
   assert.ok(summaryMsg, 'expected the rename to be applied and summarized');
   assert.doesNotMatch(summaryMsg.content.text, /Date:/); // the actual bug: this used to always show up
 
   const event = store.getCurrentEvent(GROUP_ID);
   assert.equal(event.date, '2020-01-01'); // exact original year preserved, not bumped forward
-  assert.ok(event.entries.find((e) => e.name === 'Michael Brown'));
+  assert.ok(event.entries.find((e) => e.name === 'Nathan Brown'));
 });
 
 test('e2e: "@bot what can you do" dispatches to the real !help handler, for any sender, not just admins', async () => {
@@ -1024,17 +1024,17 @@ test('e2e: an admin @-mentioning "turn on auto-newlist" dispatches to the real !
   assert.match(fakeSockInstance.sentMessages[0].content.text, /auto-newlist turned \*on\*/i);
 });
 
-test('e2e: an admin @-mentioning "make @Alex the court canceller" (bot mentioned too) sets it to the ACTUAL named person, not the bot itself - regression for the bot\'s own @-mention leaking into the mentioned-JID list', async () => {
+test('e2e: an admin @-mentioning "make @Grace the court canceller" (bot mentioned too) sets it to the ACTUAL named person, not the bot itself - regression for the bot\'s own @-mention leaking into the mentioned-JID list', async () => {
   ai.setEnabled(GROUP_ID, true);
   const ALEX_JID = 'e2ecourtcancellerprobe@s.whatsapp.net';
-  setNextGeminiResponse({ command: 'courtcanceller', argText: 'Alex', confidence: 'high' });
+  setNextGeminiResponse({ command: 'courtcanceller', argText: 'Grace', confidence: 'high' });
   fakeSockInstance.sentMessages.length = 0;
 
   // The bot's own JID necessarily appears in mentions too (that's how AI
   // interpretation gets triggered at all) - order matters for the
   // regression this guards: the bot is mentioned FIRST, same as it would
-  // be in a real "@Snoopy make @Alex the court canceller" message.
-  await deliver('make @Alex the court canceller', {
+  // be in a real "@Snoopy make @Grace the court canceller" message.
+  await deliver('make @Grace the court canceller', {
     from: 'admin@s.whatsapp.net', type: 'notify', mentions: [BOT_JID, ALEX_JID],
   });
 
@@ -1093,18 +1093,18 @@ test('e2e: !newlist clears the previous cycle\'s tournament winners banner', asy
   assert.doesNotMatch(posted, /Congrats to/);
 });
 
-test('e2e: an admin @-mentioning "create a new list for tomorrow and the tournament winners are Peter and Rob" runs !newlist FIRST, then !tournamentwinners - the winners land on the fresh list instead of being immediately cleared by it', async () => {
+test('e2e: an admin @-mentioning "create a new list for tomorrow and the tournament winners are Alice and Ethan" runs !newlist FIRST, then !tournamentwinners - the winners land on the fresh list instead of being immediately cleared by it', async () => {
   ai.setEnabled(GROUP_ID, true);
   await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
   setNextGeminiResponse({
     actions: [
       { command: 'newlist', argText: '25/08', confidence: 'high' },
-      { command: 'tournamentwinners', argText: 'Peter, Rob', confidence: 'high' },
+      { command: 'tournamentwinners', argText: 'Alice, Ethan', confidence: 'high' },
     ],
   });
   fakeSockInstance.sentMessages.length = 0;
 
-  await deliver('create a new list for tomorrow and the tournament winners are Peter and Rob', {
+  await deliver('create a new list for tomorrow and the tournament winners are Alice and Ethan', {
     from: 'admin@s.whatsapp.net',
     type: 'notify',
     mentions: [BOT_JID],
@@ -1114,7 +1114,7 @@ test('e2e: an admin @-mentioning "create a new list for tomorrow and the tournam
   // would have immediately cleared it right back to null - this is a real
   // regression guard for that ordering bug, not just a "does the field get
   // set at all" check.
-  assert.deepEqual(store.getTournamentWinners(GROUP_ID), ['Peter', 'Rob']);
+  assert.deepEqual(store.getTournamentWinners(GROUP_ID), ['Alice', 'Ethan']);
 });
 
 test('e2e: a non-admin typing !settournament on is refused, and the feature stays off', async () => {
@@ -1146,7 +1146,7 @@ test('e2e: !settournament rules <text> sets the rules, and anyone can read them 
 // RESPONSE_SCHEMA/SYSTEM_PROMPT "MULTIPLE ACTIONS" and index.js's
 // handleAiMention) - regression coverage for a real bug report where only
 // the first part of a compound request (e.g. "create a new list ... the
-// tournament limit is 12 ... add Keith, Tu and Bao to the tournament") ever
+// tournament limit is 12 ... add Derek, Ellen and Frank to the tournament") ever
 // took effect, because the old single-action shape could only dispatch one
 // of the three. ---
 
@@ -1526,12 +1526,12 @@ test('e2e: catch-up (append) messages only honor !in/!out/!paid, not other comma
   // mutated), but it stays quiet immediately rather than posting its own
   // reply/list right away - it waits to be folded into the batched
   // catch-up summary instead (see the dedicated batching test below).
-  await deliver('!in Sam', { from: 'jordan@s.whatsapp.net', type: 'append' });
+  await deliver('!in Henry', { from: 'jordan@s.whatsapp.net', type: 'append' });
   assert.equal(fakeSockInstance.sentMessages.length, 0, 'a caught-up !in must not post its own immediate reply/list');
 
   await new Promise((resolve) => setTimeout(resolve, 400)); // let the catch-up summary flush
-  const posted = fakeSockInstance.sentMessages.find((m) => /Sam/.test(m.content.text || ''));
-  assert.ok(posted, 'expected !in to have actually been honored (Sam appears once the catch-up summary/list flushes)');
+  const posted = fakeSockInstance.sentMessages.find((m) => /Henry/.test(m.content.text || ''));
+  assert.ok(posted, 'expected !in to have actually been honored (Henry appears once the catch-up summary/list flushes)');
 });
 
 test('e2e: a real, known typed command (e.g. !limit/!allow) dropped by the catch-up gate logs a diagnostic line instead of vanishing with no trace - regression for a real report ("no response from !allow or !limit")', async () => {
@@ -1564,7 +1564,7 @@ test('e2e: an unrecognized command word (a typo, or ordinary chat starting with 
 test('e2e: multiple catch-up commands are batched into one combined summary plus one list post', async () => {
   fakeSockInstance.sentMessages.length = 0;
 
-  await deliver('!in Priya', { from: 'admin@s.whatsapp.net', type: 'append' });
+  await deliver('!in Renee', { from: 'admin@s.whatsapp.net', type: 'append' });
   await deliver('!paid NobodyOnDueList', { from: 'alex@s.whatsapp.net', type: 'append' });
   assert.equal(fakeSockInstance.sentMessages.length, 0, 'caught-up commands must not send anything immediately');
 
@@ -1574,9 +1574,9 @@ test('e2e: multiple catch-up commands are batched into one combined summary plus
   const [summaryMsg, listMsg] = fakeSockInstance.sentMessages;
   assert.match(summaryMsg.content.text, /Caught up on 2 messages sent while I was offline/);
   // Bulleted, bold-command format - see lib/catchUpSummary.js / test/catchUp.test.js.
-  assert.match(summaryMsg.content.text, /• \*!in\* \(admin\): added Priya/);
+  assert.match(summaryMsg.content.text, /• \*!in\* \(admin\): added Renee/);
   assert.match(summaryMsg.content.text, /• \*!paid\* \(alex\): not on the payment-due list/);
-  assert.match(listMsg.content.text, /Priya/);
+  assert.match(listMsg.content.text, /Renee/);
 });
 
 // Regression coverage for a real incident: WhatsApp can redeliver an
@@ -1663,10 +1663,10 @@ test('e2e: !spamfilter off actually turns off deletion for that group, and !spam
 test('e2e: !update accepts a multi-line pasted/edited list, typed as "!update" on its own line', async () => {
   fakeSockInstance.sentMessages.length = 0;
 
-  await deliver('!in Alex', { from: 'alex@s.whatsapp.net', type: 'notify' });
+  await deliver('!in Grace', { from: 'alex@s.whatsapp.net', type: 'notify' });
   fakeSockInstance.sentMessages.length = 0;
 
-  const pastedEdit = '!update\n*Attendance*\n\n1. Alex\n2. NewPerson';
+  const pastedEdit = '!update\n*Attendance*\n\n1. Grace\n2. NewPerson';
   await deliver(pastedEdit, { from: 'admin@s.whatsapp.net', type: 'notify' });
 
   const summary = fakeSockInstance.sentMessages.find((m) => /Added: NewPerson/.test(m.content.text || ''));

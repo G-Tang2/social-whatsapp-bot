@@ -34,23 +34,23 @@ const {
 
 // Bare-self resolution against the payment-due list, shared by handleIn/
 // handleOut below when a leading "paid" keyword is present but no
-// explicit name was given (e.g. "!in paid", not "!in paid Alex"). Matches
+// explicit name was given (e.g. "!in paid", not "!in paid Grace"). Matches
 // by WhatsApp ID (addedBy) FIRST, not display name, same reasoning as every
 // other bare-self lookup in this file: your current push name doesn't
 // always match whatever name ended up on a list - and here specifically,
 // it doesn't always match whatever name ended up on the SEPARATE
 // duePayments list either, which could've been recorded on a different
 // cycle under a different name. Also requires `self !== false` - if you
-// signed OTHER people up (e.g. "!in Peter, Chris, Linda"), those entries
+// signed OTHER people up (e.g. "!in Alice, Bob, Carla"), those entries
 // carry your `addedBy` too, but they're not YOU, so a later bare lookup
-// shouldn't claim you're "Peter, Chris, and Linda" (see store.js's
+// shouldn't claim you're "Alice, Bob, and Carla" (see store.js's
 // addEntry doc comment for the full reasoning).
 //
 // Someone can now legitimately have MORE THAN ONE due entry under the
 // SAME name at once - once per event they owe for (see store.js's
 // newList()) - so having multiple own entries ISN'T itself ambiguous
 // anymore; only having them under two or more DIFFERENT names is (e.g.
-// self-added as "Alex" one cycle and "Alex T" another - genuinely unclear
+// self-added as "Grace" one cycle and "Grace T" another - genuinely unclear
 // which one a plain "!paid <name>" should target). A same-name group
 // resolves to that one name, and markPaid() (store.js) already clears
 // every entry matching a name at once, so one !paid clears all of them in
@@ -88,11 +88,11 @@ function resolveOwnDue(groupId, senderId, senderName) {
 // the list right now - unlike parseNames()' own (context-free) "+N"
 // expansion, which always starts guest numbering at +1 and would just
 // collide with (and be rejected as duplicates of) guests already added by
-// an earlier "+N". E.g. the sender already has "Jordan, Jordan+1,
-// Jordan+2, Jordan+3" on the list (from an earlier "!in +3") and says
-// "add 3 more friends" (-> another "+3"): this returns ["Jordan+4",
-// "Jordan+5", "Jordan+6"], continuing the numbering, not a second
-// "Jordan, Jordan+1, Jordan+2, Jordan+3" that would all be rejected as
+// an earlier "+N". E.g. the sender already has "Preston, Preston+1,
+// Preston+2, Preston+3" on the list (from an earlier "!in +3") and says
+// "add 3 more friends" (-> another "+3"): this returns ["Preston+4",
+// "Preston+5", "Preston+6"], continuing the numbering, not a second
+// "Preston, Preston+1, Preston+2, Preston+3" that would all be rejected as
 // already-on-the-list duplicates.
 //
 // Only ever called for handleIn's ADD path - !out/!paid's own "+N"
@@ -214,9 +214,9 @@ function resolveOutTokens(event, token) {
 
 // Applies a leading "paid" keyword (see stripLeadingInKeywords) for
 // handleIn/handleOut. `explicitNames`, when given, is the SAME name list
-// !in/!out just processed - "!in paid Alex, Sam" marks both Alex and Sam
-// paid, matched literally by name, exactly like standalone "!paid Alex,
-// Sam" would. With no explicit names (the bare "!in paid" / "!out paid"
+// !in/!out just processed - "!in paid Grace, Henry" marks both Grace and Henry
+// paid, matched literally by name, exactly like standalone "!paid Grace,
+// Henry" would. With no explicit names (the bare "!in paid" / "!out paid"
 // case), falls back to resolveOwnDue() above instead of just reusing the
 // sender's push name, since that's the identity-correct match for the
 // SEPARATE duePayments list. Deliberately independent of whatever the
@@ -272,7 +272,7 @@ async function replyPaidOutcome(reply, paidOutcome) {
 // Applies a leading "tournament" keyword (see stripLeadingInKeywords) to a
 // list of names that are ALREADY on the attendance list - someone who
 // joined plain "!in" earlier (themselves, or someone else) and comes back
-// later with "!in tournament" (or "!in tournament Alex, Sam", naming people
+// later with "!in tournament" (or "!in tournament Grace, Henry", naming people
 // already on the list) to additionally opt in, without re-adding anyone.
 // Deliberately separate from the brand-new-entry path below, which handles
 // its own tournament opt-in via addEntry()'s `wantsTournament` param -
@@ -310,7 +310,7 @@ async function handleIn(ctx) {
   const { sock, msg, groupId, senderId, senderName, argText, upsertType, reply, postList } = ctx;
   const isCatchUp = upsertType === 'append';
   // Leading "paid" and/or "tournament" keywords (either order, e.g. "!in
-  // paid", "!in tournament paid", "!in tournament Alex, Sam") let someone
+  // paid", "!in tournament paid", "!in tournament Grace, Henry") let someone
   // join, confirm payment, and/or opt into the tournament all in one
   // message - see stripLeadingInKeywords' doc comment. `rest` (the
   // argText with both keywords stripped off) is used everywhere below in
@@ -323,10 +323,10 @@ async function handleIn(ctx) {
     // whatever name you're already on the list (or waitlist) under, so
     // check by WhatsApp ID first rather than blindly adding your current
     // push name as a second, duplicate entry. Also requires
-    // `self !== false` - otherwise, having previously typed "!in Peter,
-    // Chris, Linda" (entries attributed to you via `addedBy` for removal
+    // `self !== false` - otherwise, having previously typed "!in Alice,
+    // Bob, Carla" (entries attributed to you via `addedBy` for removal
     // purposes, but not YOU) would make the bot claim you're already on as
-    // "Peter, Chris, and Linda" - see store.js's addEntry doc comment.
+    // "Alice, Bob, and Carla" - see store.js's addEntry doc comment.
     const event = getCurrentEvent(groupId);
     const own = [...event.entries, ...(event.waitlist || [])].filter(
       (e) => e.addedBy === senderId && e.self !== false
@@ -374,9 +374,9 @@ async function handleIn(ctx) {
   // just with N unnamed friends tagged along - and only the bare self
   // entry (if newly added, see resolveAdditiveGuestNames) is really "the
   // sender" for `self` purposes; the +1/+2 entries are separate people,
-  // same as if the sender had typed "Sam, Sam+1" for someone else. Only
+  // same as if the sender had typed "Henry, Henry+1" for someone else. Only
   // applies when the ENTIRE argText is just that one "+N" token
-  // (PLUS_N_TOKEN) - "Peter, +2" is treated as an explicit multi-name
+  // (PLUS_N_TOKEN) - "Alice, +2" is treated as an explicit multi-name
   // list instead, same as any other combination of names, with no entry
   // marked self.
   const plusNMatch = isBareSelfAdd ? null : rest.trim().match(PLUS_N_TOKEN);
@@ -422,7 +422,7 @@ async function handleIn(ctx) {
   // actually on for this group right now, so a leading "tournament"
   // keyword (see stripLeadingInKeywords above) knows whether it can take
   // effect. Applies to EVERY name in this command, same as "paid" does -
-  // "!in tournament Alex, Sam" opts both Alex and Sam in.
+  // "!in tournament Grace, Henry" opts both Grace and Henry in.
   const tournamentEnabled = getCurrentEvent(groupId).tournamentEnabled;
   let tournamentRequestedButDisabled = false;
 
@@ -438,8 +438,8 @@ async function handleIn(ctx) {
     if (!result.ok) {
       // A "duplicate" here just means this name is already on the list (or
       // waitlist) - normally that's simply rejected. But with a leading
-      // "tournament" keyword (e.g. "!in tournament Alex, Sam" where Alex
-      // and Sam already joined earlier via plain "!in"), that's not a
+      // "tournament" keyword (e.g. "!in tournament Grace, Henry" where Grace
+      // and Henry already joined earlier via plain "!in"), that's not a
       // failure at all - it's a request to opt an EXISTING entry into the
       // tournament, same as the bare-self "already on the list" branch
       // above handles for a lone sender. See applyTournamentUpgradeIfFlagged
@@ -613,9 +613,9 @@ async function handleOut(ctx) {
   const { sock, msg, groupId, senderId, senderName, argText, upsertType, reply, postList } = ctx;
   const isCatchUp = upsertType === 'append';
   // See handleIn's matching comment - a leading "paid" keyword (e.g.
-  // "!out paid" or "!out paid Alex, Sam") lets someone leave and confirm
+  // "!out paid" or "!out paid Grace, Henry") lets someone leave and confirm
   // payment in one message. A leading "tournament" keyword (e.g. "!out
-  // tournament" or "!out tournament Garvin") instead branches off entirely
+  // tournament" or "!out tournament Isaac") instead branches off entirely
   // to handleLeaveTournament above - taking someone OUT of the tournament
   // only, NOT off the list - since that's a fundamentally different
   // operation from the removeEntry() loop below.
@@ -632,7 +632,7 @@ async function handleOut(ctx) {
     // a nickname), so name-matching alone can miss your own entry.
     // Covers the waitlist too, in case that's where you ended up. Also
     // requires `self !== false` - entries you added FOR someone else
-    // (e.g. via "!in Peter, Chris, Linda") carry your `addedBy` too, but
+    // (e.g. via "!in Alice, Bob, Carla") carry your `addedBy` too, but
     // aren't you - see store.js's addEntry doc comment.
     const event = getCurrentEvent(groupId);
     const own = [...event.entries, ...(event.waitlist || [])].filter(

@@ -177,7 +177,7 @@ async function handleNewlist(ctx) {
 
   if (!argText) {
     await reply(
-      `Usage: ${COMMAND_PREFIX}newlist DD/MM [location] | [courts] | [time] [with name1, name2, ...]\nExample: ${COMMAND_PREFIX}newlist 20/08 EBC | 13-18 | 8PM start with Peter, Chris, Linda\n(No year - it's inferred as the next upcoming occurrence of that day/month. Location/courts/time are optional and carry forward from the current list if left out. The optional trailing "with ..." clause immediately signs up everyone named, in order, on the brand new list. The saved regulars roster (see ${COMMAND_PREFIX}regulars) is always added too and opted straight into the tournament, whether or not "with ..." is used. Use "same" instead of a date, e.g. ${COMMAND_PREFIX}newlist same, to reuse whatever day of the week the current list is already on.)`
+      `Usage: ${COMMAND_PREFIX}newlist DD/MM [location] | [courts] | [time] [with name1, name2, ...]\nExample: ${COMMAND_PREFIX}newlist 20/08 EBC | 13-18 | 8PM start with Alice, Bob, Carla\n(No year - it's inferred as the next upcoming occurrence of that day/month. Location/courts/time are optional and carry forward from the current list if left out. The optional trailing "with ..." clause immediately signs up everyone named, in order, on the brand new list. The saved regulars roster (see ${COMMAND_PREFIX}regulars) is always added too and opted straight into the tournament, whether or not "with ..." is used. Use "same" instead of a date, e.g. ${COMMAND_PREFIX}newlist same, to reuse whatever day of the week the current list is already on.)`
     );
     return;
   }
@@ -188,7 +188,7 @@ async function handleNewlist(ctx) {
 
   // "same" (in place of a DD/MM date) reuses whatever day of the week the
   // CURRENT list is already on, e.g. "!newlist same" or "!newlist same
-  // with Peter, Chris" - handy for a recurring weekly/biweekly list where
+  // with Alice, Bob" - handy for a recurring weekly/biweekly list where
   // the day never changes, and it's also what the natural-language AI
   // mapping falls back to for a bare "create a new list" request with no
   // date mentioned at all (see lib/geminiCommand.js's matching SPECIAL
@@ -233,8 +233,8 @@ async function handleNewlist(ctx) {
   newList(groupId, resolvedDate, details);
 
   // Optional "with <names>" clause immediately pre-populates the brand
-  // new list, so e.g. "!newlist 20/08 EBC | 13-18 | 8PM start with Peter,
-  // Chris, Linda" both starts the new cycle AND signs everyone up in one
+  // new list, so e.g. "!newlist 20/08 EBC | 13-18 | 8PM start with Alice,
+  // Bob, Carla" both starts the new cycle AND signs everyone up in one
   // command, instead of needing a separate !in right after (particularly
   // handy for the natural-language AI mention path - see
   // lib/geminiCommand.js's COMMAND_ARG_GUIDE - where "create a new list
@@ -572,7 +572,7 @@ function formatRegularPlayers(names) {
 //                                    the natural mapping for someone just
 //                                    declaring who the regulars are for
 //                                    the first time, e.g. "these people
-//                                    are regular players: Peter, Chris, Linda"
+//                                    are regular players: Alice, Bob, Carla"
 // Always replies with the resulting roster (there's no "list" to repost
 // that would otherwise make the change visible, unlike most other admin
 // commands here) rather than staying quiet on success.
@@ -1005,7 +1005,7 @@ async function handleTournamentWinners(ctx) {
 // usually change week to week.
 //
 // Requires a genuine @-mention in the message itself (e.g.
-// "!courtcanceller @Alex"), never a typed name - a typed name has no
+// "!courtcanceller @Grace"), never a typed name - a typed name has no
 // reliable WhatsApp ID to actually tag later, and this bot's own
 // convention throughout (see e.g. resolveOwnDue's doc comment in
 // commands/list.js) is to match people by WhatsApp ID wherever it
@@ -1057,13 +1057,13 @@ async function handleCourtCanceller(ctx) {
   // MAPPABLE_COMMANDS), where the sender necessarily @-mentions the bot
   // itself to trigger AI interpretation at all, so `mentioned` would
   // otherwise carry the bot's own JID (usually first, e.g. "@Snoopy make
-  // @Alex the court canceller") right alongside the actual target -
+  // @Grace the court canceller") right alongside the actual target -
   // without this filter, mentioned[0] could silently set the bot itself
   // as its own court-canceller instead of refusing/picking the real target.
   const botJids = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
   const mentioned = getMentionedJids(msg).filter((jid) => !botJids.includes(normalizeJid(jid)));
   if (!mentioned.length) {
-    await reply(`@-mention the person directly, e.g. ${COMMAND_PREFIX}courtcanceller @Alex - a typed name alone can't be reliably tagged.`);
+    await reply(`@-mention the person directly, e.g. ${COMMAND_PREFIX}courtcanceller @Grace - a typed name alone can't be reliably tagged.`);
     return;
   }
 

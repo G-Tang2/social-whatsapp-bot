@@ -106,7 +106,7 @@
 //       "duePaymentsLabel": "$18 please",
 //       "tournamentEnabled": false,
 //       "tournamentLimit": 16 | null,
-//       "tournamentWinners": ["Irfan", "Tu"] | null,
+//       "tournamentWinners": ["Noah", "Ellen"] | null,
 //       "tournamentRules": "Best of 3, single elimination..." | null
 //     },
 //     "history": [] // vestigial - always reset empty by newList(), see the file-level comment above
@@ -531,8 +531,8 @@ function writeAll(data) {
 // no visible trace at all - most commonly U+2060 WORD JOINER, which
 // WhatsApp itself silently inserts around a name typed right after a
 // contact-autocomplete suggestion was dismissed. A real bug report: a
-// payment list typed with entries like "Priya" that actually carried a
-// leading U+2060 never matched someone typing a plain "priya" to pay -
+// payment list typed with entries like "Renee" that actually carried a
+// leading U+2060 never matched someone typing a plain "renee" to pay -
 // same visible text, different string. Stripped everywhere (not just
 // leading/trailing) since these have no width and can't collide with a
 // real letter, so removing one is always safe.
@@ -630,7 +630,7 @@ function setPaymentExempt(groupId, names) {
 // rather than being tracked in some second list that could drift out of
 // sync with who's actually attending. Leaving the tournament WITHOUT
 // leaving the social list is a leading "tournament" keyword on !out (e.g.
-// "!out tournament Garvin") - see leaveTournament() below and
+// "!out tournament Isaac") - see leaveTournament() below and
 // commands/list.js's handleLeaveTournament; leaving the social list
 // entirely is still just plain !out (see removeEntry()), which takes the
 // tournament flag along with the rest of the entry as always.
@@ -851,7 +851,7 @@ function joinTournament(groupId, name) {
  * The mirror of joinTournament() above - takes an EXISTING attendance entry
  * OUT of the tournament by name, WITHOUT removing them from the social list
  * (used by handleOut for a leading "tournament" keyword, e.g. "!out
- * tournament Garvin" - see commands/list.js's handleLeaveTournament).
+ * tournament Isaac" - see commands/list.js's handleLeaveTournament).
  * Leaving the list entirely is still !out's plain job (see removeEntry()) -
  * this only clears the tournament-related flags on an entry that stays
  * right where it is.
@@ -1029,7 +1029,7 @@ function restoreUndoableState(groupId, snapshot) {
 
 // Records `snapshot` (see getUndoableState) as the new undo target, along
 // with a short human-readable `description` of the command that's about
-// to make it stale (e.g. "!clear" or "!in Peter, Chris") - shown back by
+// to make it stale (e.g. "!clear" or "!in Alice, Bob") - shown back by
 // !undo as confirmation of what it just reversed. Called by
 // commands/index.js's dispatch wrapper, never directly by a command
 // handler.
@@ -1310,10 +1310,10 @@ function allowFromWaitlist(groupId, count) {
  * This is deliberately a SEPARATE concept from `addedBy`: `addedBy` always
  * records who ran the command (used for removal authorization), while
  * `self` records whether that person was signing THEMSELVES up, not
- * someone else - e.g. after `!in Peter, Chris, Linda`, all three entries
+ * someone else - e.g. after `!in Alice, Bob, Carla`, all three entries
  * have `addedBy` set to the sender's ID (so the sender can remove them
- * later) but `self: false` (so the sender isn't mistaken for being "Peter,
- * Chris, and Linda" the next time they run a bare `!in`/`!out`/`!paid` to
+ * later) but `self: false` (so the sender isn't mistaken for being "Alice,
+ * Bob, and Carla" the next time they run a bare `!in`/`!out`/`!paid` to
  * look themselves up - see those bare-lookup call sites in
  * commands/list.js, which all check `self !== false` rather than just
  * `addedBy === senderId`). Left unset (undefined) on entries created
@@ -1729,8 +1729,8 @@ function clearDuePayments(groupId) {
  * Since newList() can now leave the SAME name with more than one entry at
  * once (owing separately for two or more missed cycles - see newList()'s
  * doc comment), this clears EVERY entry matching `name`, not just the
- * first one found - "mark Alex as paid" means Alex is all settled up, not
- * "settle just one of however many things Alex happens to owe for". The
+ * first one found - "mark Grace as paid" means Grace is all settled up, not
+ * "settle just one of however many things Grace happens to owe for". The
  * returned `count` is how many entries that actually removed, so a caller
  * can tell "cleared one payment" from "cleared three at once" if it wants
  * to.

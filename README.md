@@ -9,8 +9,8 @@ every change.
 
 | Command | Who can use it | What it does |
 |---|---|---|
-| `!in [paid] [tournament] [name]` | anyone, up to 8 names per command (no limit for group admins) | Adds `[name]` (or your own WhatsApp display name if omitted) to the current list. Lead with `paid` (e.g. `!in paid` or `!in paid Alex, Sam`) to also mark them paid in the same message - see "Joining/leaving and paying in one message" below. Lead with `tournament` (either order alongside `paid`) to also opt into the group's tournament, if it's on - see "Tournament" below |
-| `!out [paid] [name]` | anyone, up to 8 names per command (no limit for group admins) | Removes that entry - anyone can remove anyone's entry, no restriction. Same leading `paid` combo as `!in`. Lead with `tournament` instead (e.g. `!out tournament` or `!out tournament Garvin`) to move that entry to social only, WITHOUT removing them from the list at all - see "Tournament" below |
+| `!in [paid] [tournament] [name]` | anyone, up to 8 names per command (no limit for group admins) | Adds `[name]` (or your own WhatsApp display name if omitted) to the current list. Lead with `paid` (e.g. `!in paid` or `!in paid Grace, Henry`) to also mark them paid in the same message - see "Joining/leaving and paying in one message" below. Lead with `tournament` (either order alongside `paid`) to also opt into the group's tournament, if it's on - see "Tournament" below |
+| `!out [paid] [name]` | anyone, up to 8 names per command (no limit for group admins) | Removes that entry - anyone can remove anyone's entry, no restriction. Same leading `paid` combo as `!in`. Lead with `tournament` instead (e.g. `!out tournament` or `!out tournament Isaac`) to move that entry to social only, WITHOUT removing them from the list at all - see "Tournament" below |
 | `!list` | anyone | Posts the current list |
 | `!clear` | group admins only | Wipes the current list's entries, keeping its date/location/courts/time |
 | `!clearpayments` | group admins only | Wipes who currently owes payment, without touching the list's entries/waitlist or anything else - the mirror of `!clear` |
@@ -77,10 +77,10 @@ This only applies to an entry you signed up bare (a plain `!in`/`!in paid`
 with no name typed) - if someone else (say, an admin) added an entry for
 you, bare `!out`/`!paid` won't find it; use the explicit `!out <name>` /
 `!paid <name>` form for that. The same goes in reverse: entries YOU add for
-someone else by explicitly typing their name (e.g. `!in Peter, Chris,
-Linda`) are attributed to you for removal purposes (see below), but aren't
+someone else by explicitly typing their name (e.g. `!in Alice, Bob,
+Carla`) are attributed to you for removal purposes (see below), but aren't
 mistaken for you - a later bare `!in`/`!out`/`!paid` from you still resolves
-to your own entry, not to Peter, Chris, or Linda.
+to your own entry, not to Alice, Bob, or Carla.
 
 **Who can remove an entry:** anyone can remove any entry with `!out`, no
 restriction at all - it doesn't matter who added it or whether they're an
@@ -90,7 +90,7 @@ anyone can mark anyone paid, admin-added or not; see "Tracking who owes
 payment" below.)
 
 **Adding/removing multiple people at once:** both `!in` and `!out`
-accept a comma-separated list, e.g. `!in Alex, Sam, Sam+1` adds all three
+accept a comma-separated list, e.g. `!in Grace, Henry, Henry+1` adds all three
 as separate entries in one go (up to 8 names per command for regular
 members - group admins have no cap, since they're more likely to be
 bulk-adding a whole team or session's worth of names at once; the same
@@ -104,13 +104,13 @@ is posted once at the end.
 - shorthand for typing out `!in <your name>, <your name>+1, <your name>+2`
 yourself. Works the same way for `!out +N` (removes yourself and all `N`
 guest entries) and `!paid +N`. Only triggers on a bare `+N` token by
-itself - `!in Peter, +2` is read as the literal name "Peter" plus this
+itself - `!in Alice, +2` is read as the literal name "Alice" plus this
 shorthand for yourself-and-2-more, not as three named people, and if you
 DO want to name the friends individually just list them normally instead
-(e.g. `!in Alex, Peter, Chris`).
+(e.g. `!in Grace, Alice, Bob`).
 
-**Regular players:** save a group's regulars once with `!regulars Peter, Chris,
-Linda` (admins only to change; anyone can run bare `!regulars` to see the
+**Regular players:** save a group's regulars once with `!regulars Alice, Bob,
+Carla` (admins only to change; anyone can run bare `!regulars` to see the
 current roster). From then on, anyone can sign the whole saved roster up
 by typing the words `regular players` in place of names - `!in regular
 players` adds them all in one command, and it can combine with an
@@ -131,7 +131,7 @@ so removing/paying still needs actual names.
 **Joining/leaving and paying in one message:** lead with the word `paid` on
 `!in` or `!out` to also mark yourself (or the name(s) given) paid in
 the same message, instead of sending `!paid` as a separate follow-up -
-e.g. `!in paid`, `!out paid`, or `!in paid Alex, Sam` for a comma list.
+e.g. `!in paid`, `!out paid`, or `!in paid Grace, Henry` for a comma list.
 It's exactly equivalent to sending `!in`/`!out` and then `!paid` right
 after, just combined: with explicit names, `paid` is applied to those same
 names; with no name (bare `!in paid` / `!out paid`), it looks up what
@@ -162,7 +162,7 @@ case of just wiping the current list without starting a new dated one.
 
 **Reusing the same day of the week:** type `same` instead of a `DD/MM`
 date, e.g. `!newlist same` or `!newlist same EBC | 13-18 | 8PM start with
-Peter, Chris` - handy for a recurring weekly/biweekly game where the day
+Alice, Bob` - handy for a recurring weekly/biweekly game where the day
 never changes, and it's also what "@snoopy create a new list" (with no
 date mentioned at all) maps to via the natural-language `!ai` mention path
 (see "Natural-language commands" below). The bot works out the date itself
@@ -187,9 +187,9 @@ want for a simple correction.
 **Pre-populating a new list:** add `with name1, name2, ...` to the very end
 of `!newlist` (after everything else, including any `|` segments) to sign
 those people up on the brand new list in the same command, e.g. `!newlist
-20/08 EBC | 13-18 | 8PM start with Peter, Chris, Linda` or, with no
-location/courts/time mentioned at all, just `!newlist 20/08 with Peter,
-Chris, Linda`. Everyone listed is added in the exact order given, using the
+20/08 EBC | 13-18 | 8PM start with Alice, Bob, Carla` or, with no
+location/courts/time mentioned at all, just `!newlist 20/08 with Alice,
+Bob, Carla`. Everyone listed is added in the exact order given, using the
 same rules as `!in` (comma-separated, `Name+1`-style guest suffixes work,
 and so does the `regular players` word for the saved roster - see "Regular
 players" above, e.g. `!newlist 20/08 with regular players`) - and it still
@@ -264,8 +264,8 @@ actually get notified, not just listed as plain text in the posted list.
 That tag goes to whoever *added* the entry: for the common case of
 someone running `!in` for themselves, that's them, so the tag lands
 correctly; if an admin added the entry on someone else's behalf (e.g.
-`!in Alex, Sam` typed by an admin), the bot has no way to know Alex's or
-Sam's own WhatsApp ID - they never messaged the bot themselves - so the
+`!in Grace, Henry` typed by an admin), the bot has no way to know Grace's or
+Henry's own WhatsApp ID - they never messaged the bot themselves - so the
 tag falls back to the admin who added the entry instead of silently
 tagging nobody. `!limit` with no number shows the current
 limit (or that there isn't one) without changing it. Lowering the limit
@@ -327,22 +327,22 @@ Courts 13-18 (6)
 
 *Attendance* (2/2)
 
-1. Jordan
-2. Alex
+1. Preston
+2. Grace
 
 *Waitlist* (1)
 
-1. Sam
+1. Henry
 
 *Payment*
 
 20th Aug Thu
-1. Casey
-2. Alex
+1. Uma
+2. Grace
 
 13th Aug Thu
-1. Riley
-2. Alex
+1. Violet
+2. Grace
 ```
 
 The header for that section (`Payment` above) starts out as whatever
@@ -356,7 +356,7 @@ amount actually changes, not every week. Anyone can run bare `!paymentlabel` to
 check the current header without changing it.
 
 Names in the payment section are grouped under the date of the list
-they're actually owed for, e.g. `13th Aug Thu` above means Riley (and Alex)
+they're actually owed for, e.g. `13th Aug Thu` above means Violet (and Grace)
 owe for the 13th Aug list, not whatever list is currently active - handy
 once there's a backlog, since without it there's no way to tell how far
 behind someone is. Each group is numbered from 1 on its own, and groups are
@@ -364,8 +364,8 @@ shown most-recent-first, so the freshest debt is at the top and whoever's
 been owing longest sinks to the bottom. Someone who's already behind and
 then misses paying for ANOTHER list gets a completely separate second
 entry, under that list's own group, rather than being merged into one
-"still behind" line - notice Alex above appears under BOTH `20th Aug Thu`
-*and* `13th Aug Thu`, because Alex owes for both of those events
+"still behind" line - notice Grace above appears under BOTH `20th Aug Thu`
+*and* `13th Aug Thu`, because Grace owes for both of those events
 independently, not just one lump "you're behind" amount. Each individual
 entry's group is set once, when it first carries over into the payment
 list, and never changes after that - it always shows the exact event it's
@@ -375,11 +375,11 @@ into the payment section by hand via `!update`, shows under its own
 most-recent-first ordering everything else follows.
 
 People clear themselves (or get cleared by anyone else in the group) with
-`!paid Alex` once they've paid, same comma-list support as `!in`/`!out` -
+`!paid Grace` once they've paid, same comma-list support as `!in`/`!out` -
 there's no ownership or admin check on `!paid`, so whoever's collecting the
-money can mark any name paid. One `!paid Alex` clears EVERY entry Alex has
+money can mark any name paid. One `!paid Grace` clears EVERY entry Grace has
 at once (both the 20th Aug and 13th Aug debts above, in one go) - it means
-"Alex is all settled up," not "clear just one of however many things Alex
+"Grace is all settled up," not "clear just one of however many things Grace
 owes for." If someone doesn't pay before the *next* `!newlist`
 happens, they aren't forgotten - each of their unpaid entries carries
 forward into the new payment-due list rather than being dropped (each
@@ -396,8 +396,8 @@ entries/waitlist/date/location/courts/time untouched. Changed your mind?
 any other command.
 
 Some people never need to pay at all - the organizer themselves, a
-sponsor, a coach. A group admin can mark them exempt with `!exempt Peter`
-(or `!exempt Peter, Chris` for several at once) - anyone on that saved
+sponsor, a coach. A group admin can mark them exempt with `!exempt Alice`
+(or `!exempt Alice, Bob` for several at once) - anyone on that saved
 roster is simply skipped every time `!newlist` carries the attendance list
 into payment-due, no matter how many lists they're on, so they never show
 up owing anything in the first place. Same shape as `!regulars`:
@@ -430,9 +430,9 @@ own first line, followed by the pasted (edited) text underneath, e.g.:
 !update
 *Attendance*
 
-1. Jordan
-2. Priya
-3. Alex
+1. Preston
+2. Renee
+3. Grace
 
 *Waitlist*
 
@@ -481,10 +481,10 @@ placement.** If the pasted `*Attendance*` block includes the `🏆
 which it will, automatically, if you just copied the bot's own posted list
 - moving a name between the two sections and sending it back actually
 changes their tournament status, exactly like cutting a name between
-`*Attendance*` and `*Waitlist*` promotes/demotes them. Swap Bao out for
-Garvin by moving Garvin's line up under `🏆 *Tournament*` and
-Bao's down under `Social only`, and the summary reply shows `Tournament:
-Garvin (social only → tournament), Bao (tournament → social only)`. Listing
+`*Attendance*` and `*Waitlist*` promotes/demotes them. Swap Frank out for
+Isaac by moving Isaac's line up under `🏆 *Tournament*` and
+Frank's down under `Social only`, and the summary reply shows `Tournament:
+Isaac (social only → tournament), Frank (tournament → social only)`. Listing
 more names under the tournament header than `!tournamentlimit` allows caps
 it at the limit (in the order given) and queues the rest, tagged `(🏆 WL)`,
 same as the tournament filling up normally would. A `(🏆 WL)` tag already
@@ -615,30 +615,30 @@ format, bracket times, or anything else worth pinning). `!tournament` isn't
 gated on the feature being on or off - rules can be posted ahead of time.
 
 **Opting in:** lead with the word `tournament` on `!in`, e.g. `!in
-tournament` for yourself, or `!in tournament Alex, Sam` to opt Alex and Sam
+tournament` for yourself, or `!in tournament Grace, Henry` to opt Grace and Henry
 in together (as brand new joiners, or any mix of new and existing names -
 see below). It combines with `paid` too, in either order - `!in
 tournament paid` and `!in paid tournament` both work (either flag word
-always goes before the name(s), e.g. `!in paid tournament Alex, Sam`).
+always goes before the name(s), e.g. `!in paid tournament Grace, Henry`).
 
 **Moving to social only:** lead with the word `tournament` on `!out`
-instead, e.g. `!out tournament` for yourself, or `!out tournament Garvin`
+instead, e.g. `!out tournament` for yourself, or `!out tournament Isaac`
 (or several names, comma-separated) for someone else - this takes them OUT
 of the tournament (or off its `(🏆 WL)` queue if they were only queued, not
 actually in) while leaving them right where they are on the social list. It
 is NOT the same as plain `!out`, which removes the entry from the list
-entirely - `!out tournament Garvin` just untags Garvin from `🏆 Tournament`
+entirely - `!out tournament Isaac` just untags Isaac from `🏆 Tournament`
 and drops him back under `Social only`. Taking someone out of an
 actual tournament spot (not just the queue) frees one up, so the front of
 the `(🏆 WL)` queue gets promoted automatically, same as any other spot
 opening up (see below) - and it combines with `paid` too, same
 leading-keyword either-order rule as everywhere else (`!out tournament paid
-Garvin`).
+Isaac`).
 
 **Already on the list works too, one name or several.** Running `!in
 tournament` again with no other names upgrades your own existing entry
 instead of adding a duplicate one. The same works for multiple names at
-once: `!in tournament Alex, Sam` opts BOTH into the tournament whether
+once: `!in tournament Grace, Henry` opts BOTH into the tournament whether
 they're brand new, already on the list, or one of each - nobody gets
 duplicated, and each name is judged independently against capacity (see
 below), so it's fine if one gets in and another gets queued. The one case
@@ -676,15 +676,15 @@ header text and the added pointer line change. For example:
 🏆 *Tournament* (15/16)
 Ask @Snoopy for details
 
-1. Keith
-2. Bao
+1. Derek
+2. Frank
 ...
-15. Han
+15. Tyler
 
 Social only
 
-16. Leo (🏆 WL)
-17. Bel
+16. Felix (🏆 WL)
+17. Gemma
 ...
 ```
 
@@ -721,7 +721,7 @@ instead.
 only) sets a banner shown above the whole list while the tournament is on:
 
 ```
-*Congrats to Irfan and Tu for winning last week's tournament*
+*Congrats to Noah and Ellen for winning last week's tournament*
 ```
 
 It's always exactly two names - there's nothing to incrementally edit,
@@ -734,7 +734,7 @@ stale "Congrats" banner above the new cycle's list. Announce it again with
 `!tournamentwinners` for each new result. If you're announcing winners in
 the same breath as starting the new list (e.g. via a natural-language
 @-mention like "create a new list for tomorrow and the tournament winners
-are Peter and Rob"), the bot runs `!newlist` first and `!tournamentwinners`
+are Alice and Ethan"), the bot runs `!newlist` first and `!tournamentwinners`
 right after, so the winners land on the fresh list instead of being wiped
 by it.
 
@@ -822,13 +822,13 @@ A few things worth knowing about how this works:
 A separate, per-group, **OFF by default** feature (unlike spam filtering
 above): once a group turns it on, @-mentioning the bot with a plain-
 English request - `@bot put me down for Saturday`, `@bot add me and 2
-friends`, `@bot take Peter and Chris off`, `@bot remove 1-3`, `@bot I
+friends`, `@bot take Alice and Bob off`, `@bot remove 1-3`, `@bot I
 paid`, `@bot what's the list look like`, an admin saying `@bot clear
 the list`, an admin saying `@bot create a new list for next Wednesday
-with Peter, Chris, and Linda`, `@bot add the regular players`, an admin
-saying `@bot these people are regular players: Peter, Chris, Linda`, an
+with Alice, Bob, and Carla`, `@bot add the regular players`, an admin
+saying `@bot these people are regular players: Alice, Bob, Carla`, an
 admin saying `@bot undo that` right after a mistake, `@bot sign me up for
-the tournament too`, an admin saying `@bot congrats to Irfan and Tu for
+the tournament too`, an admin saying `@bot congrats to Noah and Ellen for
 winning the tournament`, or an admin saying `@bot I got extra courts
 12-14` (adds those on top of whatever's already booked, rather than
 replacing it - see "Adding MORE courts instead of replacing them" above) -
@@ -853,11 +853,11 @@ group regardless of the natural-language feature's on/off state.
 
 **One message can bundle several distinct requests, and all of them get
 done.** `@bot create a new list for next Sunday at Noble Park courts 1,2 at
-7pm-9pm. The tournament limit is 12. Add Keith, Tu and Bao to the
+7pm-9pm. The tournament limit is 12. Add Derek, Ellen and Frank to the
 tournament` is really three separate requests in one message - starting a
 new list, capping the tournament, and adding specific people to it - and
 each one is dispatched to its real command in turn (`!newlist ...`, then
-`!tournamentlimit 12`, then `!in tournament, Keith, Tu, Bao`), in the order
+`!tournamentlimit 12`, then `!in tournament, Derek, Ellen, Frank`), in the order
 they need to happen (a brand new list has to exist before anyone can be
 added to it or its tournament settings changed, so a `!newlist`-equivalent
 request always runs first if the message has one). Each dispatched part
@@ -882,10 +882,10 @@ that exists right now).
 request given as a relative day - "next Wednesday", "this Friday",
 "tomorrow" - is resolved into the actual `DD/MM` using the real current
 date/day-of-week (in the group's configured `TIMEZONE`) as the reference
-point, so `@bot create a new list for next Wednesday with Peter, Chris,
-Linda` both figures out the right date and pre-populates the list with
+point, so `@bot create a new list for next Wednesday with Alice, Bob,
+Carla` both figures out the right date and pre-populates the list with
 everyone named in one message - equivalent to typing `!newlist 20/08 with
-Peter, Chris, Linda` by hand (see "Starting a new dated list" above for the
+Alice, Bob, Carla` by hand (see "Starting a new dated list" above for the
 `with ...` clause itself). If the date reference is ambiguous, it falls
 back to the same "I'm not capable of doing that" reply as any other
 uncertain request (see below) instead of guessing.
@@ -902,8 +902,8 @@ vague, is instead resolved normally as above.
 **Aware of the saved regular-players roster.** Whether the roster is set
 (and who's on it) is also included as context, so `@bot add the regular
 players` maps to `!in regular players` (uses the saved roster - see "Regular
-players" above) while `@bot these people are regular players: Peter, Chris,
-Linda` maps to `!regulars Peter, Chris, Linda` (redefines it) - the bot tells
+players" above) while `@bot these people are regular players: Alice, Bob,
+Carla` maps to `!regulars Alice, Bob, Carla` (redefines it) - the bot tells
 these apart rather than confusing "use the roster" with "change the
 roster". Bulk-removing or bulk-charging the whole roster via `!out`/
 `!paid` isn't supported this way (or via typed `!out`/`!paid` either) -
@@ -973,8 +973,8 @@ current state. Every group starts off - each one opts in individually.
   low-confidence request that's still clearly *trying* to do something
   list-related (as opposed to not being list-related at all), the model is
   asked to also produce a short, specific question about exactly what's
-  ambiguous - e.g. "Janelle paid Janelle in" might get "Did you mean to
-  remove Janelle from the payment list, or add her to the attendance
+  ambiguous - e.g. "Megan paid Megan in" might get "Did you mean to
+  remove Megan from the payment list, or add her to the attendance
   list?" instead of either guessing or a generic "not capable" brush-off.
   The bot sends that question back as a reply and tells the sender to
   reply to it; a plain WhatsApp reply to that message (no fresh @-mention
@@ -1098,9 +1098,9 @@ summarizing everything that happened, e.g.:
 ```
 Caught up on 3 messages sent while I was offline:
 
-• *!in* (Alex): added Alex
-• *!out* (Sam): removed Sam
-• *!paid* (Jo): marked paid: Jo
+• *!in* (Grace): added Grace
+• *!out* (Henry): removed Henry
+• *!paid* (Quinn): marked paid: Quinn
 ```
 
 followed by a single fresh list post. Anyone who genuinely needs a
@@ -1519,7 +1519,7 @@ of OS:
    options are fine).
 
 2. **Extract the zip** to somewhere permanent, e.g.
-   `C:\Users\garvin\Documents\whatsapp-list-bot`.
+   `C:\Users\yourname\Documents\whatsapp-list-bot`.
 
 3. **Open a terminal in that folder** (in File Explorer, click the address
    bar, type `powershell`, press Enter - it opens already in that folder),

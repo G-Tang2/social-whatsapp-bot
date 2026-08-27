@@ -44,22 +44,22 @@ function freshRegularPlayersGroupId() {
 }
 
 test('parseNames splits comma-separated names and trims whitespace', () => {
-  assert.deepEqual(parseNames('Alex, Sam, Sam+1', 'fallback'), ['Alex', 'Sam', 'Sam+1']);
+  assert.deepEqual(parseNames('Grace, Henry, Henry+1', 'fallback'), ['Grace', 'Henry', 'Henry+1']);
   assert.deepEqual(parseNames('', 'fallback'), ['fallback']);
   assert.deepEqual(parseNames(null, 'fallback'), ['fallback']);
-  assert.deepEqual(parseNames('  Alex  ,, Sam ', 'fallback'), ['Alex', 'Sam']); // drops empty segments
+  assert.deepEqual(parseNames('  Grace  ,, Henry ', 'fallback'), ['Grace', 'Henry']); // drops empty segments
 });
 
 test('parseNames expands a bare "+N" token into fallbackName plus N guest entries', () => {
-  assert.deepEqual(parseNames('+2', 'Jordan'), ['Jordan', 'Jordan+1', 'Jordan+2']);
-  assert.deepEqual(parseNames('+1', 'Jordan'), ['Jordan', 'Jordan+1']);
-  assert.deepEqual(parseNames('+0', 'Jordan'), ['Jordan']); // 0 guests - just the sender
-  assert.deepEqual(parseNames('+ 3', 'Jordan'), ['Jordan', 'Jordan+1', 'Jordan+2', 'Jordan+3']); // tolerates a space after "+"
+  assert.deepEqual(parseNames('+2', 'Preston'), ['Preston', 'Preston+1', 'Preston+2']);
+  assert.deepEqual(parseNames('+1', 'Preston'), ['Preston', 'Preston+1']);
+  assert.deepEqual(parseNames('+0', 'Preston'), ['Preston']); // 0 guests - just the sender
+  assert.deepEqual(parseNames('+ 3', 'Preston'), ['Preston', 'Preston+1', 'Preston+2', 'Preston+3']); // tolerates a space after "+"
 });
 
-test('parseNames only expands a token that is ENTIRELY "+N" - an explicit "Sam+1" name is left untouched', () => {
-  assert.deepEqual(parseNames('Sam+1', 'fallback'), ['Sam+1']);
-  assert.deepEqual(parseNames('Peter, +2', 'Jordan'), ['Peter', 'Jordan', 'Jordan+1', 'Jordan+2']);
+test('parseNames only expands a token that is ENTIRELY "+N" - an explicit "Henry+1" name is left untouched', () => {
+  assert.deepEqual(parseNames('Henry+1', 'fallback'), ['Henry+1']);
+  assert.deepEqual(parseNames('Alice, +2', 'Preston'), ['Alice', 'Preston', 'Preston+1', 'Preston+2']);
 });
 
 test('stripLeadingPaidKeyword detects a bare leading "paid" and strips it', () => {
@@ -69,14 +69,14 @@ test('stripLeadingPaidKeyword detects a bare leading "paid" and strips it', () =
 });
 
 test('stripLeadingPaidKeyword strips a leading "paid" off a name list, comma or space separated', () => {
-  assert.deepEqual(stripLeadingPaidKeyword('paid Alex'), { rest: 'Alex', paid: true });
-  assert.deepEqual(stripLeadingPaidKeyword('paid Alex, Sam'), { rest: 'Alex, Sam', paid: true });
-  assert.deepEqual(stripLeadingPaidKeyword('PAID, Alex, Sam'), { rest: 'Alex, Sam', paid: true });
+  assert.deepEqual(stripLeadingPaidKeyword('paid Grace'), { rest: 'Grace', paid: true });
+  assert.deepEqual(stripLeadingPaidKeyword('paid Grace, Henry'), { rest: 'Grace, Henry', paid: true });
+  assert.deepEqual(stripLeadingPaidKeyword('PAID, Grace, Henry'), { rest: 'Grace, Henry', paid: true });
 });
 
 test('stripLeadingPaidKeyword leaves text alone when there is no leading "paid" keyword', () => {
-  assert.deepEqual(stripLeadingPaidKeyword('Alex'), { rest: 'Alex', paid: false });
-  assert.deepEqual(stripLeadingPaidKeyword('Alex, Sam'), { rest: 'Alex, Sam', paid: false });
+  assert.deepEqual(stripLeadingPaidKeyword('Grace'), { rest: 'Grace', paid: false });
+  assert.deepEqual(stripLeadingPaidKeyword('Grace, Henry'), { rest: 'Grace, Henry', paid: false });
   assert.deepEqual(stripLeadingPaidKeyword(''), { rest: '', paid: false });
   assert.deepEqual(stripLeadingPaidKeyword(null), { rest: '', paid: false });
 });
@@ -86,15 +86,15 @@ test('stripLeadingPaidKeyword does not strip "paid" as part of a longer word', (
   // standalone word) must be left alone - only a whole leading word
   // "paid" counts, same as the module comment explains.
   assert.deepEqual(stripLeadingPaidKeyword('Paidence'), { rest: 'Paidence', paid: false });
-  assert.deepEqual(stripLeadingPaidKeyword('Paidence, Alex'), { rest: 'Paidence, Alex', paid: false });
+  assert.deepEqual(stripLeadingPaidKeyword('Paidence, Grace'), { rest: 'Paidence, Grace', paid: false });
 });
 
 test('stripLeadingInKeywords strips a bare leading "paid", "tournament", or both, in either order', () => {
-  assert.deepEqual(stripLeadingInKeywords('Alex'), { rest: 'Alex', paid: false, tournament: false });
-  assert.deepEqual(stripLeadingInKeywords('paid Alex'), { rest: 'Alex', paid: true, tournament: false });
-  assert.deepEqual(stripLeadingInKeywords('tournament Alex'), { rest: 'Alex', paid: false, tournament: true });
-  assert.deepEqual(stripLeadingInKeywords('tournament paid Alex'), { rest: 'Alex', paid: true, tournament: true });
-  assert.deepEqual(stripLeadingInKeywords('paid tournament Alex'), { rest: 'Alex', paid: true, tournament: true });
+  assert.deepEqual(stripLeadingInKeywords('Grace'), { rest: 'Grace', paid: false, tournament: false });
+  assert.deepEqual(stripLeadingInKeywords('paid Grace'), { rest: 'Grace', paid: true, tournament: false });
+  assert.deepEqual(stripLeadingInKeywords('tournament Grace'), { rest: 'Grace', paid: false, tournament: true });
+  assert.deepEqual(stripLeadingInKeywords('tournament paid Grace'), { rest: 'Grace', paid: true, tournament: true });
+  assert.deepEqual(stripLeadingInKeywords('paid tournament Grace'), { rest: 'Grace', paid: true, tournament: true });
   assert.deepEqual(stripLeadingInKeywords('tournament'), { rest: '', paid: false, tournament: true });
   assert.deepEqual(stripLeadingInKeywords(''), { rest: '', paid: false, tournament: false });
   assert.deepEqual(stripLeadingInKeywords(null), { rest: '', paid: false, tournament: false });
@@ -124,11 +124,11 @@ test('stripLeadingCourtsAddKeyword does not strip "add"/"extra" as part of a lon
 
 test('stripTrailingWithNames splits off a trailing "with <names>" clause', () => {
   assert.deepEqual(
-    stripTrailingWithNames('EBC | 13-18 | 8PM start with Peter, Chris, Linda'),
-    { rest: 'EBC | 13-18 | 8PM start', namesText: 'Peter, Chris, Linda' }
+    stripTrailingWithNames('EBC | 13-18 | 8PM start with Alice, Bob, Carla'),
+    { rest: 'EBC | 13-18 | 8PM start', namesText: 'Alice, Bob, Carla' }
   );
-  assert.deepEqual(stripTrailingWithNames('with Peter, Chris, Linda'), { rest: '', namesText: 'Peter, Chris, Linda' });
-  assert.deepEqual(stripTrailingWithNames('WITH Peter'), { rest: '', namesText: 'Peter' }); // case-insensitive
+  assert.deepEqual(stripTrailingWithNames('with Alice, Bob, Carla'), { rest: '', namesText: 'Alice, Bob, Carla' });
+  assert.deepEqual(stripTrailingWithNames('WITH Alice'), { rest: '', namesText: 'Alice' }); // case-insensitive
 });
 
 test('stripTrailingWithNames leaves text alone when there is no "with" clause', () => {
@@ -157,15 +157,15 @@ test('stripMentionTokens preserves internal line breaks - regression for a real 
   // parseListSections() depends on to recognize *Attendance*/numbered
   // entries - see index.js's handleAiMention, which uses this function's
   // output as the real argText for an "update" AI action.
-  const pasted = '@61412345678 update the list to be\n\n*Attendance* (2/10)\n\n1. Keith\n2. Bao';
+  const pasted = '@61412345678 update the list to be\n\n*Attendance* (2/10)\n\n1. Derek\n2. Frank';
   const result = stripMentionTokens(pasted, ['61412345678@s.whatsapp.net']);
-  assert.equal(result, 'update the list to be\n\n*Attendance* (2/10)\n\n1. Keith\n2. Bao');
+  assert.equal(result, 'update the list to be\n\n*Attendance* (2/10)\n\n1. Derek\n2. Frank');
   // Confirms the line-based structure a real parse would need is intact,
   // not just that newlines survived textually.
   const lines = result.split('\n');
   assert.equal(lines[2], '*Attendance* (2/10)');
-  assert.equal(lines[4], '1. Keith');
-  assert.equal(lines[5], '2. Bao');
+  assert.equal(lines[4], '1. Derek');
+  assert.equal(lines[5], '2. Frank');
 });
 
 test('stripMentionTokens collapses horizontal whitespace hugging a line break, without merging the lines themselves', () => {
@@ -191,14 +191,14 @@ test('REGULAR_PLAYERS_TOKEN matches "regular players" and reasonable variants, c
 });
 
 test('REGULAR_PLAYERS_TOKEN does not match a real name that merely contains the word, or an unrelated word', () => {
-  for (const token of ['Regulator Players', 'regularly', 'usuals', 'Peter']) {
+  for (const token of ['Regulator Players', 'regularly', 'usuals', 'Alice']) {
     assert.ok(!REGULAR_PLAYERS_TOKEN.test(token), `expected "${token}" NOT to match`);
   }
 });
 
 test('expandRegularPlayersToken: returns names completely unchanged (same reference) when the token is absent', () => {
   const groupId = freshRegularPlayersGroupId();
-  const names = ['Peter', 'Chris'];
+  const names = ['Alice', 'Bob'];
   const result = expandRegularPlayersToken(names, groupId);
   assert.equal(result.names, names); // same array reference, not just deepEqual
   assert.equal(result.usedEmptyRegularPlayers, false);
@@ -206,10 +206,10 @@ test('expandRegularPlayersToken: returns names completely unchanged (same refere
 
 test('expandRegularPlayersToken: splices the saved roster in at the token\'s position, preserving other names', () => {
   const groupId = freshRegularPlayersGroupId();
-  store.setRegularPlayers(groupId, ['Peter', 'Chris', 'Linda']);
+  store.setRegularPlayers(groupId, ['Alice', 'Bob', 'Carla']);
 
   const result = expandRegularPlayersToken(['Extra Guest', 'regular players'], groupId);
-  assert.deepEqual(result.names, ['Extra Guest', 'Peter', 'Chris', 'Linda']);
+  assert.deepEqual(result.names, ['Extra Guest', 'Alice', 'Bob', 'Carla']);
   assert.equal(result.usedEmptyRegularPlayers, false);
 });
 
@@ -298,43 +298,43 @@ test('formatList: while tournament is enabled, splits Attendance into a "🏆 To
   const groupId = freshRegularPlayersGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 2);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Wendy', 'wendy@s.whatsapp.net', false, true, false);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Sienna', 'wendy@s.whatsapp.net', false, true, false);
 
   const text = formatList(groupId);
-  assert.match(text, /🏆 \*Tournament\* \(2\/2\)\nAsk @Snoopy for details\n\n1\. Keith\n2\. Bao/);
-  assert.match(text, /Social only\n\n3\. Wendy/);
+  assert.match(text, /🏆 \*Tournament\* \(2\/2\)\nAsk @Snoopy for details\n\n1\. Derek\n2\. Frank/);
+  assert.match(text, /Social only\n\n3\. Sienna/);
 });
 
 test('formatList: someone who wanted the tournament but it was full is tagged (🏆 WL) in the Social only block', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // wanted in, but full
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // wanted in, but full
 
   const text = formatList(groupId);
-  assert.match(text, /Social only\n\n2\. Bao \(🏆 WL\)/);
+  assert.match(text, /Social only\n\n2\. Frank \(🏆 WL\)/);
 
   // Someone who never asked for the tournament at all gets no tag.
-  store.addEntry(groupId, 'Wendy', 'wendy@s.whatsapp.net', false, true, false);
+  store.addEntry(groupId, 'Sienna', 'wendy@s.whatsapp.net', false, true, false);
   const text2 = formatList(groupId);
-  assert.match(text2, /3\. Wendy$/);
-  assert.doesNotMatch(text2, /Wendy \(🏆 WL\)/);
+  assert.match(text2, /3\. Sienna$/);
+  assert.doesNotMatch(text2, /Sienna \(🏆 WL\)/);
 });
 
 test('formatList: (🏆 WL)-tagged entries are sorted to the FRONT of Social only, ahead of earlier joiners who never asked - that ordering IS the tournament queue', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // takes the only spot
-  store.addEntry(groupId, 'Wendy', 'wendy@s.whatsapp.net', false, true, false); // plain social, joined first
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // asked later, but full - WL'd
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true); // takes the only spot
+  store.addEntry(groupId, 'Sienna', 'wendy@s.whatsapp.net', false, true, false); // plain social, joined first
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // asked later, but full - WL'd
 
   const text = formatList(groupId);
-  // Bao (WL'd) is listed BEFORE Wendy (never asked) despite joining after her.
-  assert.match(text, /Social only\n\n2\. Bao \(🏆 WL\)\n3\. Wendy/);
+  // Frank (WL'd) is listed BEFORE Sienna (never asked) despite joining after her.
+  assert.match(text, /Social only\n\n2\. Frank \(🏆 WL\)\n3\. Sienna/);
 });
 
 test('formatList: while tournament is enabled, both headers show even with ZERO entries at all - each gets a "(none yet)" placeholder instead of falling back to the generic empty-Attendance message', () => {
@@ -351,10 +351,10 @@ test('formatList: while tournament is enabled, both headers show even with ZERO 
 test('formatList: while tournament is enabled, the Social only header still shows (with a placeholder) even when everyone who\'s joined so far is in the tournament', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // tournament only, nobody social-only yet
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true); // tournament only, nobody social-only yet
 
   const text = formatList(groupId);
-  assert.match(text, /🏆 \*Tournament\* \(1\)\nAsk @Snoopy for details\n\n1\. Keith/);
+  assert.match(text, /🏆 \*Tournament\* \(1\)\nAsk @Snoopy for details\n\n1\. Derek/);
   assert.match(text, /Social only\n\n\(none yet\)/);
 });
 
@@ -371,25 +371,25 @@ test('formatList: with tournament OFF, a totally empty list still renders the pl
 test('formatList: the winners banner only shows while tournament is enabled, and disappears (without forgetting the winners) once turned off', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setTournamentEnabled(groupId, true);
-  store.setTournamentWinners(groupId, ['Irfan', 'Tu']);
+  store.setTournamentWinners(groupId, ['Noah', 'Ellen']);
 
-  assert.match(formatList(groupId), /🎉 \*Congrats to Irfan and Tu for winning last week's tournament\*/);
+  assert.match(formatList(groupId), /🎉 \*Congrats to Noah and Ellen for winning last week's tournament\*/);
 
   store.setTournamentEnabled(groupId, false);
   assert.doesNotMatch(formatList(groupId), /Congrats to/);
-  assert.deepEqual(store.getTournamentWinners(groupId), ['Irfan', 'Tu']); // still remembered
+  assert.deepEqual(store.getTournamentWinners(groupId), ['Noah', 'Ellen']); // still remembered
 });
 
 test('formatList: with tournament off, Attendance renders as one flat numbered list, same as before this feature existed', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setTournamentEnabled(groupId, false); // tournament is ON by default now
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true);
 
   const text = formatList(groupId);
   assert.doesNotMatch(text, /🏆 \*Tournament\*/);
   assert.doesNotMatch(text, /Social only/);
-  assert.match(text, /\*Attendance\* \(2\/\d+\)\n\n1\. Keith\n2\. Bao/);
+  assert.match(text, /\*Attendance\* \(2\/\d+\)\n\n1\. Derek\n2\. Frank/);
 });
 
 // --- formatList: payment-due entries grouped by owed-since date ----------
@@ -399,62 +399,62 @@ test('formatList: with tournament off, Attendance renders as one flat numbered l
 test('formatList: a payment-due entry with owedSince is grouped under a bold date header, renumbered from 1', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Alex now owes, tagged with the OLD (8/13) date
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace now owes, tagged with the OLD (8/13) date
 
   const text = formatList(groupId);
-  assert.match(text, /\*Payment\*\n\n\*13th Aug Thu\*\n1\. Alex$/m);
+  assert.match(text, /\*Payment\*\n\n\*13th Aug Thu\*\n1\. Grace$/m);
 });
 
 test('formatList: a payment-due entry with no owedSince (predates the feature, or added manually via !update) goes under a "No date" group instead of a real date', () => {
   const groupId = freshRegularPlayersGroupId();
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {}); // no date was ever set - no owedSince to show
 
   const text = formatList(groupId);
-  assert.match(text, /\*Payment\*\n\n\*No date\*\n1\. Alex$/m);
+  assert.match(text, /\*Payment\*\n\n\*No date\*\n1\. Grace$/m);
 });
 
 test('formatList: the payment section header is always the fixed bold "*Payment*" word, with no separate label line underneath when !paymentlabel was never customized', () => {
   const groupId = freshRegularPlayersGroupId();
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
 
   const text = formatList(groupId);
   // Straight from the divider into "*Payment*" and then directly the first
   // group header - no extra label line, no blank line before the group.
-  assert.match(text, /──────────\n\*Payment\*\n\n\*No date\*\n1\. Alex/);
+  assert.match(text, /──────────\n\*Payment\*\n\n\*No date\*\n1\. Grace/);
 });
 
 test('formatList: a customized !paymentlabel prints as a plain (unbolded) line directly under the bold "*Payment*" header, no blank line between them', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setDuePaymentsLabel(groupId, '$16 payID: 0413455423');
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
 
   const text = formatList(groupId);
-  assert.match(text, /──────────\n\*Payment\*\n\$16 payID: 0413455423\n\n\*No date\*\n1\. Alex/);
+  assert.match(text, /──────────\n\*Payment\*\n\$16 payID: 0413455423\n\n\*No date\*\n1\. Grace/);
 });
 
 test('formatList: dated payment groups are sorted MOST RECENT first, and a "No date" group (if any) always comes before every dated group regardless', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Alex -> owes since 8/13
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace -> owes since 8/13
 
-  store.addEntry(groupId, 'Jordan', 'jordan@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-27', {}); // Jordan -> owes since 8/20; Alex still 8/13
+  store.addEntry(groupId, 'Preston', 'jordan@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-27', {}); // Preston -> owes since 8/20; Grace still 8/13
 
-  // Casey is typed straight into the payment section via !update rather than
+  // Uma is typed straight into the payment section via !update rather than
   // carried over from a completed list, so it has no owedSince at all.
-  store.applyListUpdate(groupId, { attendance: [], waitlist: [], duePayments: ['Alex', 'Jordan', 'Casey'] }, 'a@s.whatsapp.net', true);
+  store.applyListUpdate(groupId, { attendance: [], waitlist: [], duePayments: ['Grace', 'Preston', 'Uma'] }, 'a@s.whatsapp.net', true);
 
   const text = formatList(groupId);
   const paymentSection = text.split('*Payment*\n\n')[1];
-  // "No date" (Casey, brand new via !update) first no matter what, then the
-  // NEWER date (Jordan, 8/20) before the older one (Alex, 8/13) - never
+  // "No date" (Uma, brand new via !update) first no matter what, then the
+  // NEWER date (Preston, 8/20) before the older one (Grace, 8/13) - never
   // oldest-first and never interleaved.
-  assert.match(paymentSection, /^\*No date\*\n1\. Casey\n\n\*20th Aug Thu\*\n1\. Jordan\n\n\*13th Aug Thu\*\n1\. Alex/);
+  assert.match(paymentSection, /^\*No date\*\n1\. Uma\n\n\*20th Aug Thu\*\n1\. Preston\n\n\*13th Aug Thu\*\n1\. Grace/);
 });
 
 // --- resolveDuePaymentNumber: "!paid 7" resolves against the printed list -
@@ -465,18 +465,18 @@ test('formatList: dated payment groups are sorted MOST RECENT first, and a "No d
 test('resolveDuePaymentNumber matches an entry by its printed position within a single payment group', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setDate(groupId, '2026-08-13');
-  ['Harry', 'Dean', 'Ken'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
+  ['Oscar', 'Patrick', 'Miles'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
   store.newList(groupId, '2026-08-20', {});
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  assert.equal(resolveDuePaymentNumber(due, 1).name, 'Harry');
-  assert.equal(resolveDuePaymentNumber(due, 3).name, 'Ken');
+  assert.equal(resolveDuePaymentNumber(due, 1).name, 'Oscar');
+  assert.equal(resolveDuePaymentNumber(due, 3).name, 'Miles');
 });
 
 test('resolveDuePaymentNumber returns null for a number outside the printed range', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Harry', 'h@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Oscar', 'h@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
 
   const due = store.getCurrentEvent(groupId).duePayments;
@@ -487,11 +487,11 @@ test('resolveDuePaymentNumber returns null for a number outside the printed rang
 test('resolveDuePaymentNumber returns null when the SAME number appears in more than one payment-date group - the printed list itself has two different lines both starting "N.", so guessing would be wrong', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Alex -> owes since 8/13, printed as "1. Alex"
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace -> owes since 8/13, printed as "1. Grace"
 
-  store.addEntry(groupId, 'Jordan', 'jordan@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-27', {}); // Jordan -> owes since 8/20, ALSO printed as "1. Jordan"
+  store.addEntry(groupId, 'Preston', 'jordan@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-27', {}); // Preston -> owes since 8/20, ALSO printed as "1. Preston"
 
   const due = store.getCurrentEvent(groupId).duePayments;
   assert.equal(resolveDuePaymentNumber(due, 1), null);
@@ -503,45 +503,45 @@ test('resolveDuePaymentNumber returns null when the SAME number appears in more 
 
 test('resolveAttendanceOrWaitlistNumber matches a plain (non-tournament) Attendance entry by its printed position', () => {
   const groupId = freshRegularPlayersGroupId();
-  ['Harry', 'Dean', 'Ken'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
+  ['Oscar', 'Patrick', 'Miles'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
 
   const event = store.getCurrentEvent(groupId);
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 1).name, 'Harry');
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 3).name, 'Ken');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 1).name, 'Oscar');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 3).name, 'Miles');
 });
 
 test('resolveAttendanceOrWaitlistNumber matches against the SAME reordered numbering formatList() prints once tournament is on (tournament opt-ins first, Social only continuing the count)', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 2);
-  store.addEntry(groupId, 'Wendy', 'wendy@s.whatsapp.net', false, true, false); // social-only, joined FIRST
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // tournament, joined second
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // tournament, joined third
+  store.addEntry(groupId, 'Sienna', 'wendy@s.whatsapp.net', false, true, false); // social-only, joined FIRST
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true); // tournament, joined second
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // tournament, joined third
 
-  // Displayed as "1. Keith, 2. Bao" (tournament block) then "3. Wendy"
-  // (Social only) - NOT join order, which would put Wendy first.
+  // Displayed as "1. Derek, 2. Frank" (tournament block) then "3. Sienna"
+  // (Social only) - NOT join order, which would put Sienna first.
   const event = store.getCurrentEvent(groupId);
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 1).name, 'Keith');
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 2).name, 'Bao');
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 3).name, 'Wendy');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 1).name, 'Derek');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 2).name, 'Frank');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 3).name, 'Sienna');
 });
 
 test('resolveAttendanceOrWaitlistNumber matches a Waitlist entry by its OWN printed position (numbered independently from Attendance)', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false); // Attendance "1."
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false); // over the limit - Waitlist "1."
-  store.addEntry(groupId, 'Jamie', 'jamie@s.whatsapp.net', false); // also waitlisted - Waitlist "2.", no Attendance "2." to collide with
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false); // Attendance "1."
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false); // over the limit - Waitlist "1."
+  store.addEntry(groupId, 'Brooke', 'jamie@s.whatsapp.net', false); // also waitlisted - Waitlist "2.", no Attendance "2." to collide with
 
   const event = store.getCurrentEvent(groupId);
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 2).name, 'Jamie');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 2).name, 'Brooke');
 });
 
 test('resolveAttendanceOrWaitlistNumber returns null when the SAME number is printed in BOTH Attendance and Waitlist - independently numbered sections, so guessing which one was meant would be wrong', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false); // Attendance "1."
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false); // over the limit - Waitlist "1."
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false); // Attendance "1."
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false); // over the limit - Waitlist "1."
 
   const event = store.getCurrentEvent(groupId);
   assert.equal(resolveAttendanceOrWaitlistNumber(event, 1), null);
@@ -549,7 +549,7 @@ test('resolveAttendanceOrWaitlistNumber returns null when the SAME number is pri
 
 test('resolveAttendanceOrWaitlistNumber returns null for a number outside both lists\' ranges', () => {
   const groupId = freshRegularPlayersGroupId();
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
 
   const event = store.getCurrentEvent(groupId);
   assert.equal(resolveAttendanceOrWaitlistNumber(event, 99), null);
@@ -566,9 +566,9 @@ test('formatElapsed renders compact day/hour/minute durations', () => {
 test('formatPromotedMessage builds a tagged notice and returns null for an empty list', () => {
   assert.equal(formatPromotedMessage([]), null);
   assert.equal(formatPromotedMessage(null), null);
-  const result = formatPromotedMessage([{ name: 'Sam', addedBy: 'sam@s.whatsapp.net' }]);
+  const result = formatPromotedMessage([{ name: 'Henry', addedBy: 'sam@s.whatsapp.net' }]);
   assert.match(result.text, /Off the waitlist/);
-  assert.match(result.text, /@sam — Sam/);
+  assert.match(result.text, /@sam — Henry/);
   assert.deepEqual(result.mentions, ['sam@s.whatsapp.net']);
 });
 

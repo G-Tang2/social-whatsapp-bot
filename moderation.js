@@ -20,7 +20,7 @@ function checkEntry(rawName) {
   const name = (rawName || '').trim();
 
   if (!name) {
-    return { ok: false, reason: 'Please include a name, e.g. !in Alex.' };
+    return { ok: false, reason: 'Please include a name, e.g. !in Grace.' };
   }
 
   if (name.length > MAX_NAME_LENGTH) {

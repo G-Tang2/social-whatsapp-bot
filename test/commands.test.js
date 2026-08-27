@@ -61,50 +61,50 @@ function makeCtx({ sock, groupId, senderId = 'sender@s.whatsapp.net', senderName
 test('handleIn: bare !in adds the sender by their own push name', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Alex', argText: '' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Grace', argText: '' });
   await listCommands.handleIn(ctx);
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.entries.length, 1);
-  assert.equal(event.entries[0].name, 'Alex');
+  assert.equal(event.entries[0].name, 'Grace');
 });
 
 test('handleIn: already-on-the-list bare !in replies instead of duplicating', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  const first = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Alex', argText: '' });
+  const first = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Grace', argText: '' });
   await listCommands.handleIn(first.ctx);
-  const second = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Alex', argText: '' });
+  const second = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Grace', argText: '' });
   await listCommands.handleIn(second.ctx);
   assert.equal(second.replies.length, 1);
   assert.match(second.replies[0], /already on the list/);
   assert.equal(store.getCurrentEvent(groupId).entries.length, 1);
 });
 
-test('handleIn: signing OTHER people up ("!in Peter, Chris, Linda") does not make a later bare !in from the same sender think they\'re already on as those names', async () => {
+test('handleIn: signing OTHER people up ("!in Alice, Bob, Carla") does not make a later bare !in from the same sender think they\'re already on as those names', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   const addOthers = makeCtx({
     sock,
     groupId,
     senderId: 'gary@s.whatsapp.net',
-    senderName: 'Gary',
-    argText: 'peter, chris, linda',
+    senderName: 'Adrian',
+    argText: 'alice, bob, carla',
   });
   await listCommands.handleIn(addOthers.ctx);
-  // All three are attributed to Gary (so he can remove them later), but
-  // none of them ARE Gary.
+  // All three are attributed to Adrian (so he can remove them later), but
+  // none of them ARE Adrian.
   const afterOthers = store.getCurrentEvent(groupId).entries;
-  assert.deepEqual(afterOthers.map((e) => e.name), ['peter', 'chris', 'linda']);
+  assert.deepEqual(afterOthers.map((e) => e.name), ['alice', 'bob', 'carla']);
   assert.ok(afterOthers.every((e) => e.addedBy === 'gary@s.whatsapp.net'));
   assert.ok(afterOthers.every((e) => e.self === false));
 
-  const bareIn = makeCtx({ sock, groupId, senderId: 'gary@s.whatsapp.net', senderName: 'Gary', argText: '' });
+  const bareIn = makeCtx({ sock, groupId, senderId: 'gary@s.whatsapp.net', senderName: 'Adrian', argText: '' });
   await listCommands.handleIn(bareIn.ctx);
-  // Gary should actually get added as "Gary" - not told he's already on
-  // as "peter", "chris", "linda".
+  // Adrian should actually get added as "Adrian" - not told he's already on
+  // as "alice", "bob", "carla".
   assert.equal(bareIn.replies.length, 0);
   const finalNames = store.getCurrentEvent(groupId).entries.map((e) => e.name);
-  assert.deepEqual(finalNames, ['peter', 'chris', 'linda', 'Gary']);
+  assert.deepEqual(finalNames, ['alice', 'bob', 'carla', 'Adrian']);
 });
 
 test('handleIn: too many names rejected for non-admins, allowed for admins', async () => {
@@ -127,25 +127,25 @@ test('handleIn: too many names rejected for non-admins, allowed for admins', asy
 test('handleIn: "!in +2" adds the sender plus 2 unnamed guest entries, with only the sender\'s own entry marked self', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '+2' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+2' });
   await listCommands.handleIn(ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.deepEqual(entries.map((e) => e.name), ['Jordan', 'Jordan+1', 'Jordan+2']);
+  assert.deepEqual(entries.map((e) => e.name), ['Preston', 'Preston+1', 'Preston+2']);
   assert.ok(entries.every((e) => e.addedBy === 'jordan@s.whatsapp.net'));
-  // Only the bare "Jordan" entry is the sender themselves - the two guest
+  // Only the bare "Preston" entry is the sender themselves - the two guest
   // entries are separate people the sender vouched for, same as if they'd
-  // typed "Sam, Sam+1" for someone else (see store.js's addEntry doc
+  // typed "Henry, Henry+1" for someone else (see store.js's addEntry doc
   // comment for why this distinction matters for later bare-self lookups).
   assert.equal(entries[0].self, true);
   assert.equal(entries[1].self, false);
   assert.equal(entries[2].self, false);
 
   // A later bare !in should recognize the sender's own entry from this
-  // expansion (not think they're already on as "Jordan+1"/"Jordan+2" too).
-  const bareIn = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '' });
+  // expansion (not think they're already on as "Preston+1"/"Preston+2" too).
+  const bareIn = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '' });
   await listCommands.handleIn(bareIn.ctx);
-  assert.match(bareIn.replies[0], /already on the list as "Jordan"/);
+  assert.match(bareIn.replies[0], /already on the list as "Preston"/);
 });
 
 test('handleIn: a repeat "!in +3" ADDS to an existing guest chain instead of colliding with it - "+3" then "+3" again ends up at +6, not restarting at +1', async () => {
@@ -153,54 +153,54 @@ test('handleIn: a repeat "!in +3" ADDS to an existing guest chain instead of col
   const sock = createFakeSock({});
   store.setLimit(groupId, null); // remove the default limit of 6 - this test needs 7 entries total
 
-  const first = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '+3' });
+  const first = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+3' });
   await listCommands.handleIn(first.ctx);
   assert.deepEqual(
     store.getCurrentEvent(groupId).entries.map((e) => e.name),
-    ['Jordan', 'Jordan+1', 'Jordan+2', 'Jordan+3']
+    ['Preston', 'Preston+1', 'Preston+2', 'Preston+3']
   );
 
-  const second = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '+3' });
+  const second = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+3' });
   await listCommands.handleIn(second.ctx);
-  // Continues from +3 -> adds +4, +5, +6 - does NOT re-attempt "Jordan"
-  // (already there) or "Jordan+1..3" (already there, which would just be
+  // Continues from +3 -> adds +4, +5, +6 - does NOT re-attempt "Preston"
+  // (already there) or "Preston+1..3" (already there, which would just be
   // rejected as duplicates and leave the sender with only +3 total).
   assert.equal(second.replies.length, 0, 'expected no "already on the list"/duplicate rejections');
   const finalNames = store.getCurrentEvent(groupId).entries.map((e) => e.name);
-  assert.deepEqual(finalNames, ['Jordan', 'Jordan+1', 'Jordan+2', 'Jordan+3', 'Jordan+4', 'Jordan+5', 'Jordan+6']);
+  assert.deepEqual(finalNames, ['Preston', 'Preston+1', 'Preston+2', 'Preston+3', 'Preston+4', 'Preston+5', 'Preston+6']);
 });
 
 test('handleIn: "+N" continues the guest numbering from the sender\'s EXISTING self-entry name, even if their push name has since changed', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
 
-  const first = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '+2' });
+  const first = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+2' });
   await listCommands.handleIn(first.ctx);
   assert.deepEqual(
     store.getCurrentEvent(groupId).entries.map((e) => e.name),
-    ['Jordan', 'Jordan+1', 'Jordan+2']
+    ['Preston', 'Preston+1', 'Preston+2']
   );
 
   // Same WhatsApp account, but a different current push name this time.
-  const second = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan D.', argText: '+1' });
+  const second = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston D.', argText: '+1' });
   await listCommands.handleIn(second.ctx);
-  // Anchored to the EXISTING "Jordan" self entry, not a fresh "Jordan D."
+  // Anchored to the EXISTING "Preston" self entry, not a fresh "Preston D."
   // chain - continues at +3, and does not add a second self entry.
   const finalNames = store.getCurrentEvent(groupId).entries.map((e) => e.name);
-  assert.deepEqual(finalNames, ['Jordan', 'Jordan+1', 'Jordan+2', 'Jordan+3']);
+  assert.deepEqual(finalNames, ['Preston', 'Preston+1', 'Preston+2', 'Preston+3']);
 });
 
-test('handleIn: "!in Peter, +2" (mixed with an explicit name) does NOT mark the sender\'s own expanded entry as self', async () => {
+test('handleIn: "!in Alice, +2" (mixed with an explicit name) does NOT mark the sender\'s own expanded entry as self', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: 'Peter, +2' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: 'Alice, +2' });
   await listCommands.handleIn(ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.deepEqual(entries.map((e) => e.name), ['Peter', 'Jordan', 'Jordan+1', 'Jordan+2']);
+  assert.deepEqual(entries.map((e) => e.name), ['Alice', 'Preston', 'Preston+1', 'Preston+2']);
   // "+N" only gets self treatment when it's the ENTIRE argText on its own -
   // combined with another explicit name, this is treated like any other
-  // multi-name list (nobody marked self), matching "!in Peter, Jordan"'s
+  // multi-name list (nobody marked self), matching "!in Alice, Preston"'s
   // existing behavior.
   assert.ok(entries.every((e) => e.self === false));
 });
@@ -208,11 +208,11 @@ test('handleIn: "!in Peter, +2" (mixed with an explicit name) does NOT mark the 
 test('handleOut: "!out +2" removes the sender and both of their guest entries', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  const addCtx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '+2' });
+  const addCtx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+2' });
   await listCommands.handleIn(addCtx.ctx);
   assert.equal(store.getCurrentEvent(groupId).entries.length, 3);
 
-  const outCtx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '+2' });
+  const outCtx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+2' });
   await listCommands.handleOut(outCtx.ctx);
   assert.equal(store.getCurrentEvent(groupId).entries.length, 0);
 });
@@ -220,13 +220,13 @@ test('handleOut: "!out +2" removes the sender and both of their guest entries', 
 test('handlePaid: "!paid +2" marks the sender and both of their guest entries paid', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.addEntry(groupId, 'Jordan', 'jordan@s.whatsapp.net', false, true);
-  store.addEntry(groupId, 'Jordan+1', 'jordan@s.whatsapp.net', false, false);
-  store.addEntry(groupId, 'Jordan+2', 'jordan@s.whatsapp.net', false, false);
+  store.addEntry(groupId, 'Preston', 'jordan@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Preston+1', 'jordan@s.whatsapp.net', false, false);
+  store.addEntry(groupId, 'Preston+2', 'jordan@s.whatsapp.net', false, false);
   store.newList(groupId, '2026-08-20', {}); // archives all three into duePayments
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 3);
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '+2' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+2' });
   await listCommands.handlePaid(ctx);
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
 });
@@ -239,7 +239,7 @@ test('handlePaid: "!paid 7,8" marks whoever the payment list currently prints as
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setLimit(groupId, 18);
-  ['Harry', 'Dean', 'Ken', 'Lai', 'Mukesh', 'Jenny', 'Priya', 'Steven'].forEach((name) =>
+  ['Oscar', 'Patrick', 'Miles', 'Nolan', 'Omar', 'Paige', 'Renee', 'Roman'].forEach((name) =>
     store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false)
   );
   store.newList(groupId, '2026-08-20', {}); // archives all 8 into duePayments, printed 1-8
@@ -249,7 +249,7 @@ test('handlePaid: "!paid 7,8" marks whoever the payment list currently prints as
   await listCommands.handlePaid(ctx);
 
   const remaining = store.getCurrentEvent(groupId).duePayments.map((e) => e.name);
-  assert.deepEqual(remaining.sort(), ['Dean', 'Harry', 'Jenny', 'Ken', 'Lai', 'Mukesh'].sort());
+  assert.deepEqual(remaining.sort(), ['Patrick', 'Oscar', 'Paige', 'Miles', 'Nolan', 'Omar'].sort());
 });
 
 // The model is told to expand a spoken range ("1 to 3") into individual
@@ -261,14 +261,14 @@ test('handlePaid: "!paid 1-3" expands the range itself and marks positions 1 thr
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setLimit(groupId, 18);
-  ['Harry', 'Dean', 'Ken', 'Lai', 'Mukesh'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
+  ['Oscar', 'Patrick', 'Miles', 'Nolan', 'Omar'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
   store.newList(groupId, '2026-08-20', {});
 
   const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: '1-3' });
   await listCommands.handlePaid(ctx);
 
   const remaining = store.getCurrentEvent(groupId).duePayments.map((e) => e.name);
-  assert.deepEqual(remaining.sort(), ['Lai', 'Mukesh'].sort());
+  assert.deepEqual(remaining.sort(), ['Nolan', 'Omar'].sort());
 });
 
 test('handlePaid: a range that expands past MAX_NAMES_PER_COMMAND is rejected as "too many" for a non-admin, same as any other bulk request', async () => {
@@ -289,7 +289,7 @@ test('handlePaid: a range that expands past MAX_NAMES_PER_COMMAND is rejected as
 test('handlePaid: a range far past the internal expansion cap falls back to a literal (harmless, unmatched) token rather than iterating without bound', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.addEntry(groupId, 'Harry', 'harry@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Oscar', 'oscar@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
 
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '1-99999' });
@@ -302,7 +302,7 @@ test('handlePaid: a range far past the internal expansion cap falls back to a li
 test('handlePaid: a bare number that is out of range still gets the ordinary "not on the payment list" rejection, not a different error', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.addEntry(groupId, 'Harry', 'harry@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Oscar', 'oscar@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
 
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: '99' });
@@ -319,7 +319,7 @@ test('handleOut: "!out 7,8" removes whoever the Attendance list currently prints
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setLimit(groupId, 18);
-  ['Harry', 'Dean', 'Ken', 'Lai', 'Mukesh', 'Jenny', 'Priya', 'Steven'].forEach((name) =>
+  ['Oscar', 'Patrick', 'Miles', 'Nolan', 'Omar', 'Paige', 'Renee', 'Roman'].forEach((name) =>
     store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false)
   );
 
@@ -327,7 +327,7 @@ test('handleOut: "!out 7,8" removes whoever the Attendance list currently prints
   await listCommands.handleOut(ctx);
 
   const remaining = store.getCurrentEvent(groupId).entries.map((e) => e.name);
-  assert.deepEqual(remaining, ['Harry', 'Dean', 'Ken', 'Lai', 'Mukesh', 'Jenny']);
+  assert.deepEqual(remaining, ['Oscar', 'Patrick', 'Miles', 'Nolan', 'Omar', 'Paige']);
 });
 
 // Same fallback reasoning as !paid's matching test above - the model
@@ -337,19 +337,19 @@ test('handleOut: "!out 1-3" expands the range itself and removes positions 1 thr
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setLimit(groupId, 18);
-  ['Harry', 'Dean', 'Ken', 'Lai', 'Mukesh'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
+  ['Oscar', 'Patrick', 'Miles', 'Nolan', 'Omar'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
 
   const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: '1-3' });
   await listCommands.handleOut(ctx);
 
   const remaining = store.getCurrentEvent(groupId).entries.map((e) => e.name);
-  assert.deepEqual(remaining, ['Lai', 'Mukesh']);
+  assert.deepEqual(remaining, ['Nolan', 'Omar']);
 });
 
 test('handleOut: a bare number that is out of range still gets the ordinary "not on the list" rejection, not a different error', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.addEntry(groupId, 'Harry', 'harry@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Oscar', 'oscar@s.whatsapp.net', false);
 
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: '99' });
   await listCommands.handleOut(ctx);
@@ -361,10 +361,10 @@ test('handleOut: promotion off the waitlist sends a tagged mention message', asy
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', argText: 'Alex' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', argText: 'Grace' });
   await listCommands.handleOut(ctx);
 
   const promoMsg = sock.sentMessages.find((m) => /Off the waitlist/.test(m.content.text || ''));
@@ -377,14 +377,14 @@ test('handleOut: someone with tournament:true leaving auto-promotes the front of
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // takes the spot
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // WL'd - full
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true); // takes the spot
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // WL'd - full
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', argText: 'Keith' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', argText: 'Derek' });
   await listCommands.handleOut(ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  const bao = entries.find((e) => e.name === 'Bao');
+  const bao = entries.find((e) => e.name === 'Frank');
   assert.equal(bao.tournament, true);
   assert.equal(bao.tournamentWaitlisted, false);
 
@@ -397,17 +397,17 @@ test('handleOut: a leading "tournament" keyword moves someone OUT of the tournam
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Garvin', 'garvin@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Isaac', 'isaac@s.whatsapp.net', false, true, true);
 
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Garvin' });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Isaac' });
   const outcome = await listCommands.handleOut(ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
   assert.equal(entries.length, 1); // still on the list
-  const garvin = entries.find((e) => e.name === 'Garvin');
-  assert.equal(garvin.tournament, false);
-  assert.equal(Boolean(garvin.tournamentWaitlisted), false);
-  assert.deepEqual(outcome.tournamentLeft, ['Garvin']);
+  const isaac = entries.find((e) => e.name === 'Isaac');
+  assert.equal(isaac.tournament, false);
+  assert.equal(Boolean(isaac.tournamentWaitlisted), false);
+  assert.deepEqual(outcome.tournamentLeft, ['Isaac']);
   assert.equal(replies.length, 0); // quiet on success, same as everywhere else - reposted list is proof enough
 });
 
@@ -415,30 +415,30 @@ test('handleOut: bare "!out tournament" resolves to the sender\'s own entry', as
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', senderName: 'Keith', argText: 'tournament' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', senderName: 'Derek', argText: 'tournament' });
   await listCommands.handleOut(ctx);
 
   const entry = store.getCurrentEvent(groupId).entries[0];
-  assert.equal(entry.name, 'Keith');
+  assert.equal(entry.name, 'Derek');
   assert.equal(entry.tournament, false);
 });
 
-test('handleOut: "!out tournament Alex, Sam" moves MULTIPLE names to social only in one command', async () => {
+test('handleOut: "!out tournament Grace, Henry" moves MULTIPLE names to social only in one command', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false, true, true);
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Alex, Sam' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Grace, Henry' });
   const outcome = await listCommands.handleOut(ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.find((e) => e.name === 'Alex').tournament, false);
-  assert.equal(entries.find((e) => e.name === 'Sam').tournament, false);
-  assert.deepEqual(outcome.tournamentLeft.sort(), ['Alex', 'Sam']);
+  assert.equal(entries.find((e) => e.name === 'Grace').tournament, false);
+  assert.equal(entries.find((e) => e.name === 'Henry').tournament, false);
+  assert.deepEqual(outcome.tournamentLeft.sort(), ['Grace', 'Henry']);
   assert.equal(entries.length, 2); // neither removed from the list
 });
 
@@ -490,12 +490,12 @@ test('handleOut: "tournament" on someone already social-only (never opted in) is
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Garvin', 'garvin@s.whatsapp.net', false, true); // never opted in
+  store.addEntry(groupId, 'Isaac', 'isaac@s.whatsapp.net', false, true); // never opted in
 
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Garvin' });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Isaac' });
   const outcome = await listCommands.handleOut(ctx);
 
-  assert.deepEqual(outcome.alreadyOut, ['Garvin']);
+  assert.deepEqual(outcome.alreadyOut, ['Isaac']);
   assert.equal(outcome.tournamentLeft.length, 0);
   assert.equal(replies.length, 0);
 });
@@ -505,16 +505,16 @@ test('handleOut: "tournament" freeing an actual spot auto-promotes the front of 
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // takes the spot
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // WL'd - full
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true); // takes the spot
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // WL'd - full
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', argText: 'tournament Keith' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', argText: 'tournament Derek' });
   await listCommands.handleOut(ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.find((e) => e.name === 'Keith').tournament, false); // moved to social only, not removed
+  assert.equal(entries.find((e) => e.name === 'Derek').tournament, false); // moved to social only, not removed
   assert.equal(entries.length, 2);
-  const bao = entries.find((e) => e.name === 'Bao');
+  const bao = entries.find((e) => e.name === 'Frank');
   assert.equal(bao.tournament, true);
   assert.equal(bao.tournamentWaitlisted, false);
 
@@ -528,14 +528,14 @@ test('handleTournamentLimit: raising the limit auto-promotes the (🏆 WL) queue
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // WL'd - full
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // WL'd - full
 
   const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '2' });
   await adminCommands.handleTournamentLimit(ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.find((e) => e.name === 'Bao').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Frank').tournament, true);
 
   const promoMsg = sock.sentMessages.find((m) => /tournament spot opened up/.test(m.content.text || ''));
   assert.ok(promoMsg, 'expected a tournament-promotion message to have been sent');
@@ -545,7 +545,7 @@ test('handleTournamentLimit: raising the limit auto-promotes the (🏆 WL) queue
 test('handleClear: rejects non-admins, wipes the list for admins', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
 
   const nonAdmin = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net' });
   await adminCommands.handleClear(nonAdmin.ctx);
@@ -560,9 +560,9 @@ test('handleClear: rejects non-admins, wipes the list for admins', async () => {
 test('handleClearpayments: rejects non-admins, wipes duePayments (not entries) for admins, and no-ops with a reply when already empty', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // archives Alex into duePayments
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // archives Grace into duePayments
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 1);
 
   const nonAdmin = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net' });
@@ -585,8 +585,8 @@ test('handleLimit: raising the limit promotes people off the waitlist with a tag
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false); // waitlisted, limit is 1
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false); // waitlisted, limit is 1
 
   const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '2' });
   await adminCommands.handleLimit(ctx);
@@ -679,8 +679,8 @@ test('handleAllow: moves people off the waitlist with a tagged mention', async (
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false); // waitlisted
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false); // waitlisted
 
   const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '1' });
   await adminCommands.handleAllow(ctx);
@@ -760,7 +760,7 @@ test('handleNewlist: "same" is case-insensitive and combines with location/court
     sock,
     groupId,
     senderId: 'admin@s.whatsapp.net',
-    argText: 'SAME EBC | 13-18 | 8PM start with Peter, Chris',
+    argText: 'SAME EBC | 13-18 | 8PM start with Alice, Bob',
   });
   await adminCommands.handleNewlist(ctx.ctx);
 
@@ -768,7 +768,7 @@ test('handleNewlist: "same" is case-insensitive and combines with location/court
   assert.equal(event.location, 'EBC');
   assert.equal(event.courtCount, 6);
   assert.equal(event.time, '8PM start');
-  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Chris']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Alice', 'Bob']);
 });
 
 test('handleNewlist: "same" on a list that never had a date set replies with a clear error instead of guessing', async () => {
@@ -791,13 +791,13 @@ test('handleNewlist: a trailing "with <names>" clause pre-populates the brand ne
     sock,
     groupId,
     senderId: 'admin@s.whatsapp.net',
-    argText: '20/08 EBC | 13-18 | 8PM start with Peter, Chris, Linda',
+    argText: '20/08 EBC | 13-18 | 8PM start with Alice, Bob, Carla',
   });
   await adminCommands.handleNewlist(ctx.ctx);
 
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.location, 'EBC');
-  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Chris', 'Linda']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Alice', 'Bob', 'Carla']);
   // Attributed to the admin who ran !newlist, but not marked `self` -
   // none of these three ran the command themselves.
   assert.ok(event.entries.every((e) => e.addedBy === 'admin@s.whatsapp.net' && e.self === false));
@@ -807,12 +807,12 @@ test('handleNewlist: "with <names>" works with no location/courts/time mentioned
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 with Peter, Chris, Linda' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 with Alice, Bob, Carla' });
   await adminCommands.handleNewlist(ctx.ctx);
 
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.location, null);
-  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Chris', 'Linda']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Alice', 'Bob', 'Carla']);
 });
 
 test('handleNewlist: "with <names>" still respects the new list\'s own limit, waitlisting anyone over it', async () => {
@@ -823,13 +823,13 @@ test('handleNewlist: "with <names>" still respects the new list\'s own limit, wa
     sock,
     groupId,
     senderId: 'admin@s.whatsapp.net',
-    argText: '20/08 with Peter, Chris, Linda, Rj, Rron, Charlie, Will', // limit defaults to 6
+    argText: '20/08 with Alice, Bob, Carla, Xavier, Yusuf, Zoe, Theo', // limit defaults to 6
   });
   await adminCommands.handleNewlist(ctx.ctx);
 
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.entries.length, 6);
-  assert.deepEqual(event.waitlist.map((e) => e.name), ['Will']);
+  assert.deepEqual(event.waitlist.map((e) => e.name), ['Theo']);
 });
 
 test('handleNewlist: without a "with" clause and no saved regulars, nothing is added to the brand new list (unchanged behavior)', async () => {
@@ -846,13 +846,13 @@ test('handleNewlist: without a "with" clause and no saved regulars, nothing is a
 test('handleNewlist: "with regular players" pre-populates from the saved roster, and can combine with an explicit extra name', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setRegularPlayers(groupId, ['Peter', 'Chris', 'Linda']);
+  store.setRegularPlayers(groupId, ['Alice', 'Bob', 'Carla']);
 
   const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 with regular players, Extra Guest' });
   await adminCommands.handleNewlist(ctx.ctx);
 
   const event = store.getCurrentEvent(groupId);
-  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Chris', 'Linda', 'Extra Guest']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Alice', 'Bob', 'Carla', 'Extra Guest']);
 });
 
 test('handleNewlist: "with regular players" on an empty saved roster adds nobody and mentions it', async () => {
@@ -871,13 +871,13 @@ test('handleNewlist: the saved regulars roster is always added and opted into th
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setTournamentEnabled(groupId, true);
-  store.setRegularPlayers(groupId, ['Peter', 'Chris', 'Linda']);
+  store.setRegularPlayers(groupId, ['Alice', 'Bob', 'Carla']);
 
   const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 EBC' });
   await adminCommands.handleNewlist(ctx.ctx);
 
   const event = store.getCurrentEvent(groupId);
-  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Chris', 'Linda']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Alice', 'Bob', 'Carla']);
   assert.ok(event.entries.every((e) => e.tournament === true));
 });
 
@@ -885,33 +885,33 @@ test('handleNewlist: an explicit "with <names>" clause stays social-only, while 
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setTournamentEnabled(groupId, true);
-  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
+  store.setRegularPlayers(groupId, ['Alice', 'Bob']);
 
   const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 with Extra Guest' });
   await adminCommands.handleNewlist(ctx.ctx);
 
   const event = store.getCurrentEvent(groupId);
-  assert.deepEqual(event.entries.map((e) => e.name), ['Extra Guest', 'Peter', 'Chris']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Extra Guest', 'Alice', 'Bob']);
   const byName = Object.fromEntries(event.entries.map((e) => [e.name, e]));
   assert.equal(byName['Extra Guest'].tournament, false);
-  assert.equal(byName['Peter'].tournament, true);
-  assert.equal(byName['Chris'].tournament, true);
+  assert.equal(byName['Alice'].tournament, true);
+  assert.equal(byName['Bob'].tournament, true);
 });
 
 test('handleNewlist: a regular also explicitly named in "with <names>" is added once, still opted into the tournament', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setTournamentEnabled(groupId, true);
-  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
+  store.setRegularPlayers(groupId, ['Alice', 'Bob']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 with Peter, Extra Guest' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 with Alice, Extra Guest' });
   await adminCommands.handleNewlist(ctx.ctx);
 
   const event = store.getCurrentEvent(groupId);
-  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Extra Guest', 'Chris']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Alice', 'Extra Guest', 'Bob']);
   const byName = Object.fromEntries(event.entries.map((e) => [e.name, e]));
-  assert.equal(byName['Peter'].tournament, true);
-  assert.equal(byName['Chris'].tournament, true);
+  assert.equal(byName['Alice'].tournament, true);
+  assert.equal(byName['Bob'].tournament, true);
   assert.equal(byName['Extra Guest'].tournament, false);
   assert.ok(!ctx.replies.some((r) => /already on the list/i.test(r)));
 });
@@ -919,13 +919,13 @@ test('handleNewlist: a regular also explicitly named in "with <names>" is added 
 test('handleIn: "regular players" adds the saved roster, and none of the added entries are marked self', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
+  store.setRegularPlayers(groupId, ['Alice', 'Bob']);
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: 'regular players' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: 'regular players' });
   await listCommands.handleIn(ctx);
 
   const event = store.getCurrentEvent(groupId);
-  assert.deepEqual(event.entries.map((e) => e.name), ['Peter', 'Chris']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Alice', 'Bob']);
   assert.ok(event.entries.every((e) => e.self === false));
 });
 
@@ -933,7 +933,7 @@ test('handleIn: "regular players" with an empty saved roster adds nobody and exp
   const groupId = freshGroupId();
   const sock = createFakeSock({});
 
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: 'regular players' });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: 'regular players' });
   await listCommands.handleIn(ctx);
 
   const event = store.getCurrentEvent(groupId);
@@ -949,18 +949,18 @@ test('handleRegulars: bare command shows "(none set)" for a brand new group, and
   await adminCommands.handleRegulars(empty.ctx);
   assert.match(empty.replies[0], /none set/i);
 
-  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
+  store.setRegularPlayers(groupId, ['Alice', 'Bob']);
   const shown = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
   await adminCommands.handleRegulars(shown.ctx);
-  assert.match(shown.replies[0], /1\. Peter/);
-  assert.match(shown.replies[0], /2\. Chris/);
+  assert.match(shown.replies[0], /1\. Alice/);
+  assert.match(shown.replies[0], /2\. Bob/);
 });
 
 test('handleRegulars: only an admin can change it - a non-admin\'s attempt to set it is refused', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'Peter, Chris' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'Alice, Bob' });
   await adminCommands.handleRegulars(ctx.ctx);
   assert.match(ctx.replies[0], /only a group admin/i);
   assert.deepEqual(store.getRegularPlayers(groupId), []);
@@ -971,38 +971,38 @@ test('handleRegulars: a plain name list REPLACES the whole roster', async () => 
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setRegularPlayers(groupId, ['Old Player']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Peter, Chris, Linda' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Alice, Bob, Carla' });
   await adminCommands.handleRegulars(ctx.ctx);
 
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Peter', 'Chris', 'Linda']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Alice', 'Bob', 'Carla']);
 });
 
 test('handleRegulars: "add <names>" appends to the existing roster without duplicating an already-present name', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
+  store.setRegularPlayers(groupId, ['Alice', 'Bob']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'add Chris, Dean' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'add Bob, Patrick' });
   await adminCommands.handleRegulars(ctx.ctx);
 
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Peter', 'Chris', 'Dean']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Alice', 'Bob', 'Patrick']);
 });
 
 test('handleRegulars: "remove <names>" removes matching names, case/whitespace-insensitively, and leaves the rest', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setRegularPlayers(groupId, ['Peter', 'Chris', 'Linda']);
+  store.setRegularPlayers(groupId, ['Alice', 'Bob', 'Carla']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'remove  chris ' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'remove  bob ' });
   await adminCommands.handleRegulars(ctx.ctx);
 
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Peter', 'Linda']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Alice', 'Carla']);
 });
 
 test('handleRegulars: "clear" empties the roster', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
+  store.setRegularPlayers(groupId, ['Alice', 'Bob']);
 
   const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'clear' });
   await adminCommands.handleRegulars(ctx.ctx);
@@ -1021,18 +1021,18 @@ test('handleExempt: bare command shows "(none set)" for a brand new group, and t
   await adminCommands.handleExempt(empty.ctx);
   assert.match(empty.replies[0], /none set/i);
 
-  store.setPaymentExempt(groupId, ['Peter', 'Chris']);
+  store.setPaymentExempt(groupId, ['Alice', 'Bob']);
   const shown = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
   await adminCommands.handleExempt(shown.ctx);
-  assert.match(shown.replies[0], /1\. Peter/);
-  assert.match(shown.replies[0], /2\. Chris/);
+  assert.match(shown.replies[0], /1\. Alice/);
+  assert.match(shown.replies[0], /2\. Bob/);
 });
 
 test('handleExempt: only an admin can change it - a non-admin\'s attempt to set it is refused', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'Peter, Chris' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'Alice, Bob' });
   await adminCommands.handleExempt(ctx.ctx);
   assert.match(ctx.replies[0], /only a group admin/i);
   assert.deepEqual(store.getPaymentExempt(groupId), []);
@@ -1043,38 +1043,38 @@ test('handleExempt: a plain name list REPLACES the whole roster', async () => {
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setPaymentExempt(groupId, ['Old Name']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Peter, Chris, Linda' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Alice, Bob, Carla' });
   await adminCommands.handleExempt(ctx.ctx);
 
-  assert.deepEqual(store.getPaymentExempt(groupId), ['Peter', 'Chris', 'Linda']);
+  assert.deepEqual(store.getPaymentExempt(groupId), ['Alice', 'Bob', 'Carla']);
 });
 
 test('handleExempt: "add <names>" appends to the existing roster without duplicating an already-present name', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setPaymentExempt(groupId, ['Peter', 'Chris']);
+  store.setPaymentExempt(groupId, ['Alice', 'Bob']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'add Chris, Dean' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'add Bob, Patrick' });
   await adminCommands.handleExempt(ctx.ctx);
 
-  assert.deepEqual(store.getPaymentExempt(groupId), ['Peter', 'Chris', 'Dean']);
+  assert.deepEqual(store.getPaymentExempt(groupId), ['Alice', 'Bob', 'Patrick']);
 });
 
 test('handleExempt: "remove <names>" removes matching names, case/whitespace-insensitively, and leaves the rest', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setPaymentExempt(groupId, ['Peter', 'Chris', 'Linda']);
+  store.setPaymentExempt(groupId, ['Alice', 'Bob', 'Carla']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'remove  chris ' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'remove  bob ' });
   await adminCommands.handleExempt(ctx.ctx);
 
-  assert.deepEqual(store.getPaymentExempt(groupId), ['Peter', 'Linda']);
+  assert.deepEqual(store.getPaymentExempt(groupId), ['Alice', 'Carla']);
 });
 
 test('handleExempt: "clear" empties the roster', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setPaymentExempt(groupId, ['Peter', 'Chris']);
+  store.setPaymentExempt(groupId, ['Alice', 'Bob']);
 
   const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'clear' });
   await adminCommands.handleExempt(ctx.ctx);
@@ -1085,15 +1085,15 @@ test('handleExempt: "clear" empties the roster', async () => {
 test('handleExempt: an exempt name never ends up owing anything, even after attending and a !newlist transition', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setPaymentExempt(groupId, ['Peter']);
+  store.setPaymentExempt(groupId, ['Alice']);
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Peter', 'h@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Alice', 'h@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
 
   store.newList(groupId, '2026-08-20', {});
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  assert.deepEqual(due.map((e) => e.name), ['Alex']);
+  assert.deepEqual(due.map((e) => e.name), ['Grace']);
 });
 
 // --- !courtcanceller (who to tag for the 26-hours-before court-
@@ -1127,7 +1127,7 @@ test('handleCourtCanceller: only an admin can change it - a non-admin\'s attempt
     sock,
     groupId,
     senderId: 'jordan@s.whatsapp.net',
-    argText: '@Alex',
+    argText: '@Grace',
     mentions: ['alex@s.whatsapp.net'],
   });
   await adminCommands.handleCourtCanceller(ctx);
@@ -1138,7 +1138,7 @@ test('handleCourtCanceller: only an admin can change it - a non-admin\'s attempt
 test('handleCourtCanceller: requires a genuine @-mention - a typed name alone is refused', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Alex' });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Grace' });
   await adminCommands.handleCourtCanceller(ctx);
   assert.match(replies[0], /@-mention/i);
   assert.equal(store.getCourtCanceller(groupId), null);
@@ -1151,7 +1151,7 @@ test('handleCourtCanceller: an admin @-mentioning someone sets them, and confirm
     sock,
     groupId,
     senderId: 'admin@s.whatsapp.net',
-    argText: '@Alex',
+    argText: '@Grace',
     mentions: ['alex@s.whatsapp.net'],
   });
   await adminCommands.handleCourtCanceller(ctx);
@@ -1180,14 +1180,14 @@ test('handlePaid: an explicit name with TWO entries (owes for two separate event
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-27', {}); // Alex now owes twice
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-27', {}); // Grace now owes twice
 
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 2);
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'someone@s.whatsapp.net', argText: 'Alex' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'someone@s.whatsapp.net', argText: 'Grace' });
   await listCommands.handlePaid(ctx);
 
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
@@ -1197,10 +1197,10 @@ test('handlePaid: a bare "!paid" (no name) with TWO entries under the SAME name 
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false, true); // self: true
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false, true); // self: true
   store.newList(groupId, '2026-08-20', {});
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false, true);
-  store.newList(groupId, '2026-08-27', {}); // Alex owes twice, both self-added under the same name
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false, true);
+  store.newList(groupId, '2026-08-27', {}); // Grace owes twice, both self-added under the same name
 
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', argText: '' });
   await listCommands.handlePaid(ctx);
@@ -1213,12 +1213,12 @@ test('handlePaid: a bare "!paid" (no name) with entries under TWO DIFFERENT name
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false, true); // self-added as "Alex"
+  store.addEntry(groupId, 'Max', 'max@s.whatsapp.net', false, true); // self-added as "Max"
   store.newList(groupId, '2026-08-20', {});
-  store.addEntry(groupId, 'Alexander', 'alex@s.whatsapp.net', false, true); // same person, different name this cycle
+  store.addEntry(groupId, 'Maxwell', 'max@s.whatsapp.net', false, true); // same person, different name this cycle
   store.newList(groupId, '2026-08-27', {});
 
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', argText: '' });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'max@s.whatsapp.net', argText: '' });
   await listCommands.handlePaid(ctx);
 
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 2); // nothing cleared
@@ -1258,11 +1258,11 @@ test('handleSettournament: bare view once enabled shows the current tournament r
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
 
   const view = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
   await adminCommands.handleSettournament(view.ctx);
-  assert.match(view.replies[0], /1\. Keith/);
+  assert.match(view.replies[0], /1\. Derek/);
 });
 
 test('handleSettournament: "rules <text>" is admin-gated to set, and bare "rules" views without changing', async () => {
@@ -1337,18 +1337,18 @@ test('handleTournamentWinners: view, admin-gated to change, requires exactly two
   await adminCommands.handleTournamentWinners(view.ctx);
   assert.match(view.replies[0], /no tournament winners/i);
 
-  const refused = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'Irfan, Tu' });
+  const refused = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'Noah, Ellen' });
   await adminCommands.handleTournamentWinners(refused.ctx);
   assert.match(refused.replies[0], /only a group admin/i);
 
-  const badCount = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Irfan' });
+  const badCount = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Noah' });
   await adminCommands.handleTournamentWinners(badCount.ctx);
   assert.match(badCount.replies[0], /usage/i);
   assert.equal(store.getTournamentWinners(groupId), null);
 
-  const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Irfan, Tu' });
+  const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Noah, Ellen' });
   await adminCommands.handleTournamentWinners(set.ctx);
-  assert.deepEqual(store.getTournamentWinners(groupId), ['Irfan', 'Tu']);
+  assert.deepEqual(store.getTournamentWinners(groupId), ['Noah', 'Ellen']);
 });
 
 test('handleTournamentWinners waives the winners\' payment debt for the week they won', async () => {
@@ -1356,17 +1356,17 @@ test('handleTournamentWinners waives the winners\' payment debt for the week the
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Irfan', 'i@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Tu', 't@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Sam', 's@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Irfan/Tu/Sam now owe for 8/13
+  store.addEntry(groupId, 'Noah', 'i@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Ellen', 't@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 's@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Noah/Ellen/Henry now owe for 8/13
 
-  const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Irfan, Tu' });
+  const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Noah, Ellen' });
   await adminCommands.handleTournamentWinners(set.ctx);
 
-  assert.match(set.replies[0], /payment waived for Irfan and Tu/i);
+  assert.match(set.replies[0], /payment waived for Noah and Ellen/i);
   const due = store.getCurrentEvent(groupId).duePayments;
-  assert.deepEqual(due.map((e) => e.name), ['Sam']);
+  assert.deepEqual(due.map((e) => e.name), ['Henry']);
 });
 
 test('handleIn: a trailing "tournament" keyword opts a new joiner in, when there\'s room', async () => {
@@ -1374,11 +1374,11 @@ test('handleIn: a trailing "tournament" keyword opts a new joiner in, when there
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, true);
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', senderName: 'Keith', argText: 'tournament' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', senderName: 'Derek', argText: 'tournament' });
   await listCommands.handleIn(ctx);
 
   const entry = store.getCurrentEvent(groupId).entries[0];
-  assert.equal(entry.name, 'Keith');
+  assert.equal(entry.name, 'Derek');
   assert.equal(entry.tournament, true);
 });
 
@@ -1387,13 +1387,13 @@ test('handleIn: tournament full - the person still joins socially, quietly, tagg
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
 
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'bao@s.whatsapp.net', senderName: 'Bao', argText: 'tournament' });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'bao@s.whatsapp.net', senderName: 'Frank', argText: 'tournament' });
   await listCommands.handleIn(ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  const bao = entries.find((e) => e.name === 'Bao');
+  const bao = entries.find((e) => e.name === 'Frank');
   assert.equal(bao.tournament, false);
   assert.equal(bao.tournamentWaitlisted, true);
   // Quiet - same "the reposted list is proof enough" pattern as ordinary
@@ -1402,7 +1402,7 @@ test('handleIn: tournament full - the person still joins socially, quietly, tagg
   assert.equal(replies.length, 0);
 
   const posted = formatList(groupId);
-  assert.match(posted, /Bao \(🏆 WL\)/);
+  assert.match(posted, /Frank \(🏆 WL\)/);
 });
 
 test('handleIn: tournament not enabled at all - joins socially, WITH an explicit reply (unlike the quiet full case)', async () => {
@@ -1410,26 +1410,26 @@ test('handleIn: tournament not enabled at all - joins socially, WITH an explicit
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, false); // tournament is ON by default now
 
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', senderName: 'Keith', argText: 'tournament' });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', senderName: 'Derek', argText: 'tournament' });
   await listCommands.handleIn(ctx);
 
   const entry = store.getCurrentEvent(groupId).entries[0];
-  assert.equal(entry.name, 'Keith');
+  assert.equal(entry.name, 'Derek');
   assert.equal(entry.tournament, false);
   assert.match(replies.join('\n'), /tournament isn't enabled/i);
 });
 
-test('handleIn: "!in tournament Alex, Sam" opts BOTH names into the tournament', async () => {
+test('handleIn: "!in tournament Grace, Henry" opts BOTH names into the tournament', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, true);
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'sender@s.whatsapp.net', argText: 'tournament Alex, Sam' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'sender@s.whatsapp.net', argText: 'tournament Grace, Henry' });
   await listCommands.handleIn(ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.find((e) => e.name === 'Alex').tournament, true);
-  assert.equal(entries.find((e) => e.name === 'Sam').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Grace').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Henry').tournament, true);
 });
 
 test('handleIn: "paid" and "tournament" both work as leading keywords, in either order', async () => {
@@ -1454,34 +1454,34 @@ test('handleIn: already on the list, bare "!in tournament" upgrades the existing
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, true);
 
-  const first = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', senderName: 'Keith', argText: '' });
+  const first = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', senderName: 'Derek', argText: '' });
   await listCommands.handleIn(first.ctx);
   assert.equal(store.getCurrentEvent(groupId).entries.length, 1);
 
-  const second = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', senderName: 'Keith', argText: 'tournament' });
+  const second = makeCtx({ sock, groupId, senderId: 'keith@s.whatsapp.net', senderName: 'Derek', argText: 'tournament' });
   await listCommands.handleIn(second.ctx);
 
   assert.equal(store.getCurrentEvent(groupId).entries.length, 1); // not duplicated
   assert.equal(store.getCurrentEvent(groupId).entries[0].tournament, true);
 });
 
-test('handleIn: "!in tournament Alex, Sam" upgrades MULTIPLE already-on-the-list names in one command, without re-adding or duplicating them', async () => {
+test('handleIn: "!in tournament Grace, Henry" upgrades MULTIPLE already-on-the-list names in one command, without re-adding or duplicating them', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, true);
 
-  const joinSocial = makeCtx({ sock, groupId, senderId: 'gary@s.whatsapp.net', senderName: 'Gary', argText: 'Alex, Sam' });
+  const joinSocial = makeCtx({ sock, groupId, senderId: 'gary@s.whatsapp.net', senderName: 'Adrian', argText: 'Grace, Henry' });
   await listCommands.handleIn(joinSocial.ctx);
   assert.equal(store.getCurrentEvent(groupId).entries.length, 2);
 
-  const upgrade = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Alex, Sam' });
+  const upgrade = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Grace, Henry' });
   const outcome = await listCommands.handleIn(upgrade.ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
   assert.equal(entries.length, 2); // still just the two, not duplicated
-  assert.equal(entries.find((e) => e.name === 'Alex').tournament, true);
-  assert.equal(entries.find((e) => e.name === 'Sam').tournament, true);
-  assert.deepEqual(outcome.tournamentJoined.sort(), ['Alex', 'Sam']);
+  assert.equal(entries.find((e) => e.name === 'Grace').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Henry').tournament, true);
+  assert.deepEqual(outcome.tournamentJoined.sort(), ['Grace', 'Henry']);
   assert.equal(upgrade.replies.length, 0); // quiet on success, same as everything else here
 });
 
@@ -1491,17 +1491,17 @@ test('handleIn: upgrading multiple already-on-the-list names respects tournament
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
 
-  const joinSocial = makeCtx({ sock, groupId, senderId: 'gary@s.whatsapp.net', senderName: 'Gary', argText: 'Alex, Sam' });
+  const joinSocial = makeCtx({ sock, groupId, senderId: 'gary@s.whatsapp.net', senderName: 'Adrian', argText: 'Grace, Henry' });
   await listCommands.handleIn(joinSocial.ctx);
 
-  const upgrade = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Alex, Sam' });
+  const upgrade = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Grace, Henry' });
   const outcome = await listCommands.handleIn(upgrade.ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.find((e) => e.name === 'Alex').tournament, true);
-  assert.equal(entries.find((e) => e.name === 'Sam').tournament, false);
-  assert.equal(entries.find((e) => e.name === 'Sam').tournamentWaitlisted, true);
-  assert.deepEqual(outcome.tournamentJoined, ['Alex']);
+  assert.equal(entries.find((e) => e.name === 'Grace').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Henry').tournament, false);
+  assert.equal(entries.find((e) => e.name === 'Henry').tournamentWaitlisted, true);
+  assert.deepEqual(outcome.tournamentJoined, ['Grace']);
   assert.equal(upgrade.replies.length, 0); // still quiet - the (🏆 WL) tag on the reposted list is proof enough
 });
 
@@ -1511,11 +1511,11 @@ test('handleIn: upgrading a name that\'s only on the main WAITLIST (not confirme
   store.setTournamentEnabled(groupId, true);
   store.setLimit(groupId, 1);
 
-  const joinSocial = makeCtx({ sock, groupId, senderId: 'gary@s.whatsapp.net', senderName: 'Gary', argText: 'Alex, Wendy' });
-  await listCommands.handleIn(joinSocial.ctx); // Alex confirmed, Wendy waitlisted (limit 1)
-  assert.deepEqual(store.getCurrentEvent(groupId).waitlist.map((e) => e.name), ['Wendy']);
+  const joinSocial = makeCtx({ sock, groupId, senderId: 'gary@s.whatsapp.net', senderName: 'Adrian', argText: 'Grace, Sienna' });
+  await listCommands.handleIn(joinSocial.ctx); // Grace confirmed, Sienna waitlisted (limit 1)
+  assert.deepEqual(store.getCurrentEvent(groupId).waitlist.map((e) => e.name), ['Sienna']);
 
-  const upgrade = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Wendy' });
+  const upgrade = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Sienna' });
   const outcome = await listCommands.handleIn(upgrade.ctx);
 
   assert.equal(outcome.tournamentJoined.length, 0);
@@ -1527,17 +1527,17 @@ test('handleIn: upgrading names already on the list when the tournament is disab
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, false); // tournament is ON by default now
 
-  const joinSocial = makeCtx({ sock, groupId, senderId: 'gary@s.whatsapp.net', senderName: 'Gary', argText: 'Alex, Sam' });
+  const joinSocial = makeCtx({ sock, groupId, senderId: 'gary@s.whatsapp.net', senderName: 'Adrian', argText: 'Grace, Henry' });
   await listCommands.handleIn(joinSocial.ctx);
 
-  const upgrade = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Alex, Sam' });
+  const upgrade = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Grace, Henry' });
   const outcome = await listCommands.handleIn(upgrade.ctx);
 
   assert.equal(outcome.tournamentJoined.length, 0);
   assert.match(upgrade.replies[0], /Tournament isn't enabled/);
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.find((e) => e.name === 'Alex').tournament, false);
-  assert.equal(entries.find((e) => e.name === 'Sam').tournament, false);
+  assert.equal(entries.find((e) => e.name === 'Grace').tournament, false);
+  assert.equal(entries.find((e) => e.name === 'Henry').tournament, false);
 });
 
 // --- !undo (dispatched through the real `commands` table, not the raw
@@ -1549,9 +1549,9 @@ test('handleUndo (via the real dispatch table): reverses the last mutating comma
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  const add = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '' });
+  const add = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '' });
   await commands['!in'](add.ctx);
-  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Jordan']);
+  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Preston']);
 
   const clear = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '' });
   await commands['!clear'](clear.ctx);
@@ -1560,30 +1560,30 @@ test('handleUndo (via the real dispatch table): reverses the last mutating comma
   const undo = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '' });
   await commands['!undo'](undo.ctx);
   assert.match(undo.replies[0], /Undid: !clear/);
-  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Jordan']);
+  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Preston']);
 });
 
 test('handleUndo: running it twice in a row toggles back and forth (acts as a redo)', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  const add = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '' });
+  const add = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '' });
   await commands['!in'](add.ctx);
 
   const firstUndo = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '' });
   await commands['!undo'](firstUndo.ctx);
-  assert.deepEqual(store.getCurrentEvent(groupId).entries, []); // Jordan's add undone
+  assert.deepEqual(store.getCurrentEvent(groupId).entries, []); // Preston's add undone
 
   const secondUndo = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '' });
   await commands['!undo'](secondUndo.ctx);
-  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Jordan']); // redone
+  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Preston']); // redone
 });
 
 test('handleUndo: a view-only command (e.g. bare !location) in between does not overwrite the real undo point', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  const add = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '' });
+  const add = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '' });
   await commands['!in'](add.ctx);
 
   const view = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
@@ -1592,7 +1592,7 @@ test('handleUndo: a view-only command (e.g. bare !location) in between does not 
   const undo = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '' });
   await commands['!undo'](undo.ctx);
   assert.match(undo.replies[0], /Undid: !in/);
-  assert.deepEqual(store.getCurrentEvent(groupId).entries, []); // Jordan's add undone, not a no-op
+  assert.deepEqual(store.getCurrentEvent(groupId).entries, []); // Preston's add undone, not a no-op
 });
 
 test('handleUndo: with nothing to undo yet, replies accordingly and changes nothing', async () => {
@@ -1608,20 +1608,20 @@ test('handleUndo: only an admin can run it', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  const add = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '' });
+  const add = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '' });
   await commands['!in'](add.ctx);
 
   const undo = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: '' });
   await commands['!undo'](undo.ctx);
   assert.match(undo.replies[0], /only a group admin/i);
-  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Jordan']); // unchanged
+  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Preston']); // unchanged
 });
 
 test('handleUndo: reverses a whole !newlist, restoring the discarded old current list', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  const add = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Jordan', argText: '' });
+  const add = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '' });
   await commands['!in'](add.ctx);
 
   const newlist = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 EBC' });
@@ -1630,7 +1630,7 @@ test('handleUndo: reverses a whole !newlist, restoring the discarded old current
 
   const undo = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '' });
   await commands['!undo'](undo.ctx);
-  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Jordan']); // restored
+  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Preston']); // restored
 });
 
 test('handleDate: bare command shows the current date (or "No date set") without changing it', async () => {
@@ -1653,9 +1653,9 @@ test('handleDate: rejects non-admins and invalid dates, and does not touch anyth
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setLocation(groupId, 'EBC');
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Alex now owes payment; date is 2026-08-20
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace now owes payment; date is 2026-08-20
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
 
   const nonAdmin = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: '27/08' });
   await adminCommands.handleDate(nonAdmin.ctx);
@@ -1680,15 +1680,15 @@ test('handleDate: rejects non-admins and invalid dates, and does not touch anyth
   assert.notEqual(event.date, '2026-08-20');
   // Nothing else about the list was touched by the correction.
   assert.equal(event.location, 'EBC');
-  assert.deepEqual(event.entries.map((e) => e.name), ['Sam']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Henry']);
   assert.equal(event.duePayments.length, 1);
-  assert.equal(event.duePayments[0].name, 'Alex');
+  assert.equal(event.duePayments[0].name, 'Grace');
 });
 
 test('handleUpdate: rejects non-admins', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: '*Attendance*\n\n1. Alex' });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: '*Attendance*\n\n1. Grace' });
   await adminCommands.handleUpdate(ctx);
   assert.match(replies[0], /Only a group admin/);
   assert.equal(store.getCurrentEvent(groupId).entries.length, 0);
@@ -1705,7 +1705,7 @@ test('handleUpdate: bare command (no pasted text) shows a usage reply', async ()
 test('handleUpdate: text with no recognizable section is rejected without changing anything', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'just some random text, not a list at all' });
   await adminCommands.handleUpdate(ctx);
   assert.match(replies[0], /Couldn't find/);
@@ -1716,16 +1716,16 @@ test('handleUpdate: applies additions/removals/moves, replies with a summary, an
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Jo', 'jo@s.whatsapp.net', false); // waitlisted (limit 1)
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Quinn', 'jo@s.whatsapp.net', false); // waitlisted (limit 1)
 
   const pastedEdit = [
     "Here's the corrected list, sorry for the delay:",
     '',
     '*Attendance*',
     '',
-    '1. Alex',
-    '2. Jo', // moved up from the waitlist
+    '1. Grace',
+    '2. Quinn', // moved up from the waitlist
     '3. NewPerson', // brand new
     '',
     '*Waitlist*',
@@ -1737,7 +1737,7 @@ test('handleUpdate: applies additions/removals/moves, replies with a summary, an
   await adminCommands.handleUpdate(ctx);
 
   assert.match(replies[0], /Added: NewPerson/);
-  assert.match(replies[0], /Moved: Jo \(waitlist → attendance\)/);
+  assert.match(replies[0], /Moved: Quinn \(waitlist → attendance\)/);
   // Over the (still 1) limit now - should be flagged, not silently demoted.
   assert.match(replies[0], /Heads up: Attendance is now over the limit/);
 
@@ -1758,8 +1758,8 @@ test('handleUpdate: applies additions/removals/moves, replies with a summary, an
 test('handleUpdate: a payment section pasted back with its BOLD date-group headers ("*13th Aug Thu*" etc.) tags every entry under one with that header\'s owedSince - including a brand-new name, which previously always landed under "No date" regardless of which header it was typed under', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-10', {}); // Alex now owes for the 10th Aug list
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-10', {}); // Grace now owes for the 10th Aug list
 
   const pastedEdit = [
     '*Attendance*',
@@ -1769,18 +1769,18 @@ test('handleUpdate: a payment section pasted back with its BOLD date-group heade
     '*Payment*',
     '',
     '*10th Aug Mon*',
-    '1. Alex',
+    '1. Grace',
     '',
     '*13th Aug Thu*',
-    '1. Jordan', // brand new - typed straight under a dated header, not "No date"
+    '1. Preston', // brand new - typed straight under a dated header, not "No date"
   ].join('\n');
 
   const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  const alex = due.find((e) => e.name === 'Alex');
-  const jordan = due.find((e) => e.name === 'Jordan');
+  const alex = due.find((e) => e.name === 'Grace');
+  const jordan = due.find((e) => e.name === 'Preston');
   assert.equal(alex.owedSince, '2026-08-10');
   assert.equal(jordan.owedSince, '2026-08-13');
 });
@@ -1789,12 +1789,12 @@ test('handleUpdate: a brand-new payment name typed under "*No date*" (or with no
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  const pastedEdit = ['*Attendance*', '', '(empty)', '', '*Payment*', '', '*No date*', '1. Casey'].join('\n');
+  const pastedEdit = ['*Attendance*', '', '(empty)', '', '*Payment*', '', '*No date*', '1. Uma'].join('\n');
   const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  assert.equal(due.find((e) => e.name === 'Casey').owedSince, undefined);
+  assert.equal(due.find((e) => e.name === 'Uma').owedSince, undefined);
 });
 
 test('handleUpdate: a new name that fails moderation (too long) is rejected and reported, without blocking other valid changes', async () => {
@@ -1802,15 +1802,15 @@ test('handleUpdate: a new name that fails moderation (too long) is rejected and 
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
   const tooLong = 'X'.repeat(61); // moderation.js's MAX_NAME_LENGTH is 60
-  const pastedEdit = ['*Attendance*', '', '1. Alex', `2. ${tooLong}`].join('\n');
+  const pastedEdit = ['*Attendance*', '', '1. Grace', `2. ${tooLong}`].join('\n');
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
-  assert.match(replies[0], /Added: Alex/);
+  assert.match(replies[0], /Added: Grace/);
   assert.match(replies[0], /Couldn't add:/);
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.entries.length, 1);
-  assert.equal(event.entries[0].name, 'Alex');
+  assert.equal(event.entries[0].name, 'Grace');
 });
 
 test('checkEntry: no longer filters profanity - names are only checked for blank/too-long (language filter removed)', () => {
@@ -1826,10 +1826,10 @@ test('checkEntry: no longer filters profanity - names are only checked for blank
 test('handleUpdate: replying with the list unchanged makes no changes and does not repost it', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
 
   const before = sock.sentMessages.length;
-  const pastedEdit = ['*Attendance*', '', '1. Alex'].join('\n');
+  const pastedEdit = ['*Attendance*', '', '1. Grace'].join('\n');
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
@@ -1842,8 +1842,8 @@ test('handleUpdate: pasting back a tournament-formatted list UNCHANGED (🏆 Tou
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // full - queued (🏆 WL)
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // full - queued (🏆 WL)
 
   const before = sock.sentMessages.length;
   const pastedEdit = formatList(groupId); // exact copy, unedited
@@ -1853,9 +1853,9 @@ test('handleUpdate: pasting back a tournament-formatted list UNCHANGED (🏆 Tou
   assert.match(replies[0], /No changes found/);
   assert.equal(sock.sentMessages.length, before + 1); // no repost, nothing changed
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.length, 2); // NOT corrupted into 3 (a dropped Bao + a bogus "Bao (🏆 WL)")
-  const bao = entries.find((e) => e.name === 'Bao');
-  assert.ok(bao, 'expected the real "Bao" entry to still exist, not a mangled "Bao (🏆 WL)"');
+  assert.equal(entries.length, 2); // NOT corrupted into 3 (a dropped Frank + a bogus "Frank (🏆 WL)")
+  const bao = entries.find((e) => e.name === 'Frank');
+  assert.ok(bao, 'expected the real "Frank" entry to still exist, not a mangled "Frank (🏆 WL)"');
   assert.equal(bao.tournamentWaitlisted, true);
   assert.equal(bao.addedBy, 'bao@s.whatsapp.net'); // original metadata intact
 });
@@ -1865,34 +1865,34 @@ test('handleUpdate: editing who\'s listed under "🏆 Tournament" vs "Social onl
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 2);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Garvin', 'garvin@s.whatsapp.net', false, true, false);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Isaac', 'isaac@s.whatsapp.net', false, true, false);
 
-  // Swap Garvin in for Bao by editing the pasted text directly.
+  // Swap Isaac in for Frank by editing the pasted text directly.
   const pastedEdit = [
     '*Attendance* (3/6)',
     '',
     '🏆 *Tournament players* (2/2)',
     '',
-    '1. Keith',
-    '2. Garvin',
+    '1. Derek',
+    '2. Isaac',
     '',
     'Social only',
     '',
-    '3. Bao',
+    '3. Frank',
   ].join('\n');
 
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
   assert.match(replies[0], /Tournament:/);
-  assert.match(replies[0], /Garvin \(social only → tournament\)/);
-  assert.match(replies[0], /Bao \(tournament → social only\)/);
+  assert.match(replies[0], /Isaac \(social only → tournament\)/);
+  assert.match(replies[0], /Frank \(tournament → social only\)/);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.find((e) => e.name === 'Garvin').tournament, true);
-  assert.equal(entries.find((e) => e.name === 'Bao').tournament, false);
+  assert.equal(entries.find((e) => e.name === 'Isaac').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Frank').tournament, false);
   assert.equal(entries.length, 3); // still all three on the list - nobody removed
 
   // A repost happened too (tournament-only changes still count as "changed").
@@ -1908,7 +1908,7 @@ test('handleUpdate: a pasted header block above *Attendance* applies date/locati
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.newList(groupId, '2026-08-09', { location: 'Old Park', time: '6pm-8pm' });
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
 
   const pastedEdit = [
     '16th Aug Sun',
@@ -1918,7 +1918,7 @@ test('handleUpdate: a pasted header block above *Attendance* applies date/locati
     '',
     '*Attendance*',
     '',
-    '1. Alex',
+    '1. Grace',
     '2. NewPerson',
   ].join('\n');
 
@@ -1947,10 +1947,10 @@ test('handleUpdate: a header field left OUT of the pasted block is cleared, not 
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.newList(groupId, '2026-08-09', { location: 'Old Park', time: '6pm-8pm' });
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
 
   // Only date + location pasted back - courts/time omitted entirely.
-  const pastedEdit = ['16th Aug Sun', 'Noble Park', '', '*Attendance*', '', '1. Alex'].join('\n');
+  const pastedEdit = ['16th Aug Sun', 'Noble Park', '', '*Attendance*', '', '1. Grace'].join('\n');
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
@@ -1964,9 +1964,9 @@ test('handleUpdate: no header block pasted at all leaves date/location/courts/ti
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.newList(groupId, '2026-08-09', { location: 'Old Park', time: '6pm-8pm' });
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
 
-  const pastedEdit = ['*Attendance*', '', '1. Alex', '2. NewPerson'].join('\n');
+  const pastedEdit = ['*Attendance*', '', '1. Grace', '2. NewPerson'].join('\n');
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
@@ -1981,10 +1981,10 @@ test('handleUpdate: no header block pasted at all leaves date/location/courts/ti
 test('handleUpdate: a pasted payment section with a customized label line updates the payment-due header, same as !paymentlabel', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-09', {}); // Alex now owes
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-09', {}); // Grace now owes
 
-  const pastedEdit = ['*Attendance*', '', '(empty)', '', '*Payment*', '$16 payID: 0413455423', '', '*No date*', '1. Alex'].join('\n');
+  const pastedEdit = ['*Attendance*', '', '(empty)', '', '*Payment*', '$16 payID: 0413455423', '', '*No date*', '1. Grace'].join('\n');
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
@@ -1996,10 +1996,10 @@ test('handleUpdate: a payment section pasted back with NO label line (formatList
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setDuePaymentsLabel(groupId, '$16 payID: 0413455423');
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-09', {});
 
-  const pastedEdit = ['*Attendance*', '', '(empty)', '', '*Payment*', '', '*No date*', '1. Alex'].join('\n');
+  const pastedEdit = ['*Attendance*', '', '(empty)', '', '*Payment*', '', '*No date*', '1. Grace'].join('\n');
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
@@ -2011,9 +2011,9 @@ test('handleUpdate: no payment section pasted at all leaves the payment-due head
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setDuePaymentsLabel(groupId, '$16 payID: 0413455423');
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
 
-  const pastedEdit = ['*Attendance*', '', '1. Alex', '2. NewPerson'].join('\n');
+  const pastedEdit = ['*Attendance*', '', '1. Grace', '2. NewPerson'].join('\n');
   const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
@@ -2023,11 +2023,11 @@ test('handleUpdate: no payment section pasted at all leaves the payment-due head
 test('handleUpdate: an over-length payment label in the paste is rejected with a note, without blocking the other changes', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-09', {});
 
   const tooLong = 'X'.repeat(200);
-  const pastedEdit = ['*Attendance*', '', '(empty)', '', '*Payment*', tooLong, '', '*No date*', '1. Alex'].join('\n');
+  const pastedEdit = ['*Attendance*', '', '(empty)', '', '*Payment*', tooLong, '', '*No date*', '1. Grace'].join('\n');
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
@@ -2039,9 +2039,9 @@ test('handleUpdate: an invalid courts value in the header block is rejected with
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.newList(groupId, '2026-08-09', { location: 'Old Park' });
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
 
-  const pastedEdit = ['16th Aug Sun', 'Noble Park', 'Courts not-a-real-spec', '', '*Attendance*', '', '1. Alex'].join('\n');
+  const pastedEdit = ['16th Aug Sun', 'Noble Park', 'Courts not-a-real-spec', '', '*Attendance*', '', '1. Grace'].join('\n');
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
@@ -2079,29 +2079,29 @@ test('handleUpdate: a courts change that raises capacity above the current headc
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.newList(groupId, '2026-08-09', {});
   store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Jo', 'jo@s.whatsapp.net', false); // waitlisted (limit 1)
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Quinn', 'jo@s.whatsapp.net', false); // waitlisted (limit 1)
 
-  // Attendance/Waitlist are pasted back unchanged (Alex still in, Jo still
+  // Attendance/Waitlist are pasted back unchanged (Grace still in, Quinn still
   // waitlisted) - the point of this test is the courts/limit change alone
-  // promoting Jo off the waitlist afterward (store.js's setCourts()
+  // promoting Quinn off the waitlist afterward (store.js's setCourts()
   // handles that automatically, same as !courts). Both sections have to
   // be included explicitly - an *Attendance*-only paste would otherwise
   // be read as "clear the waitlist entirely" by applyListUpdate, removing
-  // Jo before setCourts() ever gets a chance to promote her.
-  const pastedEdit = ['16th Aug Sun', 'Courts 1-2', '', '*Attendance*', '', '1. Alex', '', '*Waitlist*', '', '1. Jo'].join('\n');
+  // Quinn before setCourts() ever gets a chance to promote her.
+  const pastedEdit = ['16th Aug Sun', 'Courts 1-2', '', '*Attendance*', '', '1. Grace', '', '*Waitlist*', '', '1. Quinn'].join('\n');
   const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
   await adminCommands.handleUpdate(ctx);
 
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.limit, 12); // 2 courts * PLAYERS_PER_COURT (6)
-  assert.deepEqual(event.entries.map((e) => e.name).sort(), ['Alex', 'Jo']);
+  assert.deepEqual(event.entries.map((e) => e.name).sort(), ['Grace', 'Quinn']);
   assert.equal(event.waitlist.length, 0);
 
   // Promotion is sent as its own mention-carrying message, same as !courts.
   const promotedMsg = sock.sentMessages.find((m) => m.content.mentions && m.content.mentions.length);
   assert.ok(promotedMsg, 'expected a promoted-notification message with mentions');
-  assert.match(promotedMsg.content.text, /Jo/);
+  assert.match(promotedMsg.content.text, /Quinn/);
 });
 
 // Regression test for a real, reproduced bug: !update - even a plain typed
@@ -2122,17 +2122,17 @@ test('handleUpdate: copying the bot\'s own posted list back unedited except for 
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.newList(groupId, '2020-01-01', { location: 'Old Park', courts: { raw: '1-2', count: 2 }, time: '7pm-9pm' });
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Michael b', 'michael@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Nathan b', 'nathan@s.whatsapp.net', false);
 
   const posted = formatList(groupId);
-  const edited = posted.replace('Michael b', 'Michael Brown'); // the ONLY intended change
+  const edited = posted.replace('Nathan b', 'Nathan Brown'); // the ONLY intended change
 
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: edited });
   await adminCommands.handleUpdate(ctx);
 
-  assert.match(replies[0], /Added: Michael Brown/);
-  assert.match(replies[0], /Removed: Michael b/);
+  assert.match(replies[0], /Added: Nathan Brown/);
+  assert.match(replies[0], /Removed: Nathan b/);
   assert.doesNotMatch(replies[0], /Date:/); // the actual bug: this used to always appear
 
   const event = store.getCurrentEvent(groupId);
@@ -2142,8 +2142,8 @@ test('handleUpdate: copying the bot\'s own posted list back unedited except for 
 test('handlePaid: marks the sender\'s own due entry paid when no name given', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false, true); // self: true - it's Alex's own entry
-  store.newList(groupId, '2026-08-20', {}); // archives Alex as owing payment
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false, true); // self: true - it's Grace's own entry
+  store.newList(groupId, '2026-08-20', {}); // archives Grace as owing payment
 
   const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', argText: '' });
   await listCommands.handlePaid(ctx);
@@ -2153,31 +2153,31 @@ test('handlePaid: marks the sender\'s own due entry paid when no name given', as
 test('handleIn: leading "paid" adds the explicit name(s) AND marks them paid, in one message', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // archives Alex and Sam as owing payment
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // archives Grace and Henry as owing payment
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', argText: 'paid Alex, Sam' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', argText: 'paid Grace, Henry' });
   await listCommands.handleIn(ctx);
 
   const event = store.getCurrentEvent(groupId);
-  assert.deepEqual(event.entries.map((e) => e.name), ['Alex', 'Sam']);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Grace', 'Henry']);
   assert.equal(event.duePayments.length, 0); // both marked paid
 });
 
 test('handleIn: bare "!in paid" adds the sender by push name AND marks their own due entry paid by identity', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.addEntry(groupId, 'Alexander', 'alex@s.whatsapp.net', false, true); // signed up under a different name last cycle (self: true - it's still Alex's own entry)
-  store.newList(groupId, '2026-08-20', {}); // archives "Alexander" (by alex@s.whatsapp.net) as owing payment
+  store.addEntry(groupId, 'Maxwell', 'max@s.whatsapp.net', false, true); // signed up under a different name last cycle (self: true - it's still Max's own entry)
+  store.newList(groupId, '2026-08-20', {}); // archives "Maxwell" (by max@s.whatsapp.net) as owing payment
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Alex', argText: 'paid' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'max@s.whatsapp.net', senderName: 'Max', argText: 'paid' });
   await listCommands.handleIn(ctx);
 
   const event = store.getCurrentEvent(groupId);
-  assert.equal(event.entries[0].name, 'Alex'); // added under the current push name
-  // Paid resolved by WhatsApp identity, not by matching "Alex" against the
-  // due entry recorded as "Alexander" - this is the whole point of using
+  assert.equal(event.entries[0].name, 'Max'); // added under the current push name
+  // Paid resolved by WhatsApp identity, not by matching "Max" against the
+  // due entry recorded as "Maxwell" - this is the whole point of using
   // resolveOwnDue() instead of reusing the literal add name.
   assert.equal(event.duePayments.length, 0);
 });
@@ -2185,11 +2185,11 @@ test('handleIn: bare "!in paid" adds the sender by push name AND marks their own
 test('handleIn: "paid" still applies even when the add itself is a no-op (already on the list)', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false, true); // self: true
-  store.newList(groupId, '2026-08-20', {}); // Alex owes for the new cycle
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false, true); // already back on the new list (self: true)
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false, true); // self: true
+  store.newList(groupId, '2026-08-20', {}); // Grace owes for the new cycle
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false, true); // already back on the new list (self: true)
 
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Alex', argText: 'paid' });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Grace', argText: 'paid' });
   await listCommands.handleIn(ctx);
 
   assert.match(replies[0], /already on the list/);
@@ -2207,13 +2207,13 @@ test('handleIn: a name that merely starts with "paid" (not the standalone keywor
 test('handleOut: leading "paid" removes the explicit name(s) AND marks them paid, independent of the removal outcome', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Alex owes for the new cycle, and is NOT on the new list
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace owes for the new cycle, and is NOT on the new list
 
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'someone@s.whatsapp.net', argText: 'paid Alex' });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'someone@s.whatsapp.net', argText: 'paid Grace' });
   await listCommands.handleOut(ctx);
 
-  // Removal fails (Alex isn't on the current list), but paying still goes through.
+  // Removal fails (Grace isn't on the current list), but paying still goes through.
   assert.match(replies[0], /Couldn't remove/);
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
 });
@@ -2221,11 +2221,11 @@ test('handleOut: leading "paid" removes the explicit name(s) AND marks them paid
 test('handleOut: bare "!out paid" removes the sender\'s own entry and marks their own due entry paid by identity', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false, true); // self: true
-  store.newList(groupId, '2026-08-20', {}); // Alex owes for the new cycle
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false, true); // back on the new list too (self: true)
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false, true); // self: true
+  store.newList(groupId, '2026-08-20', {}); // Grace owes for the new cycle
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false, true); // back on the new list too (self: true)
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Alex', argText: 'paid' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Grace', argText: 'paid' });
   await listCommands.handleOut(ctx);
 
   const event = store.getCurrentEvent(groupId);
@@ -2236,9 +2236,9 @@ test('handleOut: bare "!out paid" removes the sender\'s own entry and marks thei
 test('handleOut: "!out paid" with nothing owed silently skips the paid part (no error, no reply about it)', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false, true); // self: true, so bare !out below finds it
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false, true); // self: true, so bare !out below finds it
 
-  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Alex', argText: 'paid' });
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Grace', argText: 'paid' });
   await listCommands.handleOut(ctx);
 
   assert.equal(store.getCurrentEvent(groupId).entries.length, 0); // removal still worked
@@ -2248,10 +2248,10 @@ test('handleOut: "!out paid" with nothing owed silently skips the paid part (no 
 test('handleIn: plain !in (no "paid") never touches duePayments', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Alex owes for the new cycle
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace owes for the new cycle
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Alex', argText: '' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Grace', argText: '' });
   await listCommands.handleIn(ctx);
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 1); // untouched
 });

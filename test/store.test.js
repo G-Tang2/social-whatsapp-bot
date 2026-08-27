@@ -24,59 +24,59 @@ function freshGroupId() {
 
 test('addEntry adds to the list and rejects duplicates', () => {
   const groupId = freshGroupId();
-  const result = store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
+  const result = store.addEntry(groupId, 'Grace', 'grace@s.whatsapp.net', false);
   assert.equal(result.ok, true);
   assert.equal(result.waitlisted, false);
   assert.equal(store.getCurrentEvent(groupId).entries.length, 1);
 
-  const dup = store.addEntry(groupId, 'alex', 'someoneelse@s.whatsapp.net', false);
+  const dup = store.addEntry(groupId, 'grace', 'someoneelse@s.whatsapp.net', false);
   assert.equal(dup.ok, false);
   assert.equal(dup.reason, 'duplicate');
 });
 
 test('addEntry records `self` from its 5th argument, defaulting to false when omitted, and undefined (legacy data) is treated as "possibly self" by callers', () => {
   const groupId = freshGroupId();
-  store.addEntry(groupId, 'Gary', 'gary@s.whatsapp.net', false, true); // explicit self: true
-  store.addEntry(groupId, 'Peter', 'gary@s.whatsapp.net', false); // 5th arg omitted -> self: false
-  store.addEntry(groupId, 'Chris', 'gary@s.whatsapp.net', false, false); // explicit self: false
+  store.addEntry(groupId, 'Adrian', 'gary@s.whatsapp.net', false, true); // explicit self: true
+  store.addEntry(groupId, 'Alice', 'gary@s.whatsapp.net', false); // 5th arg omitted -> self: false
+  store.addEntry(groupId, 'Bob', 'gary@s.whatsapp.net', false, false); // explicit self: false
 
   const entries = store.getCurrentEvent(groupId).entries;
   const byName = Object.fromEntries(entries.map((e) => [e.name, e]));
-  assert.equal(byName.Gary.self, true);
-  assert.equal(byName.Peter.self, false);
-  assert.equal(byName.Chris.self, false);
+  assert.equal(byName.Adrian.self, true);
+  assert.equal(byName.Alice.self, false);
+  assert.equal(byName.Bob.self, false);
 });
 
 test('addEntry waitlists once the limit is reached, and removal promotes the next person', () => {
   const groupId = freshGroupId();
   store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  const second = store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  const second = store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
   assert.equal(second.ok, true);
   assert.equal(second.waitlisted, true);
   assert.equal(store.getCurrentEvent(groupId).entries.length, 1);
   assert.equal(store.getCurrentEvent(groupId).waitlist.length, 1);
 
-  const removed = store.removeEntry(groupId, 'Alex');
+  const removed = store.removeEntry(groupId, 'Grace');
   assert.equal(removed.ok, true);
   assert.equal(removed.promoted.length, 1);
-  assert.equal(removed.promoted[0].name, 'Sam');
+  assert.equal(removed.promoted[0].name, 'Henry');
   assert.equal(store.getCurrentEvent(groupId).entries.length, 1);
-  assert.equal(store.getCurrentEvent(groupId).entries[0].name, 'Sam');
+  assert.equal(store.getCurrentEvent(groupId).entries[0].name, 'Henry');
   assert.equal(store.getCurrentEvent(groupId).waitlist.length, 0);
 });
 
 test('removeEntry: anyone can remove any entry, regardless of who added it or whether they were an admin', () => {
   const groupId = freshGroupId();
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false); // regular member, self-added
-  store.addEntry(groupId, 'Peter', 'gary@s.whatsapp.net', false); // regular member, added by Gary on Peter's behalf
-  store.addEntry(groupId, 'Sam', 'admin@s.whatsapp.net', true); // admin-added
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false); // regular member, self-added
+  store.addEntry(groupId, 'Alice', 'gary@s.whatsapp.net', false); // regular member, added by Adrian on Alice's behalf
+  store.addEntry(groupId, 'Henry', 'admin@s.whatsapp.net', true); // admin-added
 
-  const removeAlex = store.removeEntry(groupId, 'Alex');
+  const removeAlex = store.removeEntry(groupId, 'Grace');
   assert.equal(removeAlex.ok, true);
-  const removePeter = store.removeEntry(groupId, 'Peter');
+  const removePeter = store.removeEntry(groupId, 'Alice');
   assert.equal(removePeter.ok, true);
-  const removeSam = store.removeEntry(groupId, 'Sam');
+  const removeSam = store.removeEntry(groupId, 'Henry');
   assert.equal(removeSam.ok, true);
 
   assert.equal(store.getCurrentEvent(groupId).entries.length, 0);
@@ -116,15 +116,15 @@ test('allowFromWaitlist does NOT raise the limit, so attendance can sit over it 
 
 test('setLimit demotes the most recently added entries when lowered below headcount', () => {
   const groupId = freshGroupId();
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Sam', 'b@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Jo', 'c@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'b@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Quinn', 'c@s.whatsapp.net', false);
   const { demoted } = store.setLimit(groupId, 1);
   assert.equal(demoted.length, 2);
-  assert.deepEqual(demoted.map((e) => e.name), ['Sam', 'Jo']);
+  assert.deepEqual(demoted.map((e) => e.name), ['Henry', 'Quinn']);
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.entries.length, 1);
-  assert.equal(event.entries[0].name, 'Alex');
+  assert.equal(event.entries[0].name, 'Grace');
   assert.equal(event.waitlist.length, 2);
 });
 
@@ -207,12 +207,12 @@ test('addCourts promotes off the waitlist when the merged total raises the limit
 test('clearList wipes entries and waitlist but keeps duePayments and header fields', () => {
   const groupId = freshGroupId();
   store.setLocation(groupId, 'EBC');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // archives Alex into duePayments
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // archives Grace into duePayments
   const beforeClear = store.getCurrentEvent(groupId);
   assert.equal(beforeClear.duePayments.length, 1);
 
-  store.addEntry(groupId, 'Sam', 'b@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'b@s.whatsapp.net', false);
   store.clearList(groupId);
   const after = store.getCurrentEvent(groupId);
   assert.equal(after.entries.length, 0);
@@ -223,33 +223,33 @@ test('clearList wipes entries and waitlist but keeps duePayments and header fiel
 
 test('markPaid removes someone from duePayments', () => {
   const groupId = freshGroupId();
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // archives Alex as owing payment
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // archives Grace as owing payment
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 1);
 
-  const result = store.markPaid(groupId, 'Alex');
+  const result = store.markPaid(groupId, 'Grace');
   assert.equal(result.ok, true);
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
 
-  const again = store.markPaid(groupId, 'Alex');
+  const again = store.markPaid(groupId, 'Grace');
   assert.equal(again.ok, false);
   assert.equal(again.reason, 'not_found');
 });
 
 // Real bug report: a payment list typed on a phone had entries like
-// "⁠Priya" - a leading U+2060 WORD JOINER, invisible in WhatsApp but
+// "⁠Renee" - a leading U+2060 WORD JOINER, invisible in WhatsApp but
 // present in the actual text (WhatsApp inserts it around a name typed
 // right after a contact-autocomplete suggestion was dismissed). Someone
-// typing a plain "priya" to pay got "not on the payment list", even
+// typing a plain "renee" to pay got "not on the payment list", even
 // though the name was right there - see normalizeName()'s own comment in
 // store.js for the full list of invisible characters now stripped.
 test('markPaid matches even when the due-payment entry carries an invisible zero-width character WhatsApp silently inserted', () => {
   const groupId = freshGroupId();
-  store.addEntry(groupId, '\u2060Priya', 'p@s.whatsapp.net', false);
+  store.addEntry(groupId, '\u2060Renee', 'p@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 1);
 
-  const result = store.markPaid(groupId, 'Priya');
+  const result = store.markPaid(groupId, 'Renee');
   assert.equal(result.ok, true);
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
 });
@@ -257,9 +257,9 @@ test('markPaid matches even when the due-payment entry carries an invisible zero
 test('clearDuePayments wipes duePayments but keeps entries/waitlist and header fields', () => {
   const groupId = freshGroupId();
   store.setLocation(groupId, 'EBC');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // archives Alex into duePayments
-  store.addEntry(groupId, 'Sam', 'b@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // archives Grace into duePayments
+  store.addEntry(groupId, 'Henry', 'b@s.whatsapp.net', false);
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 1);
 
   const result = store.clearDuePayments(groupId);
@@ -268,24 +268,24 @@ test('clearDuePayments wipes duePayments but keeps entries/waitlist and header f
   const after = store.getCurrentEvent(groupId);
   assert.equal(after.duePayments.length, 0);
   assert.equal(after.entries.length, 1); // preserved - clearDuePayments doesn't touch the list
-  assert.equal(after.entries[0].name, 'Sam');
+  assert.equal(after.entries[0].name, 'Henry');
   assert.equal(after.location, 'EBC'); // preserved
 });
 
 test('newList carries forward location/courts/time and merges unpaid debt across cycles', () => {
   const groupId = freshGroupId();
   store.setLocation(groupId, 'EBC');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Alex now owes for cycle 1
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace now owes for cycle 1
 
-  store.addEntry(groupId, 'Sam', 'b@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-27', {}); // Sam now owes for cycle 2; Alex still owes from cycle 1
+  store.addEntry(groupId, 'Henry', 'b@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-27', {}); // Henry now owes for cycle 2; Grace still owes from cycle 1
 
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.location, 'EBC'); // carried forward, never respecified
   assert.equal(event.date, '2026-08-27');
   const names = event.duePayments.map((e) => e.name).sort();
-  assert.deepEqual(names, ['Alex', 'Sam']);
+  assert.deepEqual(names, ['Grace', 'Henry']);
 });
 
 // --- newList()'s owedSince tagging ----------------------------------------
@@ -299,34 +299,34 @@ test('newList carries forward location/courts/time and merges unpaid debt across
 test('newList tags a newly-transitioned duePayments entry with the OLD list\'s date', () => {
   const groupId = freshGroupId(); // starts with no date - set one first so there's something real to tag with
   store.setDate(groupId, '2026-08-20');
-  store.addEntry(groupId, 'Sam', 'b@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'b@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-27', {});
 
   const due = store.getCurrentEvent(groupId).duePayments;
   assert.equal(due.length, 1);
-  assert.equal(due[0].name, 'Sam');
+  assert.equal(due[0].name, 'Henry');
   assert.equal(due[0].owedSince, '2026-08-20'); // the OLD list's date, not the new one
 });
 
 test('newList leaves an ALREADY-owing entry\'s owedSince untouched across a further cycle (keeps the ORIGINAL date, not the newest)', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Alex now owes for 8/13
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace now owes for 8/13
 
-  store.addEntry(groupId, 'Jordan', 'j@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-27', {}); // Jordan now owes for 8/20; Alex still owes from 8/13
+  store.addEntry(groupId, 'Preston', 'j@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-27', {}); // Preston now owes for 8/20; Grace still owes from 8/13
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  const alex = due.find((e) => e.name === 'Alex');
-  const jordan = due.find((e) => e.name === 'Jordan');
-  assert.equal(alex.owedSince, '2026-08-13'); // unchanged - the FIRST list Alex missed
+  const alex = due.find((e) => e.name === 'Grace');
+  const jordan = due.find((e) => e.name === 'Preston');
+  assert.equal(alex.owedSince, '2026-08-13'); // unchanged - the FIRST list Grace missed
   assert.equal(jordan.owedSince, '2026-08-20');
 });
 
 test('newList does not set owedSince at all when the old list never had a date', () => {
   const groupId = freshGroupId(); // no date set
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-27', {});
 
   const due = store.getCurrentEvent(groupId).duePayments;
@@ -342,28 +342,28 @@ test('newList does not set owedSince at all when the old list never had a date',
 test('waiveDuePaymentsForWinners clears the winners\' debt for the most recent week they were charged for', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Irfan', 'i@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Tu', 't@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Sam', 's@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Irfan/Tu/Sam now owe for 8/13
+  store.addEntry(groupId, 'Noah', 'i@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Ellen', 't@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 's@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Noah/Ellen/Henry now owe for 8/13
 
-  const waived = store.waiveDuePaymentsForWinners(groupId, ['Irfan', 'Tu']);
-  assert.deepEqual(waived.sort(), ['Irfan', 'Tu']);
+  const waived = store.waiveDuePaymentsForWinners(groupId, ['Noah', 'Ellen']);
+  assert.deepEqual(waived.sort(), ['Ellen', 'Noah']);
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  assert.deepEqual(due.map((e) => e.name), ['Sam']); // winners cleared, Sam still owes
+  assert.deepEqual(due.map((e) => e.name), ['Henry']); // winners cleared, Henry still owes
 });
 
 test('waiveDuePaymentsForWinners leaves a winner\'s UNRELATED earlier debt untouched', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-06');
-  store.addEntry(groupId, 'Irfan', 'i@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-13', {}); // Irfan owes for 8/06 (a missed, unrelated cycle)
+  store.addEntry(groupId, 'Noah', 'i@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-13', {}); // Noah owes for 8/06 (a missed, unrelated cycle)
 
-  store.addEntry(groupId, 'Irfan', 'i@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Irfan now ALSO owes for 8/13 - the week won
+  store.addEntry(groupId, 'Noah', 'i@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Noah now ALSO owes for 8/13 - the week won
 
-  store.waiveDuePaymentsForWinners(groupId, ['Irfan', 'Tu']);
+  store.waiveDuePaymentsForWinners(groupId, ['Noah', 'Ellen']);
 
   const due = store.getCurrentEvent(groupId).duePayments;
   assert.deepEqual(due.map((e) => e.owedSince), ['2026-08-06']); // only the 8/13 entry was waived
@@ -371,7 +371,7 @@ test('waiveDuePaymentsForWinners leaves a winner\'s UNRELATED earlier debt untou
 
 test('waiveDuePaymentsForWinners is a no-op when nobody currently owes anything', () => {
   const groupId = freshGroupId();
-  const waived = store.waiveDuePaymentsForWinners(groupId, ['Irfan', 'Tu']);
+  const waived = store.waiveDuePaymentsForWinners(groupId, ['Noah', 'Ellen']);
   assert.deepEqual(waived, []);
 });
 
@@ -384,14 +384,14 @@ test('waiveDuePaymentsForWinners is a no-op when nobody currently owes anything'
 test('newList gives someone a SEPARATE second entry if they still owe from before AND attend (without paying) again', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Alex owes for 8/13
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace owes for 8/13
 
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false); // Alex attends again, still hasn't paid
-  store.newList(groupId, '2026-08-27', {}); // Alex now owes for BOTH 8/13 and 8/20
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false); // Grace attends again, still hasn't paid
+  store.newList(groupId, '2026-08-27', {}); // Grace now owes for BOTH 8/13 and 8/20
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  const alexEntries = due.filter((e) => e.name === 'Alex');
+  const alexEntries = due.filter((e) => e.name === 'Grace');
   assert.equal(alexEntries.length, 2);
   const owedDates = alexEntries.map((e) => e.owedSince).sort();
   assert.deepEqual(owedDates, ['2026-08-13', '2026-08-20']);
@@ -400,15 +400,15 @@ test('newList gives someone a SEPARATE second entry if they still owe from befor
 test('newList: a THIRD consecutive missed cycle for the same person adds a THIRD entry, each with its own distinct owedSince', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-06');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-13', {});
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-27', {});
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  const alexEntries = due.filter((e) => e.name === 'Alex');
+  const alexEntries = due.filter((e) => e.name === 'Grace');
   assert.equal(alexEntries.length, 3);
   assert.deepEqual(alexEntries.map((e) => e.owedSince).sort(), ['2026-08-06', '2026-08-13', '2026-08-20']);
 });
@@ -418,29 +418,29 @@ test('newList: a THIRD consecutive missed cycle for the same person adds a THIRD
 test('markPaid clears ALL of a name\'s entries at once, not just the first one found', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-27', {}); // Alex now owes twice
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-27', {}); // Grace now owes twice
 
-  assert.equal(store.getCurrentEvent(groupId).duePayments.filter((e) => e.name === 'Alex').length, 2);
+  assert.equal(store.getCurrentEvent(groupId).duePayments.filter((e) => e.name === 'Grace').length, 2);
 
-  const result = store.markPaid(groupId, 'Alex');
+  const result = store.markPaid(groupId, 'Grace');
   assert.equal(result.ok, true);
   assert.equal(result.count, 2);
-  assert.equal(store.getCurrentEvent(groupId).duePayments.filter((e) => e.name === 'Alex').length, 0);
+  assert.equal(store.getCurrentEvent(groupId).duePayments.filter((e) => e.name === 'Grace').length, 0);
 });
 
 test('markPaid leaves an unrelated name\'s entries untouched when clearing a different name', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Sam', 'b@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'b@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
 
-  store.markPaid(groupId, 'Alex');
+  store.markPaid(groupId, 'Grace');
   const due = store.getCurrentEvent(groupId).duePayments;
-  assert.deepEqual(due.map((e) => e.name), ['Sam']);
+  assert.deepEqual(due.map((e) => e.name), ['Henry']);
 });
 
 // --- applyListUpdate() (!update): round-trips duplicate payment names -----
@@ -453,14 +453,14 @@ test('markPaid leaves an unrelated name\'s entries untouched when clearing a dif
 test('applyListUpdate: pasting a name back TWICE (once per date group it was under) preserves BOTH original entries, each keeping its own owedSince', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-27', {}); // Alex now owes twice: 8/13 and 8/20
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-27', {}); // Grace now owes twice: 8/13 and 8/20
 
   const result = store.applyListUpdate(
     groupId,
-    { attendance: [], waitlist: [], duePayments: ['Alex', 'Alex'] },
+    { attendance: [], waitlist: [], duePayments: ['Grace', 'Grace'] },
     'editor@s.whatsapp.net',
     true
   );
@@ -476,14 +476,14 @@ test('applyListUpdate: pasting a name back TWICE (once per date group it was und
 test('applyListUpdate: pasting a name back only ONCE when it had TWO entries clears the unmatched one (reported as paidRemoved), keeps the other', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-27', {}); // Alex owes twice: 8/13 and 8/20
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-27', {}); // Grace owes twice: 8/13 and 8/20
 
   const result = store.applyListUpdate(
     groupId,
-    { attendance: [], waitlist: [], duePayments: ['Alex'] },
+    { attendance: [], waitlist: [], duePayments: ['Grace'] },
     'editor@s.whatsapp.net',
     true
   );
@@ -496,19 +496,19 @@ test('applyListUpdate: pasting a name back only ONCE when it had TWO entries cle
 test('applyListUpdate: a genuinely NEW second occurrence of an existing name (more pasted-back copies than real entries) is added as a fresh no-owedSince entry', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Alex owes once, for 8/13
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace owes once, for 8/13
 
   const result = store.applyListUpdate(
     groupId,
-    { attendance: [], waitlist: [], duePayments: ['Alex', 'Alex'] },
+    { attendance: [], waitlist: [], duePayments: ['Grace', 'Grace'] },
     'editor@s.whatsapp.net',
     true
   );
 
   const due = store.getCurrentEvent(groupId).duePayments;
   assert.equal(due.length, 2);
-  assert.deepEqual(result.paidAdded, ['Alex']);
+  assert.deepEqual(result.paidAdded, ['Grace']);
   const withDate = due.filter((e) => e.owedSince === '2026-08-13');
   const withoutDate = due.filter((e) => !e.owedSince);
   assert.equal(withDate.length, 1);
@@ -528,42 +528,42 @@ test('getPaymentExempt starts empty for a brand-new group', () => {
 
 test('setPaymentExempt replaces the whole roster and getPaymentExempt reads it back', () => {
   const groupId = freshGroupId();
-  const result = store.setPaymentExempt(groupId, ['Peter', 'Chris']);
-  assert.deepEqual(result, ['Peter', 'Chris']);
-  assert.deepEqual(store.getPaymentExempt(groupId), ['Peter', 'Chris']);
+  const result = store.setPaymentExempt(groupId, ['Alice', 'Bob']);
+  assert.deepEqual(result, ['Alice', 'Bob']);
+  assert.deepEqual(store.getPaymentExempt(groupId), ['Alice', 'Bob']);
 });
 
 test('newList skips an exempt name entirely when carrying attendance into duePayments - they never show up owing anything', () => {
   const groupId = freshGroupId();
-  store.setPaymentExempt(groupId, ['Peter']);
+  store.setPaymentExempt(groupId, ['Alice']);
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Peter', 'h@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Alice', 'h@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  assert.deepEqual(due.map((e) => e.name), ['Alex']);
+  assert.deepEqual(due.map((e) => e.name), ['Grace']);
 });
 
 test('newList exemption is forward-looking only - an existing debt from BEFORE someone was exempted is left untouched', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Peter', 'h@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Peter owes for 8/13, before being exempted
+  store.addEntry(groupId, 'Alice', 'h@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Alice owes for 8/13, before being exempted
 
-  store.setPaymentExempt(groupId, ['Peter']); // exempted AFTER already owing
-  store.newList(groupId, '2026-08-27', {}); // nothing new happens - Peter didn't attend this cycle anyway
+  store.setPaymentExempt(groupId, ['Alice']); // exempted AFTER already owing
+  store.newList(groupId, '2026-08-27', {}); // nothing new happens - Alice didn't attend this cycle anyway
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  assert.deepEqual(due.map((e) => e.name), ['Peter']); // the OLD debt is still there
+  assert.deepEqual(due.map((e) => e.name), ['Alice']); // the OLD debt is still there
   assert.equal(due[0].owedSince, '2026-08-13');
 });
 
 test('newList exemption is case/whitespace-insensitive, same normalizeName() matching as everywhere else', () => {
   const groupId = freshGroupId();
-  store.setPaymentExempt(groupId, ['  peter  ']);
+  store.setPaymentExempt(groupId, ['  alice  ']);
   store.setDate(groupId, '2026-08-13');
-  store.addEntry(groupId, 'Peter', 'h@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Alice', 'h@s.whatsapp.net', false);
   store.newList(groupId, '2026-08-20', {});
 
   assert.deepEqual(store.getCurrentEvent(groupId).duePayments, []);
@@ -660,9 +660,9 @@ test('setDate corrects the current list\'s date in place, without touching entri
   store.setLocation(groupId, 'EBC');
   store.setCourts(groupId, '13-18');
   store.setTime(groupId, '8PM start');
-  store.addEntry(groupId, 'Alex', 'a@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Alex now owes payment; date is 2026-08-20
-  store.addEntry(groupId, 'Sam', 'b@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace now owes payment; date is 2026-08-20
+  store.addEntry(groupId, 'Henry', 'b@s.whatsapp.net', false);
 
   const before = store.getCurrentEvent(groupId);
   assert.equal(before.date, '2026-08-20');
@@ -676,25 +676,25 @@ test('setDate corrects the current list\'s date in place, without touching entri
   assert.equal(after.location, 'EBC');
   assert.equal(after.courts, '13-18');
   assert.equal(after.time, '8PM start');
-  assert.deepEqual(after.entries.map((e) => e.name), ['Sam']);
+  assert.deepEqual(after.entries.map((e) => e.name), ['Henry']);
   assert.equal(after.duePayments.length, 1);
-  assert.equal(after.duePayments[0].name, 'Alex');
+  assert.equal(after.duePayments[0].name, 'Grace');
 });
 
 test('applyListUpdate: kept names preserve their original addedBy/addedByIsAdmin metadata', () => {
   const groupId = freshGroupId();
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Sam', 'admin@s.whatsapp.net', true); // added by an admin, on Sam's behalf
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'admin@s.whatsapp.net', true); // added by an admin, on Henry's behalf
 
-  const parsed = { attendance: ['Sam', 'Alex'], waitlist: [], duePayments: [] }; // reordered
+  const parsed = { attendance: ['Henry', 'Grace'], waitlist: [], duePayments: [] }; // reordered
   store.applyListUpdate(groupId, parsed, 'editor@s.whatsapp.net', true);
 
   const entries = store.getCurrentEvent(groupId).entries;
   assert.equal(entries.length, 2);
-  assert.equal(entries[0].name, 'Sam');
+  assert.equal(entries[0].name, 'Henry');
   assert.equal(entries[0].addedBy, 'admin@s.whatsapp.net'); // original adder preserved, not the editor
   assert.equal(entries[0].addedByIsAdmin, true);
-  assert.equal(entries[1].name, 'Alex');
+  assert.equal(entries[1].name, 'Grace');
   assert.equal(entries[1].addedBy, 'alex@s.whatsapp.net');
 });
 
@@ -715,37 +715,37 @@ test('applyListUpdate: a brand-new name is attributed to the editor', () => {
 
 test('applyListUpdate: a name dropped entirely from the edited text is removed', () => {
   const groupId = freshGroupId();
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Sam', 'sam@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
 
   const result = store.applyListUpdate(
     groupId,
-    { attendance: ['Alex'], waitlist: [], duePayments: [] }, // Sam left out
+    { attendance: ['Grace'], waitlist: [], duePayments: [] }, // Henry left out
     'editor@s.whatsapp.net',
     true
   );
-  assert.deepEqual(result.removed, ['Sam']);
+  assert.deepEqual(result.removed, ['Henry']);
   assert.equal(store.getCurrentEvent(groupId).entries.length, 1);
 });
 
 test('applyListUpdate: moving a name from Waitlist to Attendance in the edited text actually promotes them, keeping their metadata', () => {
   const groupId = freshGroupId();
   store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.addEntry(groupId, 'Jo', 'jo@s.whatsapp.net', false); // waitlisted (limit 1)
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Quinn', 'jo@s.whatsapp.net', false); // waitlisted (limit 1)
   assert.equal(store.getCurrentEvent(groupId).waitlist.length, 1);
 
   const result = store.applyListUpdate(
     groupId,
-    { attendance: ['Alex', 'Jo'], waitlist: [], duePayments: [] },
+    { attendance: ['Grace', 'Quinn'], waitlist: [], duePayments: [] },
     'editor@s.whatsapp.net',
     true
   );
-  assert.deepEqual(result.moved, [{ name: 'Jo', from: 'waitlist', to: 'attendance' }]);
+  assert.deepEqual(result.moved, [{ name: 'Quinn', from: 'waitlist', to: 'attendance' }]);
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.entries.length, 2);
   assert.equal(event.waitlist.length, 0);
-  const jo = event.entries.find((e) => e.name === 'Jo');
+  const jo = event.entries.find((e) => e.name === 'Quinn');
   assert.equal(jo.addedBy, 'jo@s.whatsapp.net'); // original metadata survives the move
 });
 
@@ -753,11 +753,11 @@ test('applyListUpdate: a name listed in more than one section keeps only its fir
   const groupId = freshGroupId();
   const result = store.applyListUpdate(
     groupId,
-    { attendance: ['Alex'], waitlist: ['Alex'], duePayments: [] }, // duplicated by mistake
+    { attendance: ['Grace'], waitlist: ['Grace'], duePayments: [] }, // duplicated by mistake
     'editor@s.whatsapp.net',
     true
   );
-  assert.deepEqual(result.added, ['Alex']);
+  assert.deepEqual(result.added, ['Grace']);
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.entries.length, 1);
   assert.equal(event.waitlist.length, 0); // NOT also on the waitlist
@@ -765,21 +765,21 @@ test('applyListUpdate: a name listed in more than one section keeps only its fir
 
 test('applyListUpdate: reconciles the payment section independently (added/removed = new debt / marked paid)', () => {
   const groupId = freshGroupId();
-  store.addEntry(groupId, 'Alex', 'alex@s.whatsapp.net', false);
-  store.newList(groupId, '2026-08-20', {}); // Alex now owes
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace now owes
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 1);
 
   const result = store.applyListUpdate(
     groupId,
-    { attendance: [], waitlist: [], duePayments: ['Jo'] }, // Alex removed (paid), Jo added (new debt)
+    { attendance: [], waitlist: [], duePayments: ['Quinn'] }, // Grace removed (paid), Quinn added (new debt)
     'editor@s.whatsapp.net',
     true
   );
-  assert.deepEqual(result.paidRemoved, ['Alex']);
-  assert.deepEqual(result.paidAdded, ['Jo']);
+  assert.deepEqual(result.paidRemoved, ['Grace']);
+  assert.deepEqual(result.paidAdded, ['Quinn']);
   const due = store.getCurrentEvent(groupId).duePayments;
   assert.equal(due.length, 1);
-  assert.equal(due[0].name, 'Jo');
+  assert.equal(due[0].name, 'Quinn');
   assert.equal(due[0].addedBy, 'editor@s.whatsapp.net');
 });
 
@@ -788,7 +788,7 @@ test('applyListUpdate: does NOT auto-demote to the waitlist even if Attendance e
   store.setLimit(groupId, 1);
   store.applyListUpdate(
     groupId,
-    { attendance: ['Alex', 'Sam', 'Jo'], waitlist: [], duePayments: [] }, // 3 people, limit is 1
+    { attendance: ['Grace', 'Henry', 'Quinn'], waitlist: [], duePayments: [] }, // 3 people, limit is 1
     'editor@s.whatsapp.net',
     true
   );
@@ -800,27 +800,27 @@ test('applyListUpdate: does NOT auto-demote to the waitlist even if Attendance e
 test('applyListUpdate: with no tournamentPlayers field at all (an ordinary, non-tournament caller), tournament flags on kept entries are left completely untouched', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // in the tournament
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true); // in the tournament
 
   const result = store.applyListUpdate(
     groupId,
-    { attendance: ['Keith', 'NewPerson'], waitlist: [], duePayments: [] }, // no tournamentPlayers key
+    { attendance: ['Derek', 'NewPerson'], waitlist: [], duePayments: [] }, // no tournamentPlayers key
     'editor@s.whatsapp.net',
     true
   );
   assert.deepEqual(result.tournamentChanged, []);
-  const keith = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Keith');
+  const keith = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Derek');
   assert.equal(keith.tournament, true); // untouched
 });
 
 test('applyListUpdate: tournamentPlayers null (the pasted text had no "🏆 Tournament players" header at all) also leaves tournament flags untouched', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
 
   const result = store.applyListUpdate(
     groupId,
-    { attendance: ['Keith'], waitlist: [], duePayments: [], tournamentPlayers: null, tournamentWaitlistedNames: [] },
+    { attendance: ['Derek'], waitlist: [], duePayments: [], tournamentPlayers: null, tournamentWaitlistedNames: [] },
     'editor@s.whatsapp.net',
     true
   );
@@ -831,20 +831,20 @@ test('applyListUpdate: tournamentPlayers null (the pasted text had no "🏆 Tour
 test('applyListUpdate: tournamentPlayers [] (header present, but nobody listed under it) clears EVERYONE\'s tournament flag - "nobody\'s in it anymore"', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true);
 
   const result = store.applyListUpdate(
     groupId,
-    { attendance: ['Keith', 'Bao'], waitlist: [], duePayments: [], tournamentPlayers: [], tournamentWaitlistedNames: [] },
+    { attendance: ['Derek', 'Frank'], waitlist: [], duePayments: [], tournamentPlayers: [], tournamentWaitlistedNames: [] },
     'editor@s.whatsapp.net',
     true
   );
   assert.deepEqual(
     result.tournamentChanged.sort((a, b) => a.name.localeCompare(b.name)),
     [
-      { name: 'Bao', from: 'tournament', to: 'social only' },
-      { name: 'Keith', from: 'tournament', to: 'social only' },
+      { name: 'Derek', from: 'tournament', to: 'social only' },
+      { name: 'Frank', from: 'tournament', to: 'social only' },
     ]
   );
   const entries = store.getCurrentEvent(groupId).entries;
@@ -855,17 +855,17 @@ test('applyListUpdate: moving a name from Social only up into "🏆 Tournament p
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 2);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Garvin', 'garvin@s.whatsapp.net', false, true, false);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Isaac', 'isaac@s.whatsapp.net', false, true, false);
 
   const result = store.applyListUpdate(
     groupId,
     {
-      attendance: ['Keith', 'Garvin', 'Bao'],
+      attendance: ['Derek', 'Isaac', 'Frank'],
       waitlist: [],
       duePayments: [],
-      tournamentPlayers: ['Keith', 'Garvin'], // Garvin promoted in, Bao's spot given up
+      tournamentPlayers: ['Derek', 'Isaac'], // Isaac promoted in, Frank's spot given up
       tournamentWaitlistedNames: [],
     },
     'editor@s.whatsapp.net',
@@ -874,44 +874,44 @@ test('applyListUpdate: moving a name from Social only up into "🏆 Tournament p
   assert.deepEqual(
     result.tournamentChanged.sort((a, b) => a.name.localeCompare(b.name)),
     [
-      { name: 'Bao', from: 'tournament', to: 'social only' },
-      { name: 'Garvin', from: 'social only', to: 'tournament' },
+      { name: 'Frank', from: 'tournament', to: 'social only' },
+      { name: 'Isaac', from: 'social only', to: 'tournament' },
     ]
   );
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.find((e) => e.name === 'Keith').tournament, true);
-  assert.equal(entries.find((e) => e.name === 'Garvin').tournament, true);
-  assert.equal(entries.find((e) => e.name === 'Bao').tournament, false);
+  assert.equal(entries.find((e) => e.name === 'Derek').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Isaac').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Frank').tournament, false);
 });
 
 test('applyListUpdate: listing MORE names under "🏆 Tournament players" than tournamentLimit allows caps it - the overflow (in the given order) ends up tournamentWaitlisted instead, not silently over the cap', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true);
 
   const result = store.applyListUpdate(
     groupId,
     {
-      attendance: ['Keith', 'Bao'],
+      attendance: ['Derek', 'Frank'],
       waitlist: [],
       duePayments: [],
-      tournamentPlayers: ['Keith', 'Bao'], // both listed, but the cap is 1
+      tournamentPlayers: ['Derek', 'Frank'], // both listed, but the cap is 1
       tournamentWaitlistedNames: [],
     },
     'editor@s.whatsapp.net',
     true
   );
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.find((e) => e.name === 'Keith').tournament, true); // first in order, gets the real spot
-  assert.equal(entries.find((e) => e.name === 'Bao').tournament, false);
-  assert.equal(entries.find((e) => e.name === 'Bao').tournamentWaitlisted, true); // queued instead
+  assert.equal(entries.find((e) => e.name === 'Derek').tournament, true); // first in order, gets the real spot
+  assert.equal(entries.find((e) => e.name === 'Frank').tournament, false);
+  assert.equal(entries.find((e) => e.name === 'Frank').tournamentWaitlisted, true); // queued instead
   assert.deepEqual(
     result.tournamentChanged.sort((a, b) => a.name.localeCompare(b.name)),
     [
-      { name: 'Bao', from: 'social only', to: 'queued' },
-      { name: 'Keith', from: 'social only', to: 'tournament' },
+      { name: 'Derek', from: 'social only', to: 'tournament' },
+      { name: 'Frank', from: 'social only', to: 'queued' },
     ]
   );
 });
@@ -920,9 +920,9 @@ test('applyListUpdate: a "(🏆 WL)" tag on a Social-only name round-trips corre
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // full - queued (🏆 WL)
-  assert.equal(store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Bao').tournamentWaitlisted, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // full - queued (🏆 WL)
+  assert.equal(store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Frank').tournamentWaitlisted, true);
 
   // Round-tripping the exact same arrangement back through !update (as
   // lib/listParser.js would parse it - the WL tag already stripped from
@@ -931,11 +931,11 @@ test('applyListUpdate: a "(🏆 WL)" tag on a Social-only name round-trips corre
   const result = store.applyListUpdate(
     groupId,
     {
-      attendance: ['Keith', 'Bao'],
+      attendance: ['Derek', 'Frank'],
       waitlist: [],
       duePayments: [],
-      tournamentPlayers: ['Keith'],
-      tournamentWaitlistedNames: ['Bao'],
+      tournamentPlayers: ['Derek'],
+      tournamentWaitlistedNames: ['Frank'],
     },
     'editor@s.whatsapp.net',
     true
@@ -945,8 +945,8 @@ test('applyListUpdate: a "(🏆 WL)" tag on a Social-only name round-trips corre
   assert.deepEqual(result.tournamentChanged, []);
   const entries = store.getCurrentEvent(groupId).entries;
   assert.equal(entries.length, 2);
-  assert.equal(entries.find((e) => e.name === 'Bao').tournamentWaitlisted, true);
-  assert.equal(entries.find((e) => e.name === 'Bao').addedBy, 'bao@s.whatsapp.net'); // original metadata intact
+  assert.equal(entries.find((e) => e.name === 'Frank').tournamentWaitlisted, true);
+  assert.equal(entries.find((e) => e.name === 'Frank').addedBy, 'bao@s.whatsapp.net'); // original metadata intact
 });
 
 test('applyListUpdate: a brand-new name listed directly under "🏆 Tournament players" is added AND opted into the tournament in one pass', () => {
@@ -1024,23 +1024,23 @@ test('getRegularPlayers: an unconfigured group has an empty roster, not an error
 
 test('setRegularPlayers: replaces the whole roster and getRegularPlayers reflects it', () => {
   const groupId = freshGroupId();
-  const result = store.setRegularPlayers(groupId, ['Peter', 'Chris', 'Linda']);
-  assert.deepEqual(result, ['Peter', 'Chris', 'Linda']);
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Peter', 'Chris', 'Linda']);
+  const result = store.setRegularPlayers(groupId, ['Alice', 'Bob', 'Carla']);
+  assert.deepEqual(result, ['Alice', 'Bob', 'Carla']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Alice', 'Bob', 'Carla']);
 
-  store.setRegularPlayers(groupId, ['Only Peter']);
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Only Peter']);
+  store.setRegularPlayers(groupId, ['Only Alice']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Only Alice']);
 });
 
 test('regularPlayers survives newList() and clearList() - it is not part of the current cycle', () => {
   const groupId = freshGroupId();
-  store.setRegularPlayers(groupId, ['Peter', 'Chris']);
+  store.setRegularPlayers(groupId, ['Alice', 'Bob']);
 
   store.newList(groupId, '2026-08-20', {});
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Peter', 'Chris']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Alice', 'Bob']);
 
   store.clearList(groupId);
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Peter', 'Chris']);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Alice', 'Bob']);
 });
 
 test('getUndoSnapshot: null for a group with no saved undo point yet', () => {
@@ -1050,39 +1050,39 @@ test('getUndoSnapshot: null for a group with no saved undo point yet', () => {
 
 test('getUndoableState: reflects current/history/regularPlayers as of right now', () => {
   const groupId = freshGroupId();
-  store.addEntry(groupId, 'Peter', 'sender@s.whatsapp.net', false, true);
-  store.setRegularPlayers(groupId, ['Chris']);
+  store.addEntry(groupId, 'Alice', 'sender@s.whatsapp.net', false, true);
+  store.setRegularPlayers(groupId, ['Bob']);
 
   const snapshot = store.getUndoableState(groupId);
-  assert.deepEqual(snapshot.current.entries.map((e) => e.name), ['Peter']);
-  assert.deepEqual(snapshot.regularPlayers, ['Chris']);
+  assert.deepEqual(snapshot.current.entries.map((e) => e.name), ['Alice']);
+  assert.deepEqual(snapshot.regularPlayers, ['Bob']);
   assert.deepEqual(snapshot.history, []);
 });
 
 test('saveUndoSnapshot/getUndoSnapshot: round-trips a snapshot and its description', () => {
   const groupId = freshGroupId();
   const before = store.getUndoableState(groupId);
-  store.addEntry(groupId, 'Peter', 'sender@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Alice', 'sender@s.whatsapp.net', false, true);
 
-  store.saveUndoSnapshot(groupId, before, '!in Peter');
+  store.saveUndoSnapshot(groupId, before, '!in Alice');
   const entry = store.getUndoSnapshot(groupId);
-  assert.equal(entry.description, '!in Peter');
+  assert.equal(entry.description, '!in Alice');
   assert.deepEqual(entry.snapshot.current.entries, []); // the pre-add snapshot, not current state
 });
 
 test('restoreUndoableState: overwrites current/history/regularPlayers wholesale from a snapshot, leaving undo itself alone', () => {
   const groupId = freshGroupId();
   const before = store.getUndoableState(groupId);
-  store.addEntry(groupId, 'Peter', 'sender@s.whatsapp.net', false, true);
-  store.setRegularPlayers(groupId, ['Chris']);
-  store.saveUndoSnapshot(groupId, before, '!in Peter');
+  store.addEntry(groupId, 'Alice', 'sender@s.whatsapp.net', false, true);
+  store.setRegularPlayers(groupId, ['Bob']);
+  store.saveUndoSnapshot(groupId, before, '!in Alice');
 
   store.restoreUndoableState(groupId, before);
   assert.deepEqual(store.getCurrentEvent(groupId).entries, []);
   assert.deepEqual(store.getRegularPlayers(groupId), []);
   // restoreUndoableState itself doesn't touch the undo slot - that's the
   // dispatch wrapper's job (commands/index.js), not this primitive's.
-  assert.equal(store.getUndoSnapshot(groupId).description, '!in Peter');
+  assert.equal(store.getUndoSnapshot(groupId).description, '!in Alice');
 });
 
 // --- Tournament sub-feature (see commands/admin.js's !tournament/
@@ -1109,63 +1109,63 @@ test('setTournamentLimit: raising the limit auto-promotes off the front of the (
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // in
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // WL'd - full
-  store.addEntry(groupId, 'Wendy', 'wendy@s.whatsapp.net', false, true, true); // WL'd - full
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true); // in
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // WL'd - full
+  store.addEntry(groupId, 'Sienna', 'wendy@s.whatsapp.net', false, true, true); // WL'd - full
 
-  // Room for exactly one more - Bao (first in the queue) gets it, not Wendy.
+  // Room for exactly one more - Frank (first in the queue) gets it, not Sienna.
   const { promoted } = store.setTournamentLimit(groupId, 2);
-  assert.deepEqual(promoted.map((e) => e.name), ['Bao']);
+  assert.deepEqual(promoted.map((e) => e.name), ['Frank']);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.find((e) => e.name === 'Bao').tournament, true);
-  assert.equal(entries.find((e) => e.name === 'Bao').tournamentWaitlisted, false);
-  assert.equal(entries.find((e) => e.name === 'Wendy').tournament, false);
-  assert.equal(entries.find((e) => e.name === 'Wendy').tournamentWaitlisted, true);
+  assert.equal(entries.find((e) => e.name === 'Frank').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Frank').tournamentWaitlisted, false);
+  assert.equal(entries.find((e) => e.name === 'Sienna').tournament, false);
+  assert.equal(entries.find((e) => e.name === 'Sienna').tournamentWaitlisted, true);
 
   // Clearing the cap entirely promotes everyone still queued.
   const { promoted: promotedAll } = store.setTournamentLimit(groupId, null);
-  assert.deepEqual(promotedAll.map((e) => e.name), ['Wendy']);
+  assert.deepEqual(promotedAll.map((e) => e.name), ['Sienna']);
   const entriesAfter = store.getCurrentEvent(groupId).entries;
-  assert.equal(entriesAfter.find((e) => e.name === 'Wendy').tournament, true);
+  assert.equal(entriesAfter.find((e) => e.name === 'Sienna').tournament, true);
 });
 
 test('removeEntry: removing someone from the tournament frees a spot and auto-promotes the front of the (🏆 WL) queue', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // in
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // WL'd - full
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true); // in
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // WL'd - full
 
-  const result = store.removeEntry(groupId, 'Keith');
+  const result = store.removeEntry(groupId, 'Derek');
   assert.equal(result.ok, true);
-  assert.deepEqual(result.tournamentPromoted.map((e) => e.name), ['Bao']);
+  assert.deepEqual(result.tournamentPromoted.map((e) => e.name), ['Frank']);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.find((e) => e.name === 'Bao').tournament, true);
-  assert.equal(entries.find((e) => e.name === 'Bao').tournamentWaitlisted, false);
+  assert.equal(entries.find((e) => e.name === 'Frank').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Frank').tournamentWaitlisted, false);
 });
 
 test('removeEntry: removing someone NOT in the tournament does not touch the (🏆 WL) queue', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true); // in
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // WL'd - full
-  store.addEntry(groupId, 'Wendy', 'wendy@s.whatsapp.net', false, true, false); // plain social, no ask
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true); // in
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // WL'd - full
+  store.addEntry(groupId, 'Sienna', 'wendy@s.whatsapp.net', false, true, false); // plain social, no ask
 
-  const result = store.removeEntry(groupId, 'Wendy');
+  const result = store.removeEntry(groupId, 'Sienna');
   assert.equal(result.ok, true);
   assert.deepEqual(result.tournamentPromoted, []);
-  assert.equal(store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Bao').tournament, false);
+  assert.equal(store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Frank').tournament, false);
 });
 
 test('getTournamentWinners/setTournamentWinners: null by default, round-trips a 2-element array', () => {
   const groupId = freshGroupId();
   assert.equal(store.getTournamentWinners(groupId), null);
-  const result = store.setTournamentWinners(groupId, ['Irfan', 'Tu']);
-  assert.deepEqual(result, ['Irfan', 'Tu']);
-  assert.deepEqual(store.getTournamentWinners(groupId), ['Irfan', 'Tu']);
+  const result = store.setTournamentWinners(groupId, ['Noah', 'Ellen']);
+  assert.deepEqual(result, ['Noah', 'Ellen']);
+  assert.deepEqual(store.getTournamentWinners(groupId), ['Noah', 'Ellen']);
 });
 
 test('getTournamentRules/setTournamentRules: null by default, round-trips free text', () => {
@@ -1179,7 +1179,7 @@ test('getTournamentRules/setTournamentRules: null by default, round-trips free t
 test('addEntry: a wantsTournament=true entry is flagged tournament:true when enabled and under the limit', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
-  const result = store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
+  const result = store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
   assert.equal(result.ok, true);
   const entry = store.getCurrentEvent(groupId).entries[0];
   assert.equal(entry.tournament, true);
@@ -1188,7 +1188,7 @@ test('addEntry: a wantsTournament=true entry is flagged tournament:true when ena
 test('addEntry: wantsTournament is ignored (tournament stays false) when the feature is disabled', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, false);
-  const result = store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
+  const result = store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
   assert.equal(result.ok, true);
   assert.equal(store.getCurrentEvent(groupId).entries[0].tournament, false);
 });
@@ -1197,23 +1197,23 @@ test('addEntry: wantsTournament is ignored once the tournament limit is reached,
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  const second = store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
+  const second = store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true);
   assert.equal(second.ok, true);
   assert.equal(second.waitlisted, false); // still joins the social list...
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.equal(entries.find((e) => e.name === 'Keith').tournament, true);
-  assert.equal(entries.find((e) => e.name === 'Bao').tournament, false); // ...just not the tournament
-  assert.equal(entries.find((e) => e.name === 'Bao').tournamentWaitlisted, true); // ...tagged instead
-  assert.equal(entries.find((e) => e.name === 'Keith').tournamentWaitlisted, false);
+  assert.equal(entries.find((e) => e.name === 'Derek').tournament, true);
+  assert.equal(entries.find((e) => e.name === 'Frank').tournament, false); // ...just not the tournament
+  assert.equal(entries.find((e) => e.name === 'Frank').tournamentWaitlisted, true); // ...tagged instead
+  assert.equal(entries.find((e) => e.name === 'Derek').tournamentWaitlisted, false);
 });
 
 test('addEntry: someone waitlisted (over the MAIN limit) never gets tournament:true, even if they asked', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true);
-  const second = store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true);
+  const second = store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true);
   assert.equal(second.waitlisted, true);
   const waitlisted = store.getCurrentEvent(groupId).waitlist[0];
   assert.equal(waitlisted.tournament, false);
@@ -1225,24 +1225,24 @@ test('addEntry: someone waitlisted (over the MAIN limit) never gets tournament:t
 test('joinTournament: opts an existing attendance entry in, subject to enabled/room/already-in checks', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, false);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true);
 
   // Not enabled yet.
-  assert.deepEqual(store.joinTournament(groupId, 'Keith'), { ok: false, reason: 'disabled' });
+  assert.deepEqual(store.joinTournament(groupId, 'Derek'), { ok: false, reason: 'disabled' });
 
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  const joined = store.joinTournament(groupId, 'Keith');
+  const joined = store.joinTournament(groupId, 'Derek');
   assert.equal(joined.ok, true);
   assert.equal(store.getCurrentEvent(groupId).entries[0].tournament, true);
 
   // Already in - a no-op, not an error.
-  assert.deepEqual(store.joinTournament(groupId, 'Keith'), { ok: true, alreadyIn: true });
+  assert.deepEqual(store.joinTournament(groupId, 'Derek'), { ok: true, alreadyIn: true });
 
   // A second person can't fit under the limit of 1.
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true);
-  assert.deepEqual(store.joinTournament(groupId, 'Bao'), { ok: false, reason: 'full' });
-  assert.equal(store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Bao').tournamentWaitlisted, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true);
+  assert.deepEqual(store.joinTournament(groupId, 'Frank'), { ok: false, reason: 'full' });
+  assert.equal(store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Frank').tournamentWaitlisted, true);
 
   // Someone not on the list at all.
   assert.deepEqual(store.joinTournament(groupId, 'Nobody'), { ok: false, reason: 'not_found' });
@@ -1252,22 +1252,22 @@ test('joinTournament: (🏆 WL) tag clears on a later successful retry once room
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true);
 
-  let bao = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Bao');
+  let bao = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Frank');
   assert.equal(bao.tournamentWaitlisted, true);
 
   // Still full - repeated attempts keep the tag, no reason to clear it early.
-  assert.deepEqual(store.joinTournament(groupId, 'Bao'), { ok: false, reason: 'full' });
-  bao = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Bao');
+  assert.deepEqual(store.joinTournament(groupId, 'Frank'), { ok: false, reason: 'full' });
+  bao = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Frank');
   assert.equal(bao.tournamentWaitlisted, true);
 
   // Room opens up - a manual retry succeeds and clears the tag.
   store.setTournamentLimit(groupId, 2);
-  const retry = store.joinTournament(groupId, 'Bao');
+  const retry = store.joinTournament(groupId, 'Frank');
   assert.equal(retry.ok, true);
-  bao = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Bao');
+  bao = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Frank');
   assert.equal(bao.tournament, true);
   assert.equal(bao.tournamentWaitlisted, false);
 });
@@ -1276,16 +1276,16 @@ test('joinTournament: only looks at entries, not the waitlist - a waitlisted per
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true); // waitlisted
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true); // waitlisted
 
-  assert.deepEqual(store.joinTournament(groupId, 'Bao'), { ok: false, reason: 'not_found' });
+  assert.deepEqual(store.joinTournament(groupId, 'Frank'), { ok: false, reason: 'not_found' });
 });
 
 test('leaveTournament: no matching entry at all', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true);
 
   assert.deepEqual(store.leaveTournament(groupId, 'Nobody'), { ok: false, reason: 'not_found' });
 });
@@ -1293,10 +1293,10 @@ test('leaveTournament: no matching entry at all', () => {
 test('leaveTournament: already out (never opted in at all) is a no-op, not an error', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true); // plain social entry, never opted in
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true); // plain social entry, never opted in
 
-  assert.deepEqual(store.leaveTournament(groupId, 'Keith'), { ok: true, alreadyOut: true, promoted: [] });
-  const keith = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Keith');
+  assert.deepEqual(store.leaveTournament(groupId, 'Derek'), { ok: true, alreadyOut: true, promoted: [] });
+  const keith = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Derek');
   assert.equal(keith.tournament, false);
   assert.equal(Boolean(keith.tournamentWaitlisted), false);
 });
@@ -1305,30 +1305,30 @@ test('leaveTournament: someone only queued (🏆 WL), never an actual spot - cle
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // full - queued instead
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // full - queued instead
 
-  let bao = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Bao');
+  let bao = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Frank');
   assert.equal(bao.tournamentWaitlisted, true);
 
-  const result = store.leaveTournament(groupId, 'Bao');
+  const result = store.leaveTournament(groupId, 'Frank');
   assert.deepEqual(result, { ok: true, promoted: [] });
-  bao = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Bao');
+  bao = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Frank');
   assert.equal(bao.tournament, false);
   assert.equal(bao.tournamentWaitlisted, false);
-  // Keith's actual spot is untouched - Bao only ever occupied the queue.
-  const keith = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Keith');
+  // Derek's actual spot is untouched - Frank only ever occupied the queue.
+  const keith = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Derek');
   assert.equal(keith.tournament, true);
 });
 
 test('leaveTournament: leaving an actual spot with nobody queued behind just frees it, no promotion', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
 
-  const result = store.leaveTournament(groupId, 'Keith');
+  const result = store.leaveTournament(groupId, 'Derek');
   assert.deepEqual(result, { ok: true, promoted: [] });
-  const keith = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Keith');
+  const keith = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Derek');
   assert.equal(keith.tournament, false);
   assert.equal(Boolean(keith.tournamentWaitlisted), false);
 });
@@ -1337,22 +1337,22 @@ test('leaveTournament: leaving an actual spot promotes the front of the (🏆 WL
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 1);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
-  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true, true); // queued, full
-  store.addEntry(groupId, 'Han', 'han@s.whatsapp.net', false, true, true); // queued behind Bao, full
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true, true); // queued, full
+  store.addEntry(groupId, 'Tyler', 'han@s.whatsapp.net', false, true, true); // queued behind Frank, full
 
-  const result = store.leaveTournament(groupId, 'Keith');
+  const result = store.leaveTournament(groupId, 'Derek');
   assert.equal(result.ok, true);
   assert.equal(result.promoted.length, 1);
-  assert.equal(result.promoted[0].name, 'Bao'); // front of the queue, not Han
+  assert.equal(result.promoted[0].name, 'Frank'); // front of the queue, not Tyler
 
-  const bao = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Bao');
+  const bao = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Frank');
   assert.equal(bao.tournament, true);
   assert.equal(bao.tournamentWaitlisted, false);
-  const han = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Han');
+  const han = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Tyler');
   assert.equal(han.tournament, false);
   assert.equal(han.tournamentWaitlisted, true); // still queued
-  const keith = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Keith');
+  const keith = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Derek');
   assert.equal(keith.tournament, false);
 });
 
@@ -1361,7 +1361,7 @@ test('newList: tournamentEnabled/tournamentLimit/tournamentRules carry forward, 
   store.setTournamentEnabled(groupId, true);
   store.setTournamentLimit(groupId, 16);
   store.setTournamentRules(groupId, 'Best of 3, single elimination');
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
 
   store.newList(groupId, '2026-08-20', {});
   const event = store.getCurrentEvent(groupId);
@@ -1374,7 +1374,7 @@ test('newList: tournamentEnabled/tournamentLimit/tournamentRules carry forward, 
 test('newList: tournamentWinners is cleared, unlike every other tournament setting - it announces the cycle that just ended, not a standing setting', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
-  store.setTournamentWinners(groupId, ['Irfan', 'Tu']);
+  store.setTournamentWinners(groupId, ['Noah', 'Ellen']);
 
   store.newList(groupId, '2026-08-20', {});
   assert.equal(store.getTournamentWinners(groupId), null);
@@ -1383,7 +1383,7 @@ test('newList: tournamentWinners is cleared, unlike every other tournament setti
 test('setTournamentEnabled(false) does not clear entries\' tournament flags - they reappear if re-enabled', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, true);
-  store.addEntry(groupId, 'Keith', 'keith@s.whatsapp.net', false, true, true);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true);
   assert.equal(store.getCurrentEvent(groupId).entries[0].tournament, true);
 
   store.setTournamentEnabled(groupId, false);

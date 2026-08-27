@@ -18,29 +18,29 @@ test('parseListSections reads back the exact format formatList() produces', () =
     '',
     '*Attendance* (2/2)',
     '',
-    '1. Jordan',
-    '2. Alex',
+    '1. Preston',
+    '2. Grace',
     '',
     '*Waitlist* (1)',
     '',
-    '1. Sam',
+    '1. Henry',
     '',
     '──────────',
     '*Payment*',
     '',
-    '1. Riley',
+    '1. Violet',
   ].join('\n');
 
   const result = parseListSections(text);
-  assert.deepEqual(result.attendance, ['Jordan', 'Alex']);
-  assert.deepEqual(result.waitlist, ['Sam']);
-  assert.deepEqual(result.duePayments, [{ name: 'Riley' }]); // no date-group header above it - owedSince key omitted
+  assert.deepEqual(result.attendance, ['Preston', 'Grace']);
+  assert.deepEqual(result.waitlist, ['Henry']);
+  assert.deepEqual(result.duePayments, [{ name: 'Violet' }]); // no date-group header above it - owedSince key omitted
   assert.equal(result.sectionsFound, 3);
   assert.deepEqual(result.headerLines, ['27th Aug Thu', 'EBC', 'Courts 13-18 (6)', '8PM start']);
 });
 
 test('parseListSections: headerLines is empty when nothing precedes the first section header', () => {
-  const result = parseListSections(['*Attendance*', '', '1. Alex'].join('\n'));
+  const result = parseListSections(['*Attendance*', '', '1. Grace'].join('\n'));
   assert.deepEqual(result.headerLines, []);
 });
 
@@ -50,12 +50,12 @@ test('parseListSections: headerLines only captures lines before the FIRST sectio
     '27th Aug Thu',
     '*Attendance*',
     '',
-    '1. Alex',
+    '1. Grace',
     '',
     "Let me know if I got anyone's name wrong!",
     '*Waitlist*',
     '',
-    '1. Sam',
+    '1. Henry',
   ].join('\n');
   const result = parseListSections(text);
   assert.deepEqual(result.headerLines, ['update the list to be', '27th Aug Thu']);
@@ -65,18 +65,18 @@ test('parseListSections ignores the plain divider line formatList() prints above
   const text = [
     '*Attendance* (1/1)',
     '',
-    '1. Jordan',
+    '1. Preston',
     '',
     '──────────',
     '*Payment*',
     '',
-    '1. Jordan',
+    '1. Preston',
   ].join('\n');
 
   const result = parseListSections(text);
-  assert.deepEqual(result.attendance, ['Jordan']);
+  assert.deepEqual(result.attendance, ['Preston']);
   assert.deepEqual(result.waitlist, []);
-  assert.deepEqual(result.duePayments, [{ name: 'Jordan' }]);
+  assert.deepEqual(result.duePayments, [{ name: 'Preston' }]);
   // Only 2 sections (Attendance, Payment) - the divider must NOT itself be
   // counted as a section header.
   assert.equal(result.sectionsFound, 2);
@@ -86,16 +86,16 @@ test('parseListSections handles a custom !paymentlabel header (not the literal w
   const text = [
     '*Attendance*',
     '',
-    '1. Alex',
+    '1. Grace',
     '',
     '*$20 please*',
     '',
-    '1. Sam',
+    '1. Henry',
   ].join('\n');
 
   const result = parseListSections(text);
-  assert.deepEqual(result.attendance, ['Alex']);
-  assert.deepEqual(result.duePayments, [{ name: 'Sam' }]);
+  assert.deepEqual(result.attendance, ['Grace']);
+  assert.deepEqual(result.duePayments, [{ name: 'Henry' }]);
   // Old-format paste (the whole bold line WAS the label, nothing separate
   // underneath it) - a payment section WAS found, but no separate label
   // line - resolves as an explicit clear, same as any other present-but-
@@ -104,32 +104,32 @@ test('parseListSections handles a custom !paymentlabel header (not the literal w
 });
 
 test('parseListSections reads formatList()\'s CURRENT payment header format - the fixed bold "*Payment*" line with the actual (customized) label directly underneath it, unbolded, no blank line in between', () => {
-  const text = ['*Attendance*', '', '1. Alex', '', '*Payment*', '$16 payID: 0413455423', '', '1. Sam'].join('\n');
+  const text = ['*Attendance*', '', '1. Grace', '', '*Payment*', '$16 payID: 0413455423', '', '1. Henry'].join('\n');
   const result = parseListSections(text);
-  assert.deepEqual(result.attendance, ['Alex']);
-  assert.deepEqual(result.duePayments, [{ name: 'Sam' }]);
+  assert.deepEqual(result.attendance, ['Grace']);
+  assert.deepEqual(result.duePayments, [{ name: 'Henry' }]);
   assert.equal(result.duePaymentsLabel, '$16 payID: 0413455423');
 });
 
 test('parseListSections: a "*Payment*" header with NOTHING customized (blank line straight after it, formatList()\'s own un-customized output) reads duePaymentsLabel as an explicit clear (null), "your edit is final" same as the other header fields', () => {
-  const text = ['*Attendance*', '', '1. Alex', '', '*Payment*', '', '1. Sam'].join('\n');
+  const text = ['*Attendance*', '', '1. Grace', '', '*Payment*', '', '1. Henry'].join('\n');
   const result = parseListSections(text);
   assert.equal(result.duePaymentsLabel, null);
 });
 
 test('parseListSections: a customized label still round-trips correctly even when the payment section also has bold date-group headers below it', () => {
   const text = [
-    '*Attendance*', '', '1. Alex', '',
+    '*Attendance*', '', '1. Grace', '',
     '*Payment*', '$16 payID: 0413455423', '',
-    '*No date*', '1. Casey',
+    '*No date*', '1. Uma',
   ].join('\n');
   const result = parseListSections(text);
   assert.equal(result.duePaymentsLabel, '$16 payID: 0413455423');
-  assert.deepEqual(result.duePayments, [{ name: 'Casey', owedSince: null }]);
+  assert.deepEqual(result.duePayments, [{ name: 'Uma', owedSince: null }]);
 });
 
 test('parseListSections: when the payment section is entirely absent from the paste, duePaymentsLabel is undefined - never touched', () => {
-  const result = parseListSections(['*Attendance*', '', '1. Alex'].join('\n'));
+  const result = parseListSections(['*Attendance*', '', '1. Grace'].join('\n'));
   assert.equal(result.duePaymentsLabel, undefined);
 });
 
@@ -139,99 +139,99 @@ test('parseListSections ignores stray "extra text blocks" anywhere in the messag
     '',
     '*Attendance*',
     '',
-    '1. Alex',
-    '2. Sam',
+    '1. Grace',
+    '2. Henry',
     '',
     "Let me know if I got anyone's name wrong!",
     '',
     '*Waitlist*',
     '',
-    '1. Jo',
+    '1. Quinn',
     '',
     '🙏 thanks all',
   ].join('\n');
 
   const result = parseListSections(text);
-  assert.deepEqual(result.attendance, ['Alex', 'Sam']);
-  assert.deepEqual(result.waitlist, ['Jo']);
+  assert.deepEqual(result.attendance, ['Grace', 'Henry']);
+  assert.deepEqual(result.waitlist, ['Quinn']);
 });
 
 test('parseListSections strips the trailing "(TBC)" flag from a name', () => {
-  const text = ['*Attendance*', '', '1. Alex (TBC)', '2. Sam'].join('\n');
+  const text = ['*Attendance*', '', '1. Grace (TBC)', '2. Henry'].join('\n');
   const result = parseListSections(text);
-  assert.deepEqual(result.attendance, ['Alex', 'Sam']);
+  assert.deepEqual(result.attendance, ['Grace', 'Henry']);
 });
 
-test('parseListSections strips the owed-since date tag from a payment-due name, e.g. "Alex (13th Aug Thu)" -> "Alex" - backward-compat regression guard for round-tripping an OLDER inline-tag-format message (see OWED_SINCE_SUFFIX in lib/listParser.js - formatList() itself no longer prints this shape, it groups under a date header line instead; see the grouped-format tests below)', () => {
-  const text = ['*Attendance*', '', '1. Sam', '', '*Payment*', '', '1. Alex (13th Aug Thu)', '2. Jordan'].join('\n');
+test('parseListSections strips the owed-since date tag from a payment-due name, e.g. "Grace (13th Aug Thu)" -> "Grace" - backward-compat regression guard for round-tripping an OLDER inline-tag-format message (see OWED_SINCE_SUFFIX in lib/listParser.js - formatList() itself no longer prints this shape, it groups under a date header line instead; see the grouped-format tests below)', () => {
+  const text = ['*Attendance*', '', '1. Henry', '', '*Payment*', '', '1. Grace (13th Aug Thu)', '2. Preston'].join('\n');
   const result = parseListSections(text);
   // Not under a bold date-group header, so owedSince is omitted either way -
   // the stripped inline tag itself is never read back into owedSince.
-  assert.deepEqual(result.duePayments, [{ name: 'Alex' }, { name: 'Jordan' }]);
+  assert.deepEqual(result.duePayments, [{ name: 'Grace' }, { name: 'Preston' }]);
 });
 
 test('parseListSections does NOT strip an ordinary parenthetical that just happens to be at the end of a payment name (only the exact owed-since date shape is recognized)', () => {
-  const text = ['*Attendance*', '', '1. Sam', '', '*Payment*', '', '1. Michael (Mike)'].join('\n');
+  const text = ['*Attendance*', '', '1. Henry', '', '*Payment*', '', '1. Timothy (Tim)'].join('\n');
   const result = parseListSections(text);
-  assert.deepEqual(result.duePayments, [{ name: 'Michael (Mike)' }]);
+  assert.deepEqual(result.duePayments, [{ name: 'Timothy (Tim)' }]);
 });
 
 test('parseListSections reads formatList()\'s actual BOLD date-group headers ("*No date*"/"*13th Aug Thu*") and tags every name under one with that group\'s owedSince - null for "*No date*", the resolved ISO date otherwise - in the order the groups were printed', () => {
   const text = [
     '*Attendance*',
     '',
-    '1. Sam',
+    '1. Henry',
     '',
     '*Payment*',
     '',
     '*No date*',
-    '1. Casey',
+    '1. Uma',
     '',
     '*13th Aug Thu*',
-    '1. Alex',
+    '1. Grace',
     '',
     '*20th Aug Thu*',
-    '1. Jordan',
-    '2. Priya',
+    '1. Preston',
+    '2. Renee',
   ].join('\n');
   const referenceDate = new Date(Date.UTC(2026, 7, 21)); // 2026-08-21 - after both dated groups
   const result = parseListSections(text, referenceDate);
   assert.deepEqual(result.duePayments, [
-    { name: 'Casey', owedSince: null },
-    { name: 'Alex', owedSince: '2026-08-13' },
-    { name: 'Jordan', owedSince: '2026-08-20' },
-    { name: 'Priya', owedSince: '2026-08-20' },
+    { name: 'Uma', owedSince: null },
+    { name: 'Grace', owedSince: '2026-08-13' },
+    { name: 'Preston', owedSince: '2026-08-20' },
+    { name: 'Renee', owedSince: '2026-08-20' },
   ]);
 });
 
 test('parseListSections: a date-group header resolves to the closest PAST occurrence relative to referenceDate, not the closest upcoming one - an owed-since date always describes an already-finished list', () => {
-  const text = ['*Attendance*', '', '1. Sam', '', '*Payment*', '', '*16th Aug Sun*', '1. Alex'].join('\n');
+  const text = ['*Attendance*', '', '1. Henry', '', '*Payment*', '', '*16th Aug Sun*', '1. Grace'].join('\n');
   // "Today" is BEFORE 16th Aug this year, so the header must resolve to
   // LAST year's 16th Aug, not bump forward to this year's (which hasn't
   // happened yet, and can't be what a payment-due list is dated for).
   const referenceDate = new Date(Date.UTC(2026, 7, 10)); // 2026-08-10
   const result = parseListSections(text, referenceDate);
-  assert.deepEqual(result.duePayments, [{ name: 'Alex', owedSince: '2025-08-16' }]);
+  assert.deepEqual(result.duePayments, [{ name: 'Grace', owedSince: '2025-08-16' }]);
 });
 
 test('parseListSections: an unrecognized bold-only line inside an already-started payment section is tolerated as stray text and does NOT reset the current date-group - entries after it stay under whichever real header was last seen', () => {
   const text = [
     '*Attendance*',
     '',
-    '1. Sam',
+    '1. Henry',
     '',
     '*Payment*',
     '',
     '*13th Aug Thu*',
-    '1. Alex',
+    '1. Grace',
     '*a random bold note, not a date*',
-    '2. Jordan',
+    '2. Preston',
   ].join('\n');
   const referenceDate = new Date(Date.UTC(2026, 7, 21));
   const result = parseListSections(text, referenceDate);
   assert.deepEqual(result.duePayments, [
-    { name: 'Alex', owedSince: '2026-08-13' },
-    { name: 'Jordan', owedSince: '2026-08-13' },
+    { name: 'Grace', owedSince: '2026-08-13' },
+    { name: 'Preston', owedSince: '2026-08-13' },
   ]);
 });
 
@@ -239,40 +239,40 @@ test('parseListSections: a payment-section date-group header pasted back WITHOUT
   const text = [
     '*Attendance*',
     '',
-    '1. Sam',
+    '1. Henry',
     '',
     '*Payment*',
     '',
     'No date',
-    '1. Casey',
+    '1. Uma',
     '',
     '13th Aug Thu',
-    '1. Alex',
+    '1. Grace',
     '',
     '20th Aug Thu',
-    '1. Jordan',
-    '2. Priya',
+    '1. Preston',
+    '2. Renee',
   ].join('\n');
   const result = parseListSections(text);
   assert.deepEqual(result.duePayments, [
-    { name: 'Casey' },
-    { name: 'Alex' },
-    { name: 'Jordan' },
-    { name: 'Priya' },
+    { name: 'Uma' },
+    { name: 'Grace' },
+    { name: 'Preston' },
+    { name: 'Renee' },
   ]);
 });
 
 test('parseListSections: a payment-section date-group header line, e.g. "13th Aug Thu", is never itself mistaken for a numbered entry or a new section - it has no leading "N." and isn\'t bold, so it just falls through the generic stray-text tolerance', () => {
-  const text = ['*Attendance*', '', '1. Sam', '', '*Payment*', '', '13th Aug Thu', '1. Alex'].join('\n');
+  const text = ['*Attendance*', '', '1. Henry', '', '*Payment*', '', '13th Aug Thu', '1. Grace'].join('\n');
   const result = parseListSections(text);
-  assert.deepEqual(result.duePayments, [{ name: 'Alex' }]);
+  assert.deepEqual(result.duePayments, [{ name: 'Grace' }]);
   assert.equal(result.sectionsFound, 2); // Attendance + Payment only - the date header must not count as a 3rd section
 });
 
 test('parseListSections handles a missing waitlist/payment section (only Attendance present)', () => {
-  const text = ['*Attendance* (1)', '', '1. Alex'].join('\n');
+  const text = ['*Attendance* (1)', '', '1. Grace'].join('\n');
   const result = parseListSections(text);
-  assert.deepEqual(result.attendance, ['Alex']);
+  assert.deepEqual(result.attendance, ['Grace']);
   assert.deepEqual(result.waitlist, []);
   assert.deepEqual(result.duePayments, []);
   assert.equal(result.sectionsFound, 1);
@@ -292,7 +292,7 @@ test('parseListSections returns sectionsFound 0 for text with no recognizable se
 });
 
 test('parseListSections: a plain, non-tournament-formatted Attendance section leaves tournamentPlayers null (not touched at all)', () => {
-  const text = ['*Attendance*', '', '1. Alex', '2. Sam'].join('\n');
+  const text = ['*Attendance*', '', '1. Grace', '2. Henry'].join('\n');
   const result = parseListSections(text);
   assert.equal(result.tournamentPlayers, null);
   assert.deepEqual(result.tournamentWaitlistedNames, []);
@@ -304,19 +304,19 @@ test('parseListSections reads back the tournament-enabled format formatList() pr
     '',
     '🏆 *Tournament players* (2/2)',
     '',
-    '1. Keith',
-    '2. Bao',
+    '1. Derek',
+    '2. Frank',
     '',
     'Social only',
     '',
-    '3. Garvin',
+    '3. Isaac',
   ].join('\n');
 
   const result = parseListSections(text);
   // The flat `attendance` array is unaffected - still everyone, tournament
   // and social-only alike, same as before tournament-awareness existed.
-  assert.deepEqual(result.attendance, ['Keith', 'Bao', 'Garvin']);
-  assert.deepEqual(result.tournamentPlayers, ['Keith', 'Bao']);
+  assert.deepEqual(result.attendance, ['Derek', 'Frank', 'Isaac']);
+  assert.deepEqual(result.tournamentPlayers, ['Derek', 'Frank']);
   assert.deepEqual(result.tournamentWaitlistedNames, []);
 });
 
@@ -330,12 +330,12 @@ test('parseListSections: an empty "(none yet)" tournament roster still yields to
     '',
     'Social only',
     '',
-    '1. Garvin',
+    '1. Isaac',
   ].join('\n');
 
   const result = parseListSections(text);
   assert.deepEqual(result.tournamentPlayers, []);
-  assert.deepEqual(result.attendance, ['Garvin']);
+  assert.deepEqual(result.attendance, ['Isaac']);
 });
 
 test('parseListSections strips the trailing "(🏆 WL)" flag from a Social-only name, and records it in tournamentWaitlistedNames', () => {
@@ -344,21 +344,21 @@ test('parseListSections strips the trailing "(🏆 WL)" flag from a Social-only 
     '',
     '🏆 *Tournament players* (1/1)',
     '',
-    '1. Keith',
+    '1. Derek',
     '',
     'Social only',
     '',
-    '2. Bao (🏆 WL)',
+    '2. Frank (🏆 WL)',
   ].join('\n');
 
   const result = parseListSections(text);
-  // The name itself is clean - NOT "Bao (🏆 WL)" literally, which would
+  // The name itself is clean - NOT "Frank (🏆 WL)" literally, which would
   // otherwise silently corrupt !update round-trips (a previously real bug:
   // the tagged name would get treated as a brand new, differently-named
   // entry, dropping the real one and losing its tournament/addedBy data).
-  assert.deepEqual(result.attendance, ['Keith', 'Bao']);
-  assert.deepEqual(result.tournamentPlayers, ['Keith']);
-  assert.deepEqual(result.tournamentWaitlistedNames, ['Bao']);
+  assert.deepEqual(result.attendance, ['Derek', 'Frank']);
+  assert.deepEqual(result.tournamentPlayers, ['Derek']);
+  assert.deepEqual(result.tournamentWaitlistedNames, ['Frank']);
 });
 
 test('parseListSections handles BOTH "(TBC)" and "(🏆 WL)" on the same name, in formatList()\'s actual order (TBC before WL)', () => {
@@ -367,16 +367,16 @@ test('parseListSections handles BOTH "(TBC)" and "(🏆 WL)" on the same name, i
     '',
     '🏆 *Tournament players* (1/1)',
     '',
-    '1. Keith',
+    '1. Derek',
     '',
     'Social only',
     '',
-    '2. Bao (TBC) (🏆 WL)',
+    '2. Frank (TBC) (🏆 WL)',
   ].join('\n');
 
   const result = parseListSections(text);
-  assert.deepEqual(result.attendance, ['Keith', 'Bao']);
-  assert.deepEqual(result.tournamentWaitlistedNames, ['Bao']);
+  assert.deepEqual(result.attendance, ['Derek', 'Frank']);
+  assert.deepEqual(result.tournamentWaitlistedNames, ['Frank']);
 });
 
 test('parseListSections: "Social only" text BEFORE any tournament header is never mistaken for the sub-header - it has to follow "🏆 Tournament players" first', () => {
@@ -385,12 +385,12 @@ test('parseListSections: "Social only" text BEFORE any tournament header is neve
     '',
     'Social only chat about the game tonight, see you all there!',
     '',
-    '1. Alex',
-    '2. Sam',
+    '1. Grace',
+    '2. Henry',
   ].join('\n');
 
   const result = parseListSections(text);
-  assert.deepEqual(result.attendance, ['Alex', 'Sam']);
+  assert.deepEqual(result.attendance, ['Grace', 'Henry']);
   assert.equal(result.tournamentPlayers, null); // never saw the real tournament header at all
 });
 
@@ -398,13 +398,13 @@ test('parseListSections honors names added, removed, or reordered by the editor'
   const text = [
     '*Attendance*',
     '',
-    '1. Priya', // reordered to the front
-    '2. Alex',
+    '1. Renee', // reordered to the front
+    '2. Grace',
     '3. NewPerson', // brand new, added by the editor
-    // Sam removed entirely
+    // Henry removed entirely
   ].join('\n');
   const result = parseListSections(text);
-  assert.deepEqual(result.attendance, ['Priya', 'Alex', 'NewPerson']);
+  assert.deepEqual(result.attendance, ['Renee', 'Grace', 'NewPerson']);
 });
 
 // --- parseHeaderFields ---------------------------------------------------

@@ -104,7 +104,7 @@ const CATCH_UP_COMMANDS = new Set([`${COMMAND_PREFIX}in`, `${COMMAND_PREFIX}out`
 // Exported alongside the undo-tracked `commands` table so a caller that
 // needs to treat several dispatched actions as ONE undo transaction (see
 // index.js's handleAiMention, for a single @-mention that bundles multiple
-// requests together, e.g. "create a new list, add Andy/Peter/Lucy, set the
+// requests together, e.g. "create a new list, add Caleb/Alice/Daisy, set the
 // payment cost to $17") can call the bare handlers directly and wrap its
 // OWN single before/after snapshot around the whole batch, instead of
 // getting one (overwritten-by-the-next) undo point per action - see

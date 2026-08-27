@@ -104,18 +104,18 @@ test('interpretMessage: returns the parsed { command, argText, confidence } on a
 });
 
 test('interpretMessage: parses explicit names for someone else as a comma-separated argText', async () => {
-  const client = fakeClient(JSON.stringify({ actions: [{ command: 'out', argText: 'Peter, Chris', confidence: 'high' }] }));
-  const result = await interpretMessage('take Peter and Chris off', { client });
-  assert.equal(result.actions[0].argText, 'Peter, Chris');
+  const client = fakeClient(JSON.stringify({ actions: [{ command: 'out', argText: 'Alice, Bob', confidence: 'high' }] }));
+  const result = await interpretMessage('take Alice and Bob off', { client });
+  assert.equal(result.actions[0].argText, 'Alice, Bob');
   assert.equal(result.actions[0].command, 'out');
 });
 
 test('interpretMessage: a low-confidence action\'s "question" field round-trips through untouched', async () => {
   const client = fakeClient(JSON.stringify({
-    actions: [{ command: 'in', argText: 'Janelle', confidence: 'low', question: 'Did you mean to add Janelle, or mark her as paid?' }],
+    actions: [{ command: 'in', argText: 'Megan', confidence: 'low', question: 'Did you mean to add Megan, or mark her as paid?' }],
   }));
-  const result = await interpretMessage('janelle', { client });
-  assert.equal(result.actions[0].question, 'Did you mean to add Janelle, or mark her as paid?');
+  const result = await interpretMessage('megan', { client });
+  assert.equal(result.actions[0].question, 'Did you mean to add Megan, or mark her as paid?');
 });
 
 test('interpretMessage: a "none" action\'s "offTopicReply" field round-trips through untouched', async () => {
@@ -133,15 +133,15 @@ test('interpretMessage: a "none" action\'s "offTopicReply" field round-trips thr
 // phrase appearing anywhere at all.
 test('interpretMessage: passing priorBotMessage includes it in an injected "REPLY CONTEXT:" section of the actual prompt sent', async () => {
   const { client, getCapturedArgs } = fakeClientCapturingConfig(
-    JSON.stringify({ actions: [{ command: 'in', argText: 'Janelle', confidence: 'high' }] })
+    JSON.stringify({ actions: [{ command: 'in', argText: 'Megan', confidence: 'high' }] })
   );
-  await interpretMessage('just Janelle', {
+  await interpretMessage('just Megan', {
     client,
-    priorBotMessage: 'Did you mean to add Janelle, or mark her as paid?',
+    priorBotMessage: 'Did you mean to add Megan, or mark her as paid?',
   });
   const prompt = getCapturedArgs().contents;
   assert.match(prompt, /^REPLY CONTEXT:/m);
-  assert.match(prompt, /Did you mean to add Janelle, or mark her as paid\?/);
+  assert.match(prompt, /Did you mean to add Megan, or mark her as paid\?/);
 });
 
 test('interpretMessage: omitting priorBotMessage (a plain mention, not a reply) leaves the prompt without an injected "REPLY CONTEXT:" section', async () => {
@@ -215,7 +215,7 @@ test('interpretMessage: returns { actions: [], timedOut: true } (not null, not a
 
 test('interpretMessage: also returns { actions: [], timedOut: true } for a persistent server-side 504 (Gemini itself timing out after retries), not just a client-side abort', async () => {
   const client = fakeClientThatFailsWithApiError(504, 'Deadline expired before operation could complete.');
-  const result = await interpretMessage('add me Jason t, Kyle, lee, Han, +1, Dean', { client });
+  const result = await interpretMessage('add me Milo t, Wesley, lee, Tyler, +1, Patrick', { client });
   assert.deepEqual(result, { actions: [], timedOut: true });
 });
 
@@ -250,12 +250,12 @@ test('interpretMessage: asks the SDK to retry transient failures (retryOptions.a
 
 test('interpretMessage: includes the given listText in the prompt sent to the model, so position references (e.g. "remove 1-3") can be resolved', async () => {
   const { client, getCapturedArgs } = fakeClientCapturingConfig(
-    JSON.stringify({ actions: [{ command: 'out', argText: 'Peter, Chris', confidence: 'high' }] })
+    JSON.stringify({ actions: [{ command: 'out', argText: 'Alice, Bob', confidence: 'high' }] })
   );
-  const listText = '*Attendance* (3/10)\n\n1. Peter\n2. Chris\n3. Linda';
+  const listText = '*Attendance* (3/10)\n\n1. Alice\n2. Bob\n3. Carla';
   await interpretMessage('remove 1-2', { client, listText });
   const { contents } = getCapturedArgs();
-  assert.match(contents, /1\. Peter/, 'expected the numbered list to appear in the prompt sent to the model');
+  assert.match(contents, /1\. Alice/, 'expected the numbered list to appear in the prompt sent to the model');
 });
 
 test('interpretMessage: omitting listText still works (no list context, same as before this option existed)', async () => {
@@ -297,7 +297,7 @@ test('formatTodayForPrompt: a timezone offset that shifts the calendar day chang
 });
 
 test('formatRegularPlayersForPrompt: joins names with commas, or a placeholder for an empty/missing roster', () => {
-  assert.equal(formatRegularPlayersForPrompt(['Peter', 'Chris', 'Linda']), 'Peter, Chris, Linda');
+  assert.equal(formatRegularPlayersForPrompt(['Alice', 'Bob', 'Carla']), 'Alice, Bob, Carla');
   assert.equal(formatRegularPlayersForPrompt([]), '(none set yet)');
   assert.equal(formatRegularPlayersForPrompt(undefined), '(none set yet)');
 });
@@ -306,9 +306,9 @@ test('interpretMessage: includes the given regularPlayersText in the prompt sent
   const { client, getCapturedArgs } = fakeClientCapturingConfig(
     JSON.stringify({ actions: [{ command: 'in', argText: 'regular players', confidence: 'high' }] })
   );
-  await interpretMessage('add the regular players', { client, regularPlayersText: 'Peter, Chris, Linda' });
+  await interpretMessage('add the regular players', { client, regularPlayersText: 'Alice, Bob, Carla' });
   const { contents } = getCapturedArgs();
-  assert.match(contents, /REGULAR PLAYERS: Peter, Chris, Linda/, 'expected the regular-players roster to appear in the prompt sent to the model');
+  assert.match(contents, /REGULAR PLAYERS: Alice, Bob, Carla/, 'expected the regular-players roster to appear in the prompt sent to the model');
 });
 
 test('interpretMessage: omitting regularPlayersText still works (no roster context, same as before this option existed)', async () => {
@@ -336,15 +336,15 @@ test('MAPPABLE_COMMANDS: includes every single command the bot has, no exception
 });
 
 test('interpretMessage: "regulars" (e.g. declaring the regulars) is a valid mapped command', async () => {
-  const client = fakeClient(JSON.stringify({ actions: [{ command: 'regulars', argText: 'Peter, Chris, Linda', confidence: 'high' }] }));
-  const result = await interpretMessage('these people are regular players: Peter, Chris, Linda', { client });
-  assert.deepEqual(result, { actions: [{ command: 'regulars', argText: 'Peter, Chris, Linda', confidence: 'high' }] });
+  const client = fakeClient(JSON.stringify({ actions: [{ command: 'regulars', argText: 'Alice, Bob, Carla', confidence: 'high' }] }));
+  const result = await interpretMessage('these people are regular players: Alice, Bob, Carla', { client });
+  assert.deepEqual(result, { actions: [{ command: 'regulars', argText: 'Alice, Bob, Carla', confidence: 'high' }] });
 });
 
 test('interpretMessage: "exempt" (e.g. declaring who never has to pay) is a valid mapped command', async () => {
-  const client = fakeClient(JSON.stringify({ actions: [{ command: 'exempt', argText: 'Keith, Tu, Bao', confidence: 'high' }] }));
-  const result = await interpretMessage('exempt Keith, Tu and Bao from paying', { client });
-  assert.deepEqual(result, { actions: [{ command: 'exempt', argText: 'Keith, Tu, Bao', confidence: 'high' }] });
+  const client = fakeClient(JSON.stringify({ actions: [{ command: 'exempt', argText: 'Derek, Ellen, Frank', confidence: 'high' }] }));
+  const result = await interpretMessage('exempt Derek, Ellen and Frank from paying', { client });
+  assert.deepEqual(result, { actions: [{ command: 'exempt', argText: 'Derek, Ellen, Frank', confidence: 'high' }] });
 });
 
 test('interpretMessage: "undo" (e.g. reversing the last change) is a valid mapped command, with no argument', async () => {
@@ -354,7 +354,7 @@ test('interpretMessage: "undo" (e.g. reversing the last change) is a valid mappe
 });
 
 test('interpretMessage: "update" (a pasted, hand-edited copy of the list) is a valid mapped command, with the whole message passed through as argText', async () => {
-  const pasted = 'here you go:\n*Attendance* (2/10)\n\n1. Alex\n2. Sam';
+  const pasted = 'here you go:\n*Attendance* (2/10)\n\n1. Grace\n2. Henry';
   const client = fakeClient(JSON.stringify({ actions: [{ command: 'update', argText: pasted, confidence: 'high' }] }));
   const result = await interpretMessage(pasted, { client });
   assert.deepEqual(result, { actions: [{ command: 'update', argText: pasted, confidence: 'high' }] });
@@ -397,9 +397,9 @@ test('interpretMessage: "tournamentlimit" is a valid mapped command', async () =
 });
 
 test('interpretMessage: "tournamentwinners" is a valid mapped command, with exactly two names in argText', async () => {
-  const client = fakeClient(JSON.stringify({ actions: [{ command: 'tournamentwinners', argText: 'Irfan, Tu', confidence: 'high' }] }));
-  const result = await interpretMessage('congrats to Irfan and Tu for winning the tournament', { client });
-  assert.deepEqual(result, { actions: [{ command: 'tournamentwinners', argText: 'Irfan, Tu', confidence: 'high' }] });
+  const client = fakeClient(JSON.stringify({ actions: [{ command: 'tournamentwinners', argText: 'Noah, Ellen', confidence: 'high' }] }));
+  const result = await interpretMessage('congrats to Noah and Ellen for winning the tournament', { client });
+  assert.deepEqual(result, { actions: [{ command: 'tournamentwinners', argText: 'Noah, Ellen', confidence: 'high' }] });
 });
 
 test('interpretMessage: "in" with a tournament opt-in maps the literal "tournament" keyword into argText', async () => {
@@ -420,11 +420,11 @@ test('interpretMessage: a compound message maps to multiple actions, returned in
     actions: [
       { command: 'newlist', argText: '23/08 Noble Park | 1, 2 | 7pm-9pm', confidence: 'high' },
       { command: 'tournamentlimit', argText: '12', confidence: 'high' },
-      { command: 'in', argText: 'tournament, Keith, Tu, Bao', confidence: 'high' },
+      { command: 'in', argText: 'tournament, Derek, Ellen, Frank', confidence: 'high' },
     ],
   }));
   const result = await interpretMessage(
-    'create a new list for next Sunday at Noble Park courts 1,2 at 7pm-9pm. The tournament limit is 12. Add Keith, Tu and Bao to the tournament',
+    'create a new list for next Sunday at Noble Park courts 1,2 at 7pm-9pm. The tournament limit is 12. Add Derek, Ellen and Frank to the tournament',
     { client }
   );
   assert.equal(result.actions.length, 3);
@@ -432,7 +432,7 @@ test('interpretMessage: a compound message maps to multiple actions, returned in
   assert.equal(result.actions[1].command, 'tournamentlimit');
   assert.equal(result.actions[1].argText, '12');
   assert.equal(result.actions[2].command, 'in');
-  assert.equal(result.actions[2].argText, 'tournament, Keith, Tu, Bao');
+  assert.equal(result.actions[2].argText, 'tournament, Derek, Ellen, Frank');
 });
 
 test('interpretMessage: returns null when an action inside a multi-action response fails validation (bad command value)', async () => {

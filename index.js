@@ -20,9 +20,9 @@
 //
 // Commands recognized in configured group chats:
 //   !in [name]     - add [name] (or your own WhatsApp display name) to the list
-//                    add several at once with commas: !in Alex, Sam, Sam+1
+//                    add several at once with commas: !in Grace, Henry, Henry+1
 //   !out [name]    - remove [name] (or your own name) from the list
-//                    also accepts commas: !out Alex, Sam. Anyone can remove
+//                    also accepts commas: !out Grace, Henry. Anyone can remove
 //                    anyone's entry, no restriction.
 //                    Bare !in/!out/!paid (no name typed) resolve "you"
 //                    by WhatsApp ID, not display name - your WhatsApp push
@@ -163,7 +163,7 @@
 // been redelivered (see receivedPendingNotifications in the
 // connection.update handler below and lib/catchUpQueue.js's
 // setBacklogSynced()) - e.g. "Caught up on 3 messages sent while I was
-// offline: !in (Alex): added Alex; ..." - followed by a single fresh list
+// offline: !in (Grace): added Grace; ..." - followed by a single fresh list
 // post. That pending batch is also mirrored to disk as it's built, so a bot
 // process restart (crash, `pm2 restart`, host reboot) before the summary
 // gets sent doesn't lose it - it's picked back up and sent once a fresh
@@ -195,7 +195,7 @@
 // Natural-language commands (also separate from everything above): once a
 // group turns this on with !ai on, @-mentioning the bot with a plain-
 // English request (e.g. "@bot put me down for Saturday", "@bot take
-// Peter off", "@bot clear the list") gets interpreted via the Gemini API
+// Alice off", "@bot clear the list") gets interpreted via the Gemini API
 // and mapped to any of the bot's commands - one of the everyday commands
 // (!in/!out/!paid/!list), an admin list-management command (!clear,
 // !newlist, !limit, !spamfilter, !update, ...), or !help/!admin - see
@@ -546,7 +546,7 @@ const UNEXPECTED_ERROR_REPLY = "Uh oh, tripped over my own paws there - somethin
 // (including !update, see that file's comment for how a pasted list is
 // recognized), and !help/!admin. A single @-mention can bundle several
 // distinct requests together (e.g. "start a new list for Sunday, cap it at
-// 12, and add Keith/Tu/Bao to it" is three separate requests), so
+// 12, and add Derek/Ellen/Frank to it" is three separate requests), so
 // interpretMessage() returns an ORDERED actions array, not
 // just one - each item is judged and dispatched independently:
 //  - No interpretation at all (a failed/unparseable API call), or the
@@ -601,7 +601,7 @@ const UNEXPECTED_ERROR_REPLY = "Uh oh, tripped over my own paws there - somethin
 //    or a 'none' action WITH an offTopicReply, gets its own follow-up
 //    reply after the batch finishes (see the needsClarification/
 //    offTopicReplies loops at the end of handleAiMention below) - e.g.
-//    "Janelle paid, and sign up the new guy" dispatches the "paid" half
+//    "Megan paid, and sign up the new guy" dispatches the "paid" half
 //    and separately asks about the unclear "in" half, and "how do I make
 //    a sandwich, also sign me up" dispatches the "in" half and separately
 //    answers the sandwich question, rather than silently dropping either.
@@ -737,7 +737,7 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   // deliberately bypassing `commands`' own per-command withUndoTracking
   // wrapper (see commands/index.js) by dispatching through `rawCommands`
   // instead. Wrapping each action individually would let a compound
-  // @-mention like "create a new list, add Andy/Peter/Lucy, set the
+  // @-mention like "create a new list, add Caleb/Alice/Daisy, set the
   // payment cost to $17" save THREE undo snapshots in a row, each
   // overwriting the last - so a single !undo afterward would only reverse
   // the payment-label change, not the whole thing the sender actually
@@ -792,7 +792,7 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   }
 
   // Ask about anything the model was unsure about ALONGSIDE the part(s)
-  // that just dispatched successfully above - e.g. "Janelle paid, and sign
+  // that just dispatched successfully above - e.g. "Megan paid, and sign
   // up the new guy" where only the low-confidence "sign up the new guy"
   // half needs a follow-up. Sent after the repost (so the sender sees the
   // real, current state first, then the question), one reply per
