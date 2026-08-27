@@ -205,6 +205,11 @@ const store = require('../store'); // same DATA_DIR as index.js, so seeding regu
 const { commands, rawCommands } = require('../commands');
 const { COMMAND_PREFIX } = require('../lib/config');
 const { formatList } = require('../lib/helpers');
+// Same module-cache instance index.js dispatches through - writing here
+// (approveGroup, in the tests below) is visible to index.js's own
+// isGroupApproved()/getApprovedGroups() calls immediately, no restart -
+// that's the whole point of the feature being tested.
+const allowedGroups = require('../lib/allowedGroups');
 
 let fakeMsgCounter = 0;
 function makeMsg({ from, text, fromMe = false, mentions, quotedParticipant, quotedMessageText, messageTimestamp }) {
@@ -1900,6 +1905,65 @@ test('e2e: messages from an unconfigured/disallowed group are ignored entirely',
     type: 'notify',
   });
   assert.equal(fakeSockInstance.sentMessages.length, 0);
+});
+
+// --- New-group setup: lib/allowedGroups.js/manage-groups.js (repo root) -
+// a not-yet-approved group's command is tracked as "pending" (not just
+// console-logged), and approving it takes effect on the very next message
+// with NO restart - the running bot re-reads the approval file fresh on
+// every message (see index.js's isGroupApproved() call sites). ---
+
+test('e2e: a command from a not-yet-approved group is tracked as pending, not just logged', async () => {
+  const newGroupId = 'brandNewGroup@g.us';
+  await capturedHandlers['messages.upsert']({
+    messages: [{
+      key: { remoteJid: newGroupId, participant: 'alex@s.whatsapp.net', fromMe: false, id: 'PENDING1' },
+      pushName: 'alex',
+      message: { conversation: '!in' },
+      messageTimestamp: Math.floor(Date.now() / 1000),
+    }],
+    type: 'notify',
+  });
+
+  const pending = allowedGroups.getPendingGroups().find((g) => g.jid === newGroupId);
+  assert.ok(pending, 'expected the new group to show up in the pending list');
+  assert.equal(pending.subject, 'Fake Group'); // from the fake sock's groupMetadata()
+});
+
+test('e2e: approving a pending group (as manage-groups.js would) lets its very next message through - no restart', async () => {
+  const newGroupId = 'anotherBrandNewGroup@g.us';
+  fakeSockInstance.sentMessages.length = 0;
+
+  // Not approved yet - silently ignored, same as any other pending group.
+  await capturedHandlers['messages.upsert']({
+    messages: [{
+      key: { remoteJid: newGroupId, participant: 'alex@s.whatsapp.net', fromMe: false, id: 'APPROVE1' },
+      pushName: 'alex',
+      message: { conversation: '!in' },
+      messageTimestamp: Math.floor(Date.now() / 1000),
+    }],
+    type: 'notify',
+  });
+  assert.equal(fakeSockInstance.sentMessages.length, 0, 'expected the pre-approval message to be ignored');
+
+  // Approve it directly - exactly what "node manage-groups.js approve <jid>"
+  // does under the hood. Deliberately NOT restarting anything (no
+  // re-require, no new socket) - the whole point is that the already-
+  // running bot picks this up on its own.
+  const result = allowedGroups.approveGroup(newGroupId);
+  assert.deepEqual(result, { ok: true });
+
+  await capturedHandlers['messages.upsert']({
+    messages: [{
+      key: { remoteJid: newGroupId, participant: 'alex@s.whatsapp.net', fromMe: false, id: 'APPROVE2' },
+      pushName: 'alex',
+      message: { conversation: '!in' },
+      messageTimestamp: Math.floor(Date.now() / 1000),
+    }],
+    type: 'notify',
+  });
+  const posted = fakeSockInstance.sentMessages.find((m) => m.jid === newGroupId && /alex/i.test(m.content.text || ''));
+  assert.ok(posted, 'expected the post-approval message to actually be processed, with no restart');
 });
 
 // Regression coverage for the reconnect-after-sleep bug: a non-logged-out
