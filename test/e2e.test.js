@@ -229,7 +229,28 @@ function makeMsg({ from, text, fromMe = false, mentions, quotedParticipant, quot
 async function deliver(text, { from = 'alex@s.whatsapp.net', type = 'notify', mentions, quotedParticipant, quotedMessageText, messageTimestamp } = {}) {
   const upsertHandler = capturedHandlers['messages.upsert'];
   assert.ok(upsertHandler, 'expected index.js to have registered a messages.upsert handler');
-  await upsertHandler({ messages: [makeMsg({ from, text, mentions, quotedParticipant, quotedMessageText, messageTimestamp })], type });
+  const msg = makeMsg({ from, text, mentions, quotedParticipant, quotedMessageText, messageTimestamp });
+  await upsertHandler({ messages: [msg], type });
+  return msg; // so a test can build an edit (see deliverEdit below) against this exact message's key
+}
+
+// Simulates WhatsApp's "message.update" edit-notification event (see
+// index.js's handleMessageEdit) for `originalMsg` (whatever deliver()
+// returned for the message being edited) - same key.id, new text. Real
+// Baileys sends the edit's own messageTimestamp too; defaults to "right
+// now" for the same reason makeMsg's default does.
+async function deliverEdit(originalMsg, newText, { messageTimestamp } = {}) {
+  const updateHandler = capturedHandlers['messages.update'];
+  assert.ok(updateHandler, 'expected index.js to have registered a messages.update handler');
+  await updateHandler([
+    {
+      key: originalMsg.key,
+      update: {
+        message: { editedMessage: { message: { conversation: newText } } },
+        messageTimestamp: messageTimestamp != null ? messageTimestamp : Math.floor(Date.now() / 1000),
+      },
+    },
+  ]);
 }
 
 test('e2e: a live !in command is processed and posts the updated list', async () => {
@@ -1349,6 +1370,109 @@ test('e2e: !undo reverses an ENTIRE compound @-mention (new list + add names + p
   assert.equal(afterUndo.duePaymentsLabel, beforeLabel);
   const afterUndoNames = [...afterUndo.entries, ...(afterUndo.waitlist || [])].map((e) => e.name);
   assert.deepEqual(afterUndoNames, beforeNames, 'expected the added names to be gone too, not left behind from a partial undo');
+});
+
+// --- Editing a message: index.js's handleMessageEdit(), triggered by
+// Baileys' 'messages.update' event (see deliverEdit() above) - undoes
+// whatever the ORIGINAL processing of a message changed (if anything),
+// then reprocesses the edited text as if it had just arrived live.
+// Deliberately scoped to only the group's single most recent live message
+// (lastLiveMessageByGroup in index.js) - see its own doc comment for why
+// that matches store.js's own single-level (not per-message-history) undo
+// mechanism. ---
+
+test('e2e: editing your own last message undoes what it changed and processes the new text instead', async () => {
+  const original = await deliver('!in', { from: 'ian@s.whatsapp.net', type: 'notify' });
+  assert.ok(
+    store.getCurrentEvent(GROUP_ID).entries.some((e) => e.name === 'ian'),
+    'expected the original "!in" to have added ian'
+  );
+
+  // "!list" makes no change at all - so after the edit, ian's original add
+  // should be undone, and nothing new added in its place.
+  await deliverEdit(original, `${COMMAND_PREFIX}list`);
+
+  assert.ok(
+    !store.getCurrentEvent(GROUP_ID).entries.some((e) => e.name === 'ian'),
+    'expected ian\'s original add to be undone once their message was edited'
+  );
+});
+
+test('e2e: editing a message that originally changed nothing just processes the edited text - nothing to undo', async () => {
+  const original = await deliver('asdkfjasldkfj not a real command', { from: 'kyra@s.whatsapp.net', type: 'notify' });
+  assert.ok(
+    !store.getCurrentEvent(GROUP_ID).entries.some((e) => e.name === 'kyra'),
+    'expected the original gibberish message to have added nobody'
+  );
+
+  await deliverEdit(original, `${COMMAND_PREFIX}in`);
+
+  assert.ok(
+    store.getCurrentEvent(GROUP_ID).entries.some((e) => e.name === 'kyra'),
+    'expected the edited-in "!in" to have added kyra'
+  );
+});
+
+test('e2e: editing a message that is NO LONGER the group\'s most recent live message is ignored, with a diagnostic log line', async () => {
+  const original = await deliver(`${COMMAND_PREFIX}in`, { from: 'lincoln@s.whatsapp.net', type: 'notify' });
+  // A second, later message from someone else supersedes `original` as the
+  // group's most recent live message.
+  await deliver(`${COMMAND_PREFIX}in`, { from: 'nolan@s.whatsapp.net', type: 'notify' });
+
+  const originalLog = console.log;
+  const logged = [];
+  console.log = (...args) => logged.push(args.join(' '));
+  try {
+    await deliverEdit(original, `${COMMAND_PREFIX}out`);
+  } finally {
+    console.log = originalLog;
+  }
+
+  const names = store.getCurrentEvent(GROUP_ID).entries.map((e) => e.name);
+  assert.ok(names.includes('lincoln'), 'expected lincoln to still be on the list - the stale edit should be ignored');
+  assert.ok(names.includes('nolan'), 'expected nolan (the newer message) to be unaffected');
+  assert.ok(
+    logged.some((line) => /Ignored an edit.*isn't the most recent/.test(line)),
+    `expected a diagnostic log line about the ignored stale edit, got: ${JSON.stringify(logged)}`
+  );
+});
+
+test('e2e: editing the SAME message twice correctly undoes the PREVIOUS edit each time, not just the original', async () => {
+  const original = await deliver(`${COMMAND_PREFIX}in`, { from: 'omar@s.whatsapp.net', type: 'notify' });
+  assert.deepEqual(
+    store.getCurrentEvent(GROUP_ID).entries.filter((e) => e.addedBy === 'omar@s.whatsapp.net').map((e) => e.name),
+    ['omar']
+  );
+
+  // First edit: bare "+2" adds 2 unnamed guests WITHOUT omar himself (see
+  // PLUS_N_TOKEN/ME_TOKEN in lib/helpers.js) - the original bare "!in"
+  // (which added omar) should be undone first.
+  await deliverEdit(original, `${COMMAND_PREFIX}in +2`);
+  assert.deepEqual(
+    store.getCurrentEvent(GROUP_ID).entries.filter((e) => e.addedBy === 'omar@s.whatsapp.net').map((e) => e.name),
+    ['omar+1', 'omar+2']
+  );
+
+  // Second edit of the SAME original message (WhatsApp edits always target
+  // the original message's id) - should undo the first EDIT's effect
+  // (omar+1/omar+2), not the long-gone original bare add.
+  await deliverEdit(original, `${COMMAND_PREFIX}in me, +1`);
+  assert.deepEqual(
+    store.getCurrentEvent(GROUP_ID).entries.filter((e) => e.addedBy === 'omar@s.whatsapp.net').map((e) => e.name),
+    ['omar', 'omar+1']
+  );
+});
+
+test('e2e: editing into an admin-only command still gets refused for a non-admin, exactly like typing it fresh would - no privilege escalation via edit', async () => {
+  const original = await deliver('just chatting', { from: 'patrick@s.whatsapp.net', type: 'notify' });
+  fakeSockInstance.sentMessages.length = 0;
+  const beforeDate = store.getCurrentEvent(GROUP_ID).date;
+
+  await deliverEdit(original, `${COMMAND_PREFIX}clear`);
+
+  assert.equal(store.getCurrentEvent(GROUP_ID).date, beforeDate, 'expected !clear to be refused, not actually run');
+  const refusal = fakeSockInstance.sentMessages.find((m) => /Only a group admin can clear the list/.test(m.content.text || ''));
+  assert.ok(refusal, 'expected the same admin-refusal reply a fresh, typed "!clear" from a non-admin would get');
 });
 
 test('e2e: AI mention is ignored (Gemini never even called) when the group has !ai off', async () => {

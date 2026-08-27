@@ -39,13 +39,13 @@ const { handleHelp, handleTips, handleAdminHelp, handleAdminTips } = require('./
 // !undo shows back, without needing to reconstruct it from scratch.
 function withUndoTracking(commandKey, handler) {
   return async function trackedHandler(ctx) {
-    const { groupId, argText } = ctx;
+    const { groupId, argText, msg } = ctx;
     const before = getUndoableState(groupId);
     const result = await handler(ctx);
     const after = getUndoableState(groupId);
     if (JSON.stringify(before) !== JSON.stringify(after)) {
       const description = argText ? `${commandKey} ${argText}` : commandKey;
-      saveUndoSnapshot(groupId, before, description);
+      saveUndoSnapshot(groupId, before, description, msg && msg.key && msg.key.id);
     }
     return result;
   };

@@ -600,6 +600,35 @@ silently. Like the other list-management commands, `!undo` is admin-only -
 given it can put back a whole cleared list or an entire list a `!newlist`
 just discarded, it has a bigger blast radius than most commands.
 
+## Editing a message
+
+WhatsApp's own "edit" feature works too - if you edit a message *after*
+sending it (typo'd `!ni` and fixed it to `!in`, changed your mind about who
+you meant, whatever), the bot picks up the edit and reprocesses it:
+
+- Whatever the **original** message changed (if anything - plenty of
+  messages, e.g. an unrecognized typo, change nothing at all) is undone
+  first, using the exact same single-level undo mechanism `!undo` uses
+  (see "Undoing the last change" above).
+- The **edited** text is then processed exactly as if it had just arrived
+  fresh - same permission checks, same everything. Editing a message into
+  an admin command still gets refused for a non-admin, exactly like typing
+  it fresh would; editing doesn't bypass anything.
+
+This only works for **the very last message you sent** in the group - not
+an older one, and not anyone else's. The moment anyone (including you)
+sends another message, that earlier one is no longer eligible for
+edit-and-reprocess; editing it after that point is simply ignored, the
+same way it would be if you'd changed your mind a while ago and moved on.
+This matches `!undo`'s own "one step back, not a full history" scope
+above - safely undoing exactly what one specific message did requires
+knowing nothing else has changed since, and that's only guaranteed to be
+true for the most recent message.
+
+You can edit the same message more than once - each edit undoes whatever
+the *previous* edit did (not the long-gone original), so a chain of edits
+always reflects only the latest version.
+
 ## Tournament
 
 A per-group, **on by default** sub-feature - unlike spam filtering/

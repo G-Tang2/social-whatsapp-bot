@@ -1033,10 +1033,19 @@ function restoreUndoableState(groupId, snapshot) {
 // !undo as confirmation of what it just reversed. Called by
 // commands/index.js's dispatch wrapper, never directly by a command
 // handler.
-function saveUndoSnapshot(groupId, snapshot, description) {
+//
+// `sourceMessageId` (optional - the WhatsApp message id, i.e. msg.key.id,
+// of whichever live message actually caused this change) lets index.js's
+// message-edit handling (see its own doc comment) tell whether an edited
+// message is still THE thing this undo point would reverse, before
+// auto-restoring it - editing anything else must never blindly wipe out a
+// change that happened for a different, unrelated reason. Omitted (left
+// undefined) for anything not tied to a single originating message - e.g.
+// !undo itself running through this same wrapper.
+function saveUndoSnapshot(groupId, snapshot, description, sourceMessageId) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
-  all[groupId].undo = { snapshot, description };
+  all[groupId].undo = { snapshot, description, sourceMessageId: sourceMessageId || null };
   writeAll(all);
 }
 

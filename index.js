@@ -263,7 +263,7 @@ const qrcode = require('qrcode-terminal');
 const config = require('./lib/config');
 const { getMessageText, formatList, getMentionedJids, getQuotedParticipant, getQuotedMessageText, stripMentionTokens, normalizeJid } = require('./lib/helpers');
 const { parseListSections } = require('./lib/listParser');
-const { getRegularPlayers, getUndoableState, saveUndoSnapshot } = require('./store');
+const { getRegularPlayers, getUndoableState, saveUndoSnapshot, getUndoSnapshot, restoreUndoableState } = require('./store');
 const { isGroupAdmin } = require('./lib/adminCheck');
 const catchUpQueue = require('./lib/catchUpQueue');
 const { updateLastSeenStatus } = require('./lib/lastSeenStatus');
@@ -382,6 +382,99 @@ function effectiveUpsertType(msg, type) {
   return ageMs > LIVE_MESSAGE_MAX_AGE_MS ? 'append' : type;
 }
 
+// groupId -> { msg, senderId, senderName } for the single most recently
+// processed LIVE ('notify') message in that group - see handleMessage's
+// population of this and handleMessageEdit below, which is the only
+// reader. Deliberately just the one most recent message, not a history:
+// this is what lets "someone edited their message" actually work (see
+// handleMessageEdit's doc comment) - a WhatsApp edit-notification event
+// carries neither the sender's pushName nor (crucially) a `type` of its
+// own to compare against, so this cache is what makes "is this edit for
+// the thing I'd actually let get reprocessed" answerable at all, and
+// "editing anything other than your own last message isn't supported" is
+// the same deliberately narrow, single-level scope store.js's own undo
+// mechanism already commits to (see its file-level comment) - reusing
+// that scope here, rather than inventing a deeper one, is what keeps
+// undo-then-reprocess actually SAFE to do automatically (see
+// handleMessageEdit). In-memory only, like reconnectAttempts/the other
+// pure runtime state in this file - doesn't survive a restart, but the
+// window where that would actually matter (a message edited in the
+// instant before a restart) is vanishingly narrow.
+const lastLiveMessageByGroup = new Map();
+
+// Handles ONE entry of Baileys' 'messages.update' event - the channel a
+// message EDIT (not a brand new message) arrives on, entirely separate
+// from 'messages.upsert' (see effectiveUpsertType above, which only ever
+// sees genuinely new messages). `key` identifies which message was
+// edited (same id as when it first arrived - WhatsApp edits are
+// in-place, not a new message); `update.message.editedMessage.message`
+// is the NEW content, in the exact same shape getMessageText() already
+// knows how to read off a normal message. Anything else in `update`
+// (delivery receipts, a reaction being added, ...) has no
+// `editedMessage` and is silently ignored - this function only exists
+// for edits.
+//
+// Real bug this fixes: without this, editing a message the bot already
+// acted on does nothing at all - the bot only ever saw (and acted on)
+// the ORIGINAL text, and has no way to know it was corrected afterward.
+// Per the user's own request: an edit should UNDO whatever the original
+// processing of that exact message changed (if anything - plenty of
+// messages, e.g. an unrecognized typo, change nothing at all) and then
+// process the edited text as if it had just arrived live.
+//
+// Deliberately narrow: only the group's single most recently seen LIVE
+// message (see lastLiveMessageByGroup above) is eligible. Editing
+// anything else - an older message, or one from a different group/chat -
+// is silently ignored (just logged) rather than attempted, because
+// safely reversing "whatever THIS specific message did" requires it to
+// still be the CURRENT undo target (store.js's undo is single-level, not
+// a per-message history - see its file-level comment); if something else
+// has changed the group's state since, blindly restoring an older
+// snapshot would wipe that out too, which is worse than not reprocessing
+// the edit at all.
+async function handleMessageEdit(sock, key, update) {
+  const editedMessage = update && update.message && update.message.editedMessage && update.message.editedMessage.message;
+  if (!editedMessage) return; // not an edit - some other kind of update (a delivery receipt, a reaction, ...)
+
+  const groupId = key.remoteJid;
+  if (!groupId || !groupId.endsWith('@g.us')) return; // only group chats are moderated at all
+  if (key.fromMe) return; // same "ignore our own messages" rule as a fresh message
+  if (ALLOWED_GROUPS.length && !ALLOWED_GROUPS.includes(groupId)) return;
+
+  const cached = lastLiveMessageByGroup.get(groupId);
+  if (!cached || cached.msg.key.id !== key.id) {
+    console.log(
+      `[bot] Ignored an edit in ${groupId} to a message that isn't the most recent one I saw - only the very last live message in a group can be edited-and-reprocessed (see the README's "Editing a message" section).`
+    );
+    return;
+  }
+
+  // Undo whatever the ORIGINAL processing of this exact message changed,
+  // if anything - only safe because the check just above confirms this is
+  // still the group's single most recent live message, i.e. nothing else
+  // has happened since that a blind restore could clobber. Reprocessing
+  // dispatches through the exact same permission-checked handlers a fresh
+  // message would (see below) - an edit into an admin-only command from a
+  // non-admin still gets refused exactly as if it had been typed fresh,
+  // so this can never be used to bypass anything.
+  const undoEntry = getUndoSnapshot(groupId);
+  if (undoEntry && undoEntry.sourceMessageId === key.id) {
+    restoreUndoableState(groupId, undoEntry.snapshot);
+  }
+
+  // Reprocess as if the edited text had just arrived live. Re-using the
+  // cached msg (rather than only `update`) is what supplies pushName and
+  // every other field getMessageText()/handleMessage() expect that a bare
+  // 'messages.update' payload doesn't carry - only `message` (the actual
+  // content) and `messageTimestamp` genuinely change on an edit.
+  const editedMsg = {
+    ...cached.msg,
+    message: editedMessage,
+    messageTimestamp: toNumber(update.messageTimestamp) || cached.msg.messageTimestamp,
+  };
+  await handleMessage(sock, editedMsg, 'notify');
+}
+
 async function start() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
@@ -487,6 +580,20 @@ async function start() {
         await handleMessage(sock, msg, effectiveUpsertType(msg, type));
       } catch (err) {
         console.error('[bot] Error handling message:', err);
+      }
+    }
+  });
+
+  // A message EDIT, not a new message - see handleMessageEdit's own doc
+  // comment above for the full mechanism (undo-then-reprocess) and why
+  // it's deliberately scoped to only the group's single most recent live
+  // message.
+  sock.ev.on('messages.update', async (updates) => {
+    for (const { key, update } of updates) {
+      try {
+        await handleMessageEdit(sock, key, update);
+      } catch (err) {
+        console.error('[bot] Error handling message edit:', err);
       }
     }
   });
@@ -812,7 +919,7 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
 
   const undoAfter = getUndoableState(groupId);
   if (JSON.stringify(undoBefore) !== JSON.stringify(undoAfter)) {
-    saveUndoSnapshot(groupId, undoBefore, actionDescriptions.join(' + '));
+    saveUndoSnapshot(groupId, undoBefore, actionDescriptions.join(' + '), msg.key.id);
   }
 
   if (repostOwed) {
@@ -956,6 +1063,7 @@ async function handleMessage(sock, msg, upsertType) {
   if (ALLOWED_GROUPS.length && !ALLOWED_GROUPS.includes(groupId)) {
     return; // not a group we're configured to moderate
   }
+
   if (!ALLOWED_GROUPS.length) {
     // Not configured yet - stay fully passive (no moderation), except
     // logging a command's group JID so an admin can copy it into .env.
@@ -971,6 +1079,22 @@ async function handleMessage(sock, msg, upsertType) {
       console.log(`[bot] Saw a command in unconfigured group "${subject}" -> JID: ${groupId}`);
     }
     return; // safe default: do nothing until ALLOWED_GROUPS is configured
+  }
+
+  // Remembers this as the group's most recently seen LIVE message, so a
+  // later edit to it (see handleMessageEdit below) can be reprocessed with
+  // the right senderId/senderName - a WhatsApp edit event doesn't carry
+  // those. Deliberately unconditional (not gated on the message actually
+  // being a recognized command) - "not a command right now" is exactly the
+  // case where editing it INTO one is the whole point. Only for genuinely
+  // live messages ('notify', already corrected for staleness by
+  // effectiveUpsertType) - a catch-up ('append') redelivery could be
+  // hours old by the time it's processed, which isn't "the last thing
+  // that just happened" in any sense an edit-and-reprocess should trust.
+  // Placed after the ALLOWED_GROUPS/unconfigured checks above so an
+  // unmonitored group's messages are never cached for no reason.
+  if (upsertType === 'notify') {
+    lastLiveMessageByGroup.set(groupId, { msg, senderId, senderName });
   }
 
   // Command name/args, computed up front so both the catch-up gate below

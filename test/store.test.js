@@ -1070,6 +1070,27 @@ test('saveUndoSnapshot/getUndoSnapshot: round-trips a snapshot and its descripti
   assert.deepEqual(entry.snapshot.current.entries, []); // the pre-add snapshot, not current state
 });
 
+// sourceMessageId (see index.js's handleMessageEdit) - lets a later
+// message-edit tell whether it's still editing the exact message that
+// produced this undo point, before auto-restoring it.
+test('saveUndoSnapshot/getUndoSnapshot: round-trips an optional sourceMessageId', () => {
+  const groupId = freshGroupId();
+  const before = store.getUndoableState(groupId);
+  store.addEntry(groupId, 'Alice', 'sender@s.whatsapp.net', false, true);
+
+  store.saveUndoSnapshot(groupId, before, '!in Alice', 'MSG123');
+  assert.equal(store.getUndoSnapshot(groupId).sourceMessageId, 'MSG123');
+});
+
+test('saveUndoSnapshot: omitting sourceMessageId stores null, not undefined - stays a clean, JSON-round-trippable value', () => {
+  const groupId = freshGroupId();
+  const before = store.getUndoableState(groupId);
+  store.addEntry(groupId, 'Alice', 'sender@s.whatsapp.net', false, true);
+
+  store.saveUndoSnapshot(groupId, before, '!in Alice');
+  assert.equal(store.getUndoSnapshot(groupId).sourceMessageId, null);
+});
+
 test('restoreUndoableState: overwrites current/history/regularPlayers wholesale from a snapshot, leaving undo itself alone', () => {
   const groupId = freshGroupId();
   const before = store.getUndoableState(groupId);
