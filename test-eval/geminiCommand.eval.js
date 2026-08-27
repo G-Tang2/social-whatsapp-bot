@@ -48,8 +48,19 @@ const skipReason = GEMINI_API_KEY
 // repeatable prompt regression (which will fail both attempts). Each
 // attempt is a genuine extra API call, so this only wraps tests that
 // actually call interpretMessage(), and the suite stays small on purpose.
+//
+// 90s timeout, not node:test's much shorter default - a SINGLE
+// interpretMessage() call's own worst case (TIMEOUT_MS x its 2 attempts,
+// plus backoff - see lib/geminiCommand.js's own comment) already
+// approaches 45s on its own, and this wrapper can call fn() TWICE (the
+// retry-once above) if the first attempt's assertions fail. A tighter
+// ceiling here (this used to be a now-too-thin 20000ms, exactly equal to
+// TIMEOUT_MS alone) risks the HARNESS timing a test out on nothing more
+// than an ordinarily slow response, before interpretMessage() ever got a
+// real chance to finish its own retry sequence - a false failure, not a
+// real one.
 async function evalTest(name, fn) {
-  test(name, { skip: skipReason, timeout: 20000 }, async () => {
+  test(name, { skip: skipReason, timeout: 90000 }, async () => {
     try {
       await fn();
     } catch (firstErr) {
@@ -381,4 +392,43 @@ evalTest('"we have 6 courts now" (a bare count, no court numbers) asks specifica
   assert.ok(uncertain.question && uncertain.question.trim(), 'expected a non-empty "question"');
   assert.match(uncertain.question, /which|what/i, 'expected the question to ask for the actual court numbers');
   assert.doesNotMatch(uncertain.question, /replace/i, 'must not offer a false add-vs-replace choice that still leaves the numbers unknown');
+});
+
+// --- A number reference for "paid" must resolve against the PAYMENT
+// section's own printed numbering, never Attendance's - even though
+// Attendance is shown first in the CURRENT LIST and its numbering is what
+// catches the eye first. Real bug report: "no 9 to 11 paid", sent against
+// a list where Attendance's #9 ("seum") and the payment-due section's #9
+// ("harry+1") are different people, tried to manually resolve the range to
+// NAMES itself and picked Attendance's numbering - "seum, Kelvin, tinh"
+// instead of "harry+1, harry+2, harry+3" - silently marking the wrong two
+// people paid (Kelvin/tinh happened to ALSO appear, by name, in the
+// payment section) and rejecting "seum" as not on the payment list at all.
+// Fixed via the added NUMBERED LIST REFERENCES rule in SHARED_ARG_RULES:
+// the model should pass bare numbers straight through as argText (a range
+// expanded into its individual numbers) rather than resolving them to
+// names itself - commands/list.js's resolvePaidToken/resolveDuePaymentNumber
+// then do that lookup deterministically, correctly scoped to the
+// payment-due section only, immune to this cross-section mix-up.
+
+evalTest('"no 9 to 11 paid" resolves against the PAYMENT section\'s own numbering, not Attendance\'s (even though Attendance shows a different #9)', async () => {
+  const listText =
+    '*Attendance* (12/30)\n\n1. harry\n2. bonny\n3. rj\n4. Charlie\n5. xinny\n6. will d\n7. david lee\n8. harry Li\n9. seum\n10. Kelvin\n11. tinh\n12. Chris\n\n' +
+    '──────────\n*Payment*\n\n*26th Aug Wed*\n1. bonny\n2. rj\n3. Charlie\n4. will D\n5. david lee\n6. Kelvin\n7. tinh\n8. Chris\n9. harry+1\n10. harry+2\n11. harry+3\n12. ben';
+  const result = await interpretMessage('no 9 to 11 paid', { listText });
+  assert.ok(result, 'expected a parsed result, not null');
+  const action = result.actions.find((a) => a.command === 'paid' && a.confidence === 'high');
+  assert.ok(action, `expected a high-confidence "paid" action, got: ${JSON.stringify(result.actions)}`);
+  // Either the bare numbers (the fixed, preferred form) or the correct
+  // literal PAYMENT-section names (9-11 = harry+1/2/3) pass - what must
+  // NEVER appear is "seum" (Attendance's own #9), which would mean the
+  // model resolved the range against the wrong section again.
+  const argText = action.argText;
+  const isBareNumbers = /^\s*9\s*,\s*10\s*,\s*11\s*$/.test(argText);
+  const isCorrectNames = /harry\+1/i.test(argText) && /harry\+2/i.test(argText) && /harry\+3/i.test(argText);
+  assert.ok(
+    isBareNumbers || isCorrectNames,
+    `expected argText to be either "9, 10, 11" or the correct payment-section names (harry+1/2/3), got: "${argText}"`
+  );
+  assert.doesNotMatch(argText, /\bseum\b/i, 'must not resolve the range against Attendance\'s numbering (seum is Attendance\'s #9, not the payment section\'s)');
 });
