@@ -506,10 +506,20 @@ async function handleGroupParticipantsUpdate(sock, update) {
   const newcomers = (participants || []).filter((jid) => !botJids.includes(normalizeJid(jid)));
   if (!newcomers.length) return;
 
+  // Deliberately points people at typing their own NAME along with the
+  // command (e.g. "!in John"), rather than the bare "!in" shortcut that
+  // signs someone up under whatever their WhatsApp push name happens to
+  // be - a fresh member's push name is often a nickname, emoji, or
+  // something that doesn't read well on the posted list, so a real name
+  // typed up front keeps the list itself tidy from the start. Also
+  // written as if natural-language commands are definitely on (no "if
+  // this group has it turned on" hedge) - a deliberate simplification;
+  // in a group where !ai is actually off, that one sentence just won't
+  // do anything if followed, same as any other unrecognized mention.
   const tags = newcomers.map((jid) => `@${jid.split('@')[0]}`).join(' ');
   const text =
     `👋 Welcome, ${tags}!\n\n` +
-    `I'm Snoopy, running the signup list here. Type ${COMMAND_PREFIX}in to join the next social (or @-mention me and say "sign me up" if plain English's turned on) - ${COMMAND_PREFIX}out to leave, ${COMMAND_PREFIX}paid once you've paid up. ${COMMAND_PREFIX}help any time for the full rundown.\n\n` +
+    `I'm Snoopy, running the signup list here. Type ${COMMAND_PREFIX}in followed by your name to join the next social - e.g. ${COMMAND_PREFIX}in John - or just @-mention me and tell me, like "add John". ${COMMAND_PREFIX}out <name> to leave, ${COMMAND_PREFIX}paid once you've paid up. ${COMMAND_PREFIX}help any time for the full rundown.\n\n` +
     `Here's the current list:\n\n${formatList(groupId)}`;
 
   try {

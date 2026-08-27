@@ -855,22 +855,35 @@ A few things worth knowing about how this works:
 
 A separate, per-group feature, **ON by default**: whenever someone joins a
 group the bot moderates, it posts a tagged welcome message - a greeting,
-a quick pointer on how to join the social (`!in`, or `@bot sign me up`
-if natural-language commands are turned on), and the current list, so a
-new member never has to ask "how does this work?" or "who else is going?"
+a quick pointer on how to join the social by name (`!in John`, or
+`@bot add John`), and the current list, so a new member never has to ask
+"how does this work?" or "who else is going?"
 
 ```
 👋 Welcome, @NewPerson!
 
-I'm Snoopy, running the signup list here. Type !in to join the next
-social (or @-mention me and say "sign me up" if plain English's turned
-on) - !out to leave, !paid once you've paid up. !help any time for the
-full rundown.
+I'm Snoopy, running the signup list here. Type !in followed by your
+name to join the next social - e.g. !in John - or just @-mention me and
+tell me, like "add John". !out <name> to leave, !paid once you've paid
+up. !help any time for the full rundown.
 
 Here's the current list:
 
 [the current list, exactly as !list would show it]
 ```
+
+Two deliberate wording choices worth knowing about:
+
+- **It asks for your name up front** (`!in John`, not the bare `!in`
+  shortcut that signs you up under whatever your WhatsApp push name
+  happens to be) - a fresh member's push name is often a nickname, emoji,
+  or something that doesn't read well on the posted list, so asking for a
+  real name keeps the list itself tidy from the start.
+- **It's written as if natural-language commands are definitely on** - no
+  "if this group has it turned on" hedge. In a group where `!ai` is
+  actually off, that one sentence just won't do anything if followed
+  (same as any other unrecognized `@`-mention) - the typed `!in John`
+  option still works regardless either way.
 
 **A per-group setting, turned on/off live in chat.** Run `!welcome off`
 (group admins only) for a group that would rather the bot stay quiet when
