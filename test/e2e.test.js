@@ -633,6 +633,48 @@ test('e2e: replying to the bot still triggers when WhatsApp sends its LID (not i
   assert.ok(posted, 'expected the LID-form quoted participant to still be recognized as a reply to the bot');
 });
 
+test('e2e: typing "@Snoopy" as literal text (not a real, JID-based mention) still triggers AI interpretation - regression for a real bug where the contact picker wasn\'t used', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'in', argText: '', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  // Deliberately no `mentions` at all - a real mention's raw text is always
+  // "@<phone number>", never "@Snoopy" itself, so this can only be
+  // reproduced by omitting `mentions` and just typing the name.
+  await deliver('@Snoopy put me down for Saturday', { from: 'morgan@s.whatsapp.net', type: 'notify' });
+
+  const posted = fakeSockInstance.sentMessages.find((m) => /morgan/i.test(m.content.text || ''));
+  assert.ok(posted, 'expected a literal "@Snoopy" (no real mention) to still be recognized as addressing the bot');
+});
+
+test('e2e: a literal "@Snoopy" is stripped out of the text sent to Gemini, same as a real mention token would be', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'in', argText: '', confidence: 'high' });
+
+  await deliver('@Snoopy put me down for Saturday', { from: 'reese@s.whatsapp.net', type: 'notify' });
+
+  // SYSTEM_PROMPT itself talks about "Snoopy" (the bot's own persona name)
+  // throughout, so a blanket /snoopy/i check against the whole prompt would
+  // pass regardless of stripping - isolate just the `Message: "..."`
+  // section buildPrompt() appends at the end instead.
+  const promptText = getLastGeminiPromptText();
+  const messageSection = promptText.match(/Message: "([^]*)"$/)[1];
+  assert.ok(!/snoopy/i.test(messageSection), 'expected the literal "@Snoopy" text to be stripped out of the message section before reaching Gemini');
+  assert.ok(messageSection.includes('put me down for Saturday'), 'expected the rest of the message to reach Gemini untouched');
+});
+
+test('e2e: a bare "@Snoopy" with nothing else signs the sender up, same as a bare real @-mention, without calling Gemini', async () => {
+  ai.setEnabled(GROUP_ID, false); // deliberately off - this shortcut shouldn't need it
+  const callsBefore = geminiCallCount;
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('@Snoopy', { from: 'harper@s.whatsapp.net', type: 'notify' });
+
+  assert.equal(geminiCallCount, callsBefore, 'a bare "@Snoopy" has nothing left to interpret once stripped - Gemini should never be called');
+  const posted = fakeSockInstance.sentMessages.find((m) => /harper/i.test(m.content.text || ''));
+  assert.ok(posted, 'expected harper to have been added and the list posted, same as a real bare @-mention would');
+});
+
 test('e2e: replying to someone OTHER than the bot does not trigger AI interpretation (Gemini never even called)', async () => {
   ai.setEnabled(GROUP_ID, true);
   // Deliberately does NOT queue a fake Gemini response - Gemini must never
@@ -2026,6 +2068,77 @@ test('e2e: !update accepts a multi-line pasted/edited list, typed as "!update" o
   assert.ok(summary, 'expected !update to have been recognized as the command, with the pasted text parsed as its argument');
   const posted = fakeSockInstance.sentMessages.find((m) => /\*Attendance\*/.test(m.content.text || '') && /NewPerson/.test(m.content.text || ''));
   assert.ok(posted, 'expected the updated list to have been reposted');
+});
+
+// Multiline commands: a message where every non-blank line is independently
+// a real, recognized command is dispatched as one command per line (see
+// index.js's isMultilineCommands check in handleMessage). Deliberately
+// exercised through the real messages.upsert pipeline (deliver()), not a
+// direct handler call, since the whole point is index.js's own line
+// splitting/recursive dispatch, not commands/*.js itself.
+test('e2e: "!in Quinn\\n!paid Quinn" dispatches both lines as separate commands', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('!in Quinn\n!paid Quinn', { from: 'admin@s.whatsapp.net', type: 'notify' });
+
+  const added = fakeSockInstance.sentMessages.find((m) => /\bQuinn\b/.test(m.content.text || '') && /\*Attendance\*/.test(m.content.text || ''));
+  assert.ok(added, 'expected the first line (!in Quinn) to have added Quinn and reposted the list');
+  // Quinn was just added to the CURRENT list, not a real payment-due one
+  // (that only exists after !newlist), so !paid Quinn can never actually
+  // succeed here - but it still proves the SECOND line was independently
+  // dispatched as its own !paid command (rather than swallowed as part of
+  // the first line's argText, e.g. as a garbled "Quinn\n!paid Quinn" name)
+  // by producing !paid's own real "not on the payment list yet" rejection.
+  const paidRejection = fakeSockInstance.sentMessages.find((m) => /couldn't mark paid/i.test(m.content.text || '') && /Quinn/.test(m.content.text || ''));
+  assert.ok(paidRejection, 'expected the second line (!paid Quinn) to have been dispatched too, not swallowed as argText of the first');
+});
+
+test('e2e: multiline commands tolerate a blank line between commands', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('!in Piper\n\n!paid Piper', { from: 'admin@s.whatsapp.net', type: 'notify' });
+
+  const added = fakeSockInstance.sentMessages.find((m) => /\bPiper\b/.test(m.content.text || '') && /\*Attendance\*/.test(m.content.text || ''));
+  assert.ok(added, 'expected !in Piper to still be recognized with a blank line separating the two commands');
+  // Same "not on the payment list yet" rejection as the test above - proves
+  // !paid Piper was dispatched as its own command despite the blank line.
+  const paidRejection = fakeSockInstance.sentMessages.find((m) => /couldn't mark paid/i.test(m.content.text || '') && /Piper/.test(m.content.text || ''));
+  assert.ok(paidRejection, 'expected !paid Piper to still be dispatched too');
+});
+
+test('e2e: a message whose SECOND line is not a real command is NOT treated as multiline commands - dispatched as ONE command with a multi-line argText, exactly like !update', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+
+  // "!notacommand" isn't a recognized command word, so the whole message
+  // must be dispatched as ONE !in command whose argText happens to contain
+  // a newline (and gets folded into a single, if slightly odd, name - the
+  // same pre-existing behavior any multi-line, comma-free argText already
+  // has, unrelated to this feature), not two separate commands - same
+  // principle the existing !update multi-line-paste test above already
+  // covers, exercised here against the isMultilineCommands check directly
+  // with a line that merely LOOKS command-shaped ("!"-prefixed) but isn't
+  // one of the recognized commands.
+  await deliver('!in Skylar\n!notacommand', { from: 'admin@s.whatsapp.net', type: 'notify' });
+
+  const reposts = fakeSockInstance.sentMessages.filter((m) => /\*Attendance\*/.test(m.content.text || ''));
+  assert.equal(reposts.length, 1, 'expected exactly ONE list repost, proving this was dispatched as a single !in command rather than split into two');
+});
+
+test('e2e: multiline commands still enforce per-line admin checks - an admin-only line among them is refused independently', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+
+  // !in is open to anyone; !limit is admin-only (see commands/admin.js) -
+  // "dakota" is a non-admin sender in this fake sock (see the isGroupAdmin
+  // fake below), so the !limit line must be refused on its own, while the
+  // !in line still goes through - each line re-derives its OWN permission
+  // check via the real handleMessage() pipeline, rather than the whole
+  // message inheriting one shared permission outcome.
+  await deliver('!in Dakota\n!limit 5', { from: 'dakota@s.whatsapp.net', type: 'notify' });
+
+  const added = fakeSockInstance.sentMessages.find((m) => /\bDakota\b/.test(m.content.text || '') && /\*Attendance\*/.test(m.content.text || ''));
+  assert.ok(added, 'expected the !in line to still succeed');
+  const refused = fakeSockInstance.sentMessages.find((m) => /admin/i.test(m.content.text || ''));
+  assert.ok(refused, 'expected the !limit line to have been refused with an admin-only reply');
 });
 
 test('e2e: messages from an unconfigured/disallowed group are ignored entirely', async () => {

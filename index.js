@@ -261,7 +261,7 @@ const P = require('pino');
 const qrcode = require('qrcode-terminal');
 
 const config = require('./lib/config');
-const { getMessageText, formatList, getMentionedJids, getQuotedParticipant, getQuotedMessageText, stripMentionTokens, normalizeJid } = require('./lib/helpers');
+const { getMessageText, formatList, getMentionedJids, getQuotedParticipant, getQuotedMessageText, stripMentionTokens, normalizeJid, LITERAL_BOT_MENTION_REGEX } = require('./lib/helpers');
 const { parseListSections } = require('./lib/listParser');
 const { getRegularPlayers, getUndoableState, saveUndoSnapshot, getUndoSnapshot, restoreUndoableState } = require('./store');
 const { isGroupAdmin } = require('./lib/adminCheck');
@@ -690,13 +690,30 @@ async function start() {
 // both are checked here - comparing only sock.user.id would silently
 // never match in LID-addressed groups, making the bot look unaddressed but
 // never actually trigger.
-function messageMentionsBot(sock, msg) {
+//
+// `text` (optional - every real call site has it already computed, see
+// each one's own scope) additionally catches a literal "@Snoopy" TYPED as
+// plain text rather than a real, JID-based mention selected from
+// WhatsApp's own contact picker - real bug report: some clients/typing
+// patterns leave the "@Snoopy" the sender sees on screen as plain
+// characters, with no actual mentionedJid/participant behind it at all,
+// so the checks above never catch it even though the sender clearly meant
+// to address the bot. See LITERAL_BOT_MENTION_REGEX's own doc comment
+// (lib/helpers.js) for why this can never accidentally match a GENUINE
+// mention's own raw text (which is always "@<phone number>", never the
+// literal word "Snoopy"). Checked independently of `candidates` above
+// (which needs a live, connected sock.user - this doesn't), so a literal
+// mention still works even in the narrow window right after a fresh
+// connection before that's populated.
+function messageMentionsBot(sock, msg, text) {
   const candidates = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
-  if (!candidates.length) return false;
-  const mentioned = getMentionedJids(msg);
-  if (mentioned.some((jid) => candidates.includes(normalizeJid(jid)))) return true;
-  const quotedParticipant = getQuotedParticipant(msg);
-  return !!quotedParticipant && candidates.includes(normalizeJid(quotedParticipant));
+  if (candidates.length) {
+    const mentioned = getMentionedJids(msg);
+    if (mentioned.some((jid) => candidates.includes(normalizeJid(jid)))) return true;
+    const quotedParticipant = getQuotedParticipant(msg);
+    if (quotedParticipant && candidates.includes(normalizeJid(quotedParticipant))) return true;
+  }
+  return typeof text === 'string' && LITERAL_BOT_MENTION_REGEX.test(text);
 }
 
 // Shown for every @-mention that DOESN'T end in a confident, dispatched
@@ -1105,7 +1122,7 @@ async function handleMessage(sock, msg, upsertType) {
       // undefined/different) is exactly how a genuine @-mention or reply
       // silently fails to trigger !ai.
       botLid: sock?.user?.lid,
-      mentionsBot: messageMentionsBot(sock, msg),
+      mentionsBot: messageMentionsBot(sock, msg, getMessageText(msg)),
     });
   }
 
@@ -1178,6 +1195,45 @@ async function handleMessage(sock, msg, upsertType) {
   const rawCmd = (spaceIdx === -1 ? text : text.slice(0, spaceIdx)).toLowerCase();
   const argText = (spaceIdx === -1 ? '' : text.slice(spaceIdx + 1)).trim();
 
+  // Multiline commands: a message where EVERY non-blank line independently
+  // starts with a real, recognized command word (e.g. "!paid Sam\n!in Sam")
+  // is dispatched as one separate command per line, by recursively
+  // reprocessing each line through this exact function - the same
+  // "synthetic per-line message object, recursive self-call" pattern
+  // handleMessageEdit above already established for reprocessing an edited
+  // message. Deliberately requires ALL non-blank lines to resolve to a
+  // real command: !update's own multi-line-paste usage - "!update" alone
+  // on its first line, followed by pasted list text that is NOT itself a
+  // recognized command - never satisfies that, so it's completely
+  // unaffected and still reaches the single-command path below with its
+  // full multi-line argText intact.
+  //
+  // Checked here, before rawCmd/argText (just computed above) are used for
+  // anything else, so it applies uniformly ahead of both the catch-up gate
+  // and the live dispatch below - each recursive call re-derives its OWN
+  // catch-up eligibility/permissions from its own line's command word,
+  // rather than the combined blob's first line incorrectly gating every
+  // line at once.
+  //
+  // Each line's own reply text/list repost is the authoritative feedback
+  // for that line; the 💬/✅/❌ reaction on the shared original message just
+  // ends up reflecting whichever line was processed most recently
+  // (WhatsApp only ever shows one reaction per reactor on a message) - a
+  // cosmetic limitation, not a silent failure, since every line's real
+  // outcome is still posted as its own message.
+  const nonBlankLines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  const isMultilineCommands = nonBlankLines.length > 1 && nonBlankLines.every((line) => {
+    const lineSpaceIdx = line.search(/\s/);
+    const lineCmd = (lineSpaceIdx === -1 ? line : line.slice(0, lineSpaceIdx)).toLowerCase();
+    return Boolean(commands[lineCmd]);
+  });
+  if (isMultilineCommands) {
+    for (const line of nonBlankLines) {
+      await handleMessage(sock, { ...msg, message: { conversation: line } }, upsertType);
+    }
+    return;
+  }
+
   // Catch-up messages (upsertType === 'append', see the messages.upsert
   // listener above) are handled far more conservatively than live ones:
   // only !in, !out, and !paid (typed OR resolved via a natural-language
@@ -1210,7 +1266,7 @@ async function handleMessage(sock, msg, upsertType) {
       console.log(
         `[bot] Dropped "${rawCmd}" in ${groupId} (from ${senderId}) because it arrived as a catch-up ('append') redelivery, not live - only ${[...CATCH_UP_COMMANDS].join('/')} are honored on catch-up (see the README's "Catching up after a network outage"). If this was a genuine request, the sender needs to send it again.`
       );
-    } else if (!text.startsWith(COMMAND_PREFIX) && messageMentionsBot(sock, msg)) {
+    } else if (!text.startsWith(COMMAND_PREFIX) && messageMentionsBot(sock, msg, text)) {
       const bareMention = !stripMentionTokens(text, getMentionedJids(msg)).trim();
       if (bareMention) {
         // No language to interpret at all - same "@Snoopy on its own
@@ -1311,7 +1367,7 @@ async function handleMessage(sock, msg, upsertType) {
   };
 
   if (!text.startsWith(COMMAND_PREFIX)) {
-    const mentionsBot = messageMentionsBot(sock, msg);
+    const mentionsBot = messageMentionsBot(sock, msg, text);
 
     // Acknowledge an @-mention immediately with 💬 ("seen"), then swap it
     // for ✅ below once the bot has actually sent something back - a quick

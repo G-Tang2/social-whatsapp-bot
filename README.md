@@ -100,6 +100,23 @@ if one is a duplicate or blocked, the rest still go through - you'll get a
 reply listing anything that didn't make it, and the group's updated list
 is posted once at the end.
 
+**Sending several different commands at once:** if every non-blank line of
+a message independently starts with a real command word - e.g.
+
+```
+!paid Sam
+!in Sam
+```
+
+sent as one message - each line is run as its own separate command, in
+order, exactly as if they'd been sent as separate messages. This is for
+combining *different* commands in one go (a comma list, above, is for
+repeating the *same* command over several names); blank lines between
+commands are fine too. If any line isn't a recognized command word, the
+whole message is left alone and treated as a single command instead - this
+is what keeps `!update`'s own pasted-list argument (which is never
+command-shaped past its first line) working exactly as before.
+
 **Bringing unnamed friends:** `!in +N` (e.g. `!in +2`) adds `N` guests you
 haven't named individually, as "you+1", "you+2", ... - shorthand for typing
 out `!in <your name>+1, <your name>+2` yourself. On its own, `+N` does NOT
@@ -1046,7 +1063,13 @@ current state. Every group starts off - each one opts in individually.
 - **Only triggered by an actual @-mention of the bot**, never by ordinary
   chat that merely sounds list-related - "I'm out of milk" in normal
   conversation is never at risk of being misread as `!out`, because the
-  bot was never mentioned.
+  bot was never mentioned. This also covers someone typing `@Snoopy` as
+  plain text rather than picking the bot from WhatsApp's own contact
+  picker (e.g. their app didn't register the selection, or they're just
+  used to typing it) - a genuine mention's raw text is always `@` followed
+  by a phone number, never the bot's name, so a literal "@Snoopy" can only
+  ever be someone addressing it by hand, and is treated exactly the same
+  as a real mention.
 - **Interpreted even for a caught-up (offline-backlog) message, but only
   ever DISPATCHED if it resolves to `!in`/`!out`/`!paid`.** Same boundary
   as the self-service catch-up commands below - acting on an AI's *guess*

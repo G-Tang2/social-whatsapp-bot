@@ -196,6 +196,21 @@ test('stripMentionTokens handles no mentions / empty text without throwing', () 
   assert.equal(stripMentionTokens('hi', undefined), 'hi');
 });
 
+test('stripMentionTokens also strips a literal "@Snoopy" TYPED as plain text, not just a real JID-based mention token', () => {
+  // No mentionedJids at all here - a real mention's raw text is always
+  // "@<number>", never "@Snoopy" itself (see LITERAL_BOT_MENTION_REGEX's
+  // own doc comment in lib/helpers.js), so this exercises the literal-text
+  // fallback path in isolation.
+  assert.equal(stripMentionTokens('@Snoopy put me down for Saturday', []), 'put me down for Saturday');
+  assert.equal(stripMentionTokens('put me down @Snoopy please', []), 'put me down please');
+  assert.equal(stripMentionTokens('@SNOOPY put me down', []), 'put me down');
+});
+
+test('stripMentionTokens does not strip "Snoopy" mid-word or without the leading "@" - only a literal "@Snoopy" mention-shaped token', () => {
+  assert.equal(stripMentionTokens('is Snoopy around?', []), 'is Snoopy around?');
+  assert.equal(stripMentionTokens('@Snoopydog put me down', []), '@Snoopydog put me down');
+});
+
 test('REGULAR_PLAYERS_TOKEN matches "regular players" and reasonable variants, case-insensitively', () => {
   for (const token of ['regular players', 'Regular Players', 'REGULARS', 'regulars', 'the regular players', 'regular player']) {
     assert.ok(REGULAR_PLAYERS_TOKEN.test(token), `expected "${token}" to match`);
