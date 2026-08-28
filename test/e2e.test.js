@@ -2141,6 +2141,34 @@ test('e2e: multiline commands still enforce per-line admin checks - an admin-onl
   assert.ok(refused, 'expected the !limit line to have been refused with an admin-only reply');
 });
 
+test('e2e: a multiline batch of three plain, all-successful !in commands posts the list only ONCE, not once per line', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+
+  // Each !in on its own is "quiet on success" (see the README) - just a
+  // list repost, no separate reply - so with nothing anomalous across all
+  // three lines, the WHOLE batch should produce exactly one message: one
+  // combined list repost showing all three names, reflecting the
+  // cumulative effect of all three lines, not three separate reposts.
+  await deliver('!in Riley\n!in Sasha\n!in Tatum', { from: 'admin@s.whatsapp.net', type: 'notify' });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1, 'expected exactly ONE message for the whole 3-line batch, not one per line');
+  const [posted] = fakeSockInstance.sentMessages;
+  assert.ok(/\bRiley\b/.test(posted.content.text) && /\bSasha\b/.test(posted.content.text) && /\bTatum\b/.test(posted.content.text), 'expected the single posted list to include all three names');
+});
+
+test('e2e: a multiline batch also reacts only ONCE to the original message (not once per line)', async () => {
+  fakeSockInstance.reactions.length = 0;
+
+  await deliver('!in Ellis\n!in Fenn', { from: 'admin@s.whatsapp.net', type: 'notify' });
+
+  // 💬 (acknowledged) then ✅ (done) - exactly two reactions total for the
+  // WHOLE batch, same as a single ordinary command already gets, not two
+  // per line (which would be 💬✅💬✅ for a 2-line batch if each line
+  // reacted on its own).
+  assert.equal(fakeSockInstance.reactions.length, 2, 'expected exactly one 💬 and one ✅ for the whole batch, not one pair per line');
+  assert.deepEqual(fakeSockInstance.reactions.map((r) => r.emoji), ['💬', '✅']);
+});
+
 test('e2e: messages from an unconfigured/disallowed group are ignored entirely', async () => {
   fakeSockInstance.sentMessages.length = 0;
   const upsertHandler = capturedHandlers['messages.upsert'];

@@ -109,13 +109,20 @@ a message independently starts with a real command word - e.g.
 ```
 
 sent as one message - each line is run as its own separate command, in
-order, exactly as if they'd been sent as separate messages. This is for
-combining *different* commands in one go (a comma list, above, is for
-repeating the *same* command over several names); blank lines between
-commands are fine too. If any line isn't a recognized command word, the
-whole message is left alone and treated as a single command instead - this
-is what keeps `!update`'s own pasted-list argument (which is never
-command-shaped past its first line) working exactly as before.
+order. This is for combining *different* commands in one go (a comma list,
+above, is for repeating the *same* command over several names); blank
+lines between commands are fine too. If any line isn't a recognized
+command word, the whole message is left alone and treated as a single
+command instead - this is what keeps `!update`'s own pasted-list argument
+(which is never command-shaped past its first line) working exactly as
+before.
+
+The whole batch still gets only ONE response, exactly as a single command
+would - not one per line: at most one combined reply covering anything
+that needs your attention across every line (same "quiet on success,
+vocal on denial" rule as everywhere else - see above), and one list repost
+right after showing the cumulative result of the whole batch, plus one
+✅/❌ on the message itself (❌ if any line failed).
 
 **Bringing unnamed friends:** `!in +N` (e.g. `!in +2`) adds `N` guests you
 haven't named individually, as "you+1", "you+2", ... - shorthand for typing

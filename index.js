@@ -1102,7 +1102,14 @@ async function handleAiMentionCatchUp({ sock, msg, groupId, senderId, senderName
   }
 }
 
-async function handleMessage(sock, msg, upsertType) {
+// `responseCollector` (optional) is only ever passed by the multiline-
+// commands dispatch below, recursing into this same function once per
+// line - when present, reply()/postList()/react()/setPresence() (defined
+// just below) redirect into it instead of actually sending anything, so
+// the TOP-level (non-recursive) call can flush ONE combined response for
+// the whole multi-line message instead of one per line. See the
+// isMultilineCommands block for the flush side of this.
+async function handleMessage(sock, msg, upsertType, responseCollector) {
   if (DEBUG) {
     // Logs EVERY incoming message before any filtering, so you can see
     // exactly what the bot received and figure out which filter (if any)
@@ -1195,6 +1202,57 @@ async function handleMessage(sock, msg, upsertType) {
   const rawCmd = (spaceIdx === -1 ? text : text.slice(0, spaceIdx)).toLowerCase();
   const argText = (spaceIdx === -1 ? '' : text.slice(spaceIdx + 1)).trim();
 
+  // Every reply string in this codebase is already hand-written in
+  // Snoopy's voice (see commands/*.js and this file) - sent as-is, no live
+  // Gemini call involved. Gemini itself is reserved for the natural-
+  // language mapping call (interpretMessage, see lib/geminiCommand.js),
+  // which is also the ONLY place a live Gemini-authored reply reaches the
+  // sender at all: the `offTopicReply` it produces for genuinely off-topic
+  // messages (see formatOffTopicReply above) - everything else, including
+  // every dispatched command's confirmation, stays fully hand-written.
+  //
+  // Defined up here (rather than just below the catch-up gate, where a
+  // single live command dispatches) so the multiline-commands block right
+  // below can share these same closures - see responseCollector's doc
+  // comment on handleMessage's signature above for why each one checks it
+  // first.
+  const reply = async (body) => {
+    if (responseCollector) { responseCollector.replyTexts.push(body); return; }
+    return sock.sendMessage(groupId, { text: body }, { quoted: msg });
+  };
+  const postList = () => {
+    if (responseCollector) { responseCollector.listChanged = true; return; }
+    return sock.sendMessage(groupId, { text: formatList(groupId) });
+  };
+  // Best-effort reaction on the mentioning message itself - a failure here
+  // (e.g. the message was deleted, or WhatsApp briefly rejects it) is
+  // cosmetic and must never take down the actual command handling below.
+  const react = async (emoji) => {
+    if (responseCollector) { if (emoji === '❌') responseCollector.errored = true; return; }
+    try {
+      await sock.sendMessage(groupId, { react: { text: emoji, key: msg.key } });
+    } catch (err) {
+      console.error(`[bot] Failed to react (${emoji}) to a message in ${groupId}:`, err.message);
+    }
+  };
+  // Chat-level "typing..." indicator, shown alongside the 💬/✅ reaction
+  // above while the bot is actually doing the work of handling a live
+  // message (a command, or an @-mention/reply that gets dispatched to a
+  // handler) - set to 'composing' right before that work starts and back
+  // to 'available' once it's done, success or failure (every call site
+  // below uses try/finally so a thrown handler error can never leave the
+  // indicator stuck on "typing..."). Best-effort, same as react() - a
+  // failure here is cosmetic and must never take down the actual command
+  // handling.
+  const setPresence = async (type) => {
+    if (responseCollector) return; // one shared "typing..." period at the top level covers the whole batch instead
+    try {
+      await sock.sendPresenceUpdate(type, groupId);
+    } catch (err) {
+      console.error(`[bot] Failed to set presence (${type}) in ${groupId}:`, err.message);
+    }
+  };
+
   // Multiline commands: a message where EVERY non-blank line independently
   // starts with a real, recognized command word (e.g. "!paid Sam\n!in Sam")
   // is dispatched as one separate command per line, by recursively
@@ -1215,12 +1273,22 @@ async function handleMessage(sock, msg, upsertType) {
   // rather than the combined blob's first line incorrectly gating every
   // line at once.
   //
-  // Each line's own reply text/list repost is the authoritative feedback
-  // for that line; the 💬/✅/❌ reaction on the shared original message just
-  // ends up reflecting whichever line was processed most recently
-  // (WhatsApp only ever shows one reaction per reactor on a message) - a
-  // cosmetic limitation, not a silent failure, since every line's real
-  // outcome is still posted as its own message.
+  // Only ONE response goes back to the chat for the whole message, not one
+  // per line: each recursive call below is passed a shared
+  // `responseCollector` ({ replyTexts: [], listChanged: false, errored:
+  // false }), which reply()/postList()/react()/setPresence() (defined
+  // above) redirect into instead of actually sending anything - see their
+  // own doc comments. Once every line has run, this (the top-level,
+  // non-recursive) call flushes it as: one combined reply (every
+  // collected reply line's text, in order, blank-line-separated) if any
+  // line had something to say, one list repost if any line actually
+  // changed the list (reads the CURRENT list, so it already reflects every
+  // line's cumulative effect - no need to post once per line), and one
+  // final ✅/❌ reaction (❌ if ANY line's command handler threw - each
+  // such error already becomes both a collected UNEXPECTED_ERROR_REPLY
+  // text below AND an `errored` flag, via the exact same internal
+  // try/catch a single live command dispatch already goes through - see
+  // that catch block below).
   const nonBlankLines = text.split('\n').map((line) => line.trim()).filter(Boolean);
   const isMultilineCommands = nonBlankLines.length > 1 && nonBlankLines.every((line) => {
     const lineSpaceIdx = line.search(/\s/);
@@ -1228,8 +1296,22 @@ async function handleMessage(sock, msg, upsertType) {
     return Boolean(commands[lineCmd]);
   });
   if (isMultilineCommands) {
-    for (const line of nonBlankLines) {
-      await handleMessage(sock, { ...msg, message: { conversation: line } }, upsertType);
+    if (upsertType === 'notify') {
+      await react('💬');
+      await setPresence('composing');
+    }
+    const collector = { replyTexts: [], listChanged: false, errored: false };
+    try {
+      for (const line of nonBlankLines) {
+        await handleMessage(sock, { ...msg, message: { conversation: line } }, upsertType, collector);
+      }
+    } finally {
+      if (upsertType === 'notify') await setPresence('available');
+    }
+    if (upsertType === 'notify') {
+      if (collector.replyTexts.length) await reply(collector.replyTexts.join('\n\n'));
+      if (collector.listChanged) await postList();
+      await react(collector.errored ? '❌' : '✅');
     }
     return;
   }
@@ -1328,43 +1410,6 @@ async function handleMessage(sock, msg, upsertType) {
   if (activity.isEnabled(groupId)) {
     activity.recordActivity(groupId, senderId);
   }
-
-  // Every reply string in this codebase is already hand-written in
-  // Snoopy's voice (see commands/*.js and this file) - sent as-is, no live
-  // Gemini call involved. Gemini itself is reserved for the natural-
-  // language mapping call (interpretMessage, see lib/geminiCommand.js),
-  // which is also the ONLY place a live Gemini-authored reply reaches the
-  // sender at all: the `offTopicReply` it produces for genuinely off-topic
-  // messages (see formatOffTopicReply above) - everything else, including
-  // every dispatched command's confirmation, stays fully hand-written.
-  const reply = async (body) => sock.sendMessage(groupId, { text: body }, { quoted: msg });
-  const postList = () => sock.sendMessage(groupId, { text: formatList(groupId) });
-  // Best-effort reaction on the mentioning message itself - a failure here
-  // (e.g. the message was deleted, or WhatsApp briefly rejects it) is
-  // cosmetic and must never take down the actual command handling below.
-  const react = async (emoji) => {
-    try {
-      await sock.sendMessage(groupId, { react: { text: emoji, key: msg.key } });
-    } catch (err) {
-      console.error(`[bot] Failed to react (${emoji}) to a message in ${groupId}:`, err.message);
-    }
-  };
-  // Chat-level "typing..." indicator, shown alongside the 💬/✅ reaction
-  // above while the bot is actually doing the work of handling a live
-  // message (a command, or an @-mention/reply that gets dispatched to a
-  // handler) - set to 'composing' right before that work starts and back
-  // to 'available' once it's done, success or failure (every call site
-  // below uses try/finally so a thrown handler error can never leave the
-  // indicator stuck on "typing..."). Best-effort, same as react() - a
-  // failure here is cosmetic and must never take down the actual command
-  // handling.
-  const setPresence = async (type) => {
-    try {
-      await sock.sendPresenceUpdate(type, groupId);
-    } catch (err) {
-      console.error(`[bot] Failed to set presence (${type}) in ${groupId}:`, err.message);
-    }
-  };
 
   if (!text.startsWith(COMMAND_PREFIX)) {
     const mentionsBot = messageMentionsBot(sock, msg, text);
