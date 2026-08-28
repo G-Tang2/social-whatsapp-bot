@@ -2203,7 +2203,25 @@ test('e2e: a direct message gets one fixed redirect reply, not silence', async (
 
   assert.equal(fakeSockInstance.sentMessages.length, 1, 'expected exactly one reply to a DM');
   assert.equal(fakeSockInstance.sentMessages[0].jid, 'morgan@s.whatsapp.net');
-  assert.ok(/doghouse|group chat/i.test(fakeSockInstance.sentMessages[0].content.text), 'expected the fixed DM redirect text');
+  const replyText = fakeSockInstance.sentMessages[0].content.text;
+  assert.ok(/bot/i.test(replyText), 'expected the reply to explicitly state it\'s a bot');
+  assert.ok(/organiser/i.test(replyText), 'expected the reply to point to the organiser');
+  assert.ok(/group chat/i.test(replyText), 'expected the reply to say the organiser is reachable in the group chat');
+});
+
+test('e2e: the SAME direct message delivered twice (same message id, e.g. a genuine WhatsApp/Baileys redelivery) only gets ONE redirect reply, not two', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+  const upsertHandler = capturedHandlers['messages.upsert'];
+  const duplicateMsg = {
+    key: { remoteJid: 'jamie@s.whatsapp.net', fromMe: false, id: 'DM-DUP-1' },
+    pushName: 'jamie',
+    message: { conversation: 'hello?' },
+  };
+
+  await upsertHandler({ messages: [duplicateMsg], type: 'notify' });
+  await upsertHandler({ messages: [duplicateMsg], type: 'notify' });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1, 'expected only ONE reply across both deliveries of the same message id');
 });
 
 test('e2e: a direct message from the newer @lid JID form also gets the redirect reply', async () => {

@@ -1788,9 +1788,11 @@ Check these in order:
 
 2. **Did you send it as a direct message instead of in the group?** The bot
    only ever runs the list from inside the group chat - a DM gets a fixed
-   one-line redirect ("I only run the signup list from inside the group
-   chat...") rather than actually doing anything, since a DM has no group
-   for a command to apply to.
+   one-line redirect ("Hi, this is an automated bot... please contact the
+   organiser in the group chat instead") rather than actually doing
+   anything, since a DM has no group for a command to apply to. Only sent
+   once per message, even if WhatsApp happens to redeliver the same DM more
+   than once.
 
 3. **Is `ALLOWED_GROUPS` already set to something in your `.env`?** Once it
    has any value, the bot stops logging "unconfigured group" messages for

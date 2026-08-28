@@ -403,6 +403,16 @@ function effectiveUpsertType(msg, type) {
 // instant before a restart) is vanishingly narrow.
 const lastLiveMessageByGroup = new Map();
 
+// Message ids the DM redirect reply (see DM_REDIRECT_REPLY/the DM branch
+// in handleMessage below) has already been sent for - WhatsApp/Baileys can
+// genuinely deliver the exact same direct message through
+// 'messages.upsert' more than once, and without this, each redelivery
+// would earn its own reply, turning one DM into a burst of duplicate
+// "I'm a bot" replies. In-memory only, unbounded (no eviction) - DMs to a
+// group-list bot are rare enough that this never grows large enough to
+// matter, same trade-off as the other plain in-memory state in this file.
+const repliedDmMessageIds = new Set();
+
 // Handles ONE entry of Baileys' 'messages.update' event - the channel a
 // message EDIT (not a brand new message) arrives on, entirely separate
 // from 'messages.upsert' (see effectiveUpsertType above, which only ever
@@ -761,8 +771,11 @@ const UNEXPECTED_ERROR_REPLY = "Uh oh, tripped over my own paws there - somethin
 // every command/list here is scoped to a specific GROUP (see `groupId`
 // throughout this file), and a DM has no group to act on - resolving
 // "which group" for a DM sender is a bigger feature than a redirect
-// reply needs to solve.
-const DM_REDIRECT_REPLY = "Oh, a private visitor to the doghouse! I only run the signup list from inside the group chat itself, though - track me down there and I'll be glad to help.";
+// reply needs to solve. Explicitly states it's an automated bot (unlike
+// every other reply in this file, which stays in Snoopy's voice without
+// ever calling itself that) and points to the group's organiser rather
+// than the bot itself, since there's genuinely no one reading DMs here.
+const DM_REDIRECT_REPLY = "Hi, this is an automated bot - I don't read or respond to direct messages. For help, please contact the organiser in the group chat instead.";
 
 // Handles a live, non-"!"-prefixed message that @-mentioned the bot, in a
 // group that has !ai turned on (see the call site in handleMessage below
@@ -1160,7 +1173,20 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
     // something to ever reply to. No real content (msg.message, e.g. a
     // reaction or protocol message) is skipped the same way the group path
     // below skips it - nothing to actually respond to there either.
-    if (msg.message && (groupId.endsWith('@s.whatsapp.net') || groupId.endsWith('@lid'))) {
+    // WhatsApp/Baileys can genuinely deliver the SAME DM through
+    // 'messages.upsert' more than once (e.g. once as it first arrives and
+    // again shortly after) - the message id itself (set by the sender,
+    // not by us) stays identical across those redeliveries even though
+    // it's a distinct event each time, so tracking ids already replied to
+    // here is what stops that from becoming two redirect replies for what
+    // was really one DM. See repliedDmMessageIds above.
+    if (
+      msg.message
+      && (groupId.endsWith('@s.whatsapp.net') || groupId.endsWith('@lid'))
+      && msg.key.id
+      && !repliedDmMessageIds.has(msg.key.id)
+    ) {
+      repliedDmMessageIds.add(msg.key.id);
       try {
         await sock.sendMessage(groupId, { text: DM_REDIRECT_REPLY }, { quoted: msg });
       } catch (err) {
