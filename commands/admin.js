@@ -1320,7 +1320,7 @@ async function handleUpdate(ctx) {
   }
 
   const changed = Boolean(
-    result.added.length || result.removed.length || result.moved.length
+    result.added.length || result.removed.length || result.moved.length || result.reordered
       || result.paidAdded.length || result.paidRemoved.length || result.tournamentChanged.length
       || headerFieldsChanged || paymentLabelChanged
   );
@@ -1341,6 +1341,16 @@ async function handleUpdate(ctx) {
   if (result.removed.length) summaryLines.push(`Removed: ${result.removed.join(', ')}`);
   if (result.moved.length) {
     summaryLines.push(`Moved: ${result.moved.map((m) => `${m.name} (${m.from} → ${m.to})`).join(', ')}`);
+  }
+  if (result.reordered) {
+    // Only a POSITION change within the same section, not covered by
+    // "Moved" above (that's section changes only) - real bug report: this
+    // used to be invisible, so reordering someone up/down the list (e.g.
+    // moving a name up the waitlist queue) looked like it silently did
+    // nothing at all - "No changes found" below, no repost - even though
+    // store.js's applyListUpdate had already correctly persisted the new
+    // order.
+    summaryLines.push('Reordered to match your edit.');
   }
   if (result.tournamentChanged.length) {
     summaryLines.push(`Tournament: ${result.tournamentChanged.map((c) => `${c.name} (${c.from} → ${c.to})`).join(', ')}`);

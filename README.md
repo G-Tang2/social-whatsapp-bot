@@ -478,7 +478,13 @@ text entirely is treated as removed. The bot always replies with a summary
 of what it read - added/removed/moved names, plus the payment section's
 own additions/removals if that was edited too - and reposts the fresh list
 right after, so there's no guessing whether the parse matched what was
-intended.
+intended. This includes a **pure reorder** too - if you just moved
+someone's position within the same section (e.g. bumped someone up the
+waitlist queue) without adding, removing, or moving them between sections
+at all, the reply says "Reordered to match your edit" rather than "No
+changes found" - the new order is real and gets posted right along with
+it, not silently dropped just because nothing else about the request
+changed.
 
 **While the tournament's on, this also works for tournament/social-only
 placement.** If the pasted `*Attendance*` block includes the `🏆

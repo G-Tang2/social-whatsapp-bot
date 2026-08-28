@@ -1496,14 +1496,24 @@ function removeEntry(groupId, name) {
  * final, with no auto-promotion to backfill unused capacity if the editor
  * simply didn't list enough tournament players to fill it.
  *
- * Returns a summary: { added, removed, moved, paidAdded, paidRemoved,
- * tournamentChanged } - `added`/`removed` list plain names
+ * Returns a summary: { added, removed, moved, reordered, paidAdded,
+ * paidRemoved, tournamentChanged } - `added`/`removed` list plain names
  * (attendance+waitlist combined), `moved` lists { name, from, to } for
- * names that changed section, `paidAdded`/`paidRemoved` cover the payment
- * section the same way, and `tournamentChanged` lists { name, from, to }
- * (from/to each one of 'tournament'/'queued'/'social only') for every name
- * whose tournament placement actually changed - always empty when
- * `parsed.tournamentPlayers` was null.
+ * names that changed section, `reordered` is a plain boolean - true if any
+ * name that stayed in the SAME section (attendance or waitlist) ended up
+ * in a different relative position there, distinct from `moved` (which
+ * only fires on a section change, never a same-section reorder) - this is
+ * what lets a caller (see commands/admin.js's handleUpdate) tell "the
+ * editor only reordered who's already here" apart from "nothing in this
+ * paste actually differs from the current list," since both would
+ * otherwise leave every other field in this return value empty.
+ * `paidAdded`/`paidRemoved` cover the payment section the same way (no
+ * equivalent `reordered` flag for it - payment-due order has never been
+ * meaningful, it's always shown grouped by date, not by roster position),
+ * and `tournamentChanged` lists { name, from, to } (from/to each one of
+ * 'tournament'/'queued'/'social only') for every name whose tournament
+ * placement actually changed - always empty when `parsed.tournamentPlayers`
+ * was null.
  */
 function applyListUpdate(groupId, parsed, editorId, editorIsAdmin) {
   const all = readAll();
@@ -1562,6 +1572,13 @@ function applyListUpdate(groupId, parsed, editorId, editorIsAdmin) {
     return result;
   }
 
+  // Snapshotted before current.entries/waitlist are overwritten below -
+  // every name here is necessarily "from" this exact section (that's
+  // literally where it's being read from), needed for the reorder check
+  // just after.
+  const oldEntriesOrder = current.entries.map((e) => normalizeName(e.name));
+  const oldWaitlistOrder = current.waitlist.map((e) => normalizeName(e.name));
+
   const newEntries = resolveSection(parsed.attendance || [], 'attendance');
   const newWaitlist = resolveSection(parsed.waitlist || [], 'waitlist');
 
@@ -1573,6 +1590,31 @@ function applyListUpdate(groupId, parsed, editorId, editorIsAdmin) {
 
   current.entries = newEntries;
   current.waitlist = newWaitlist;
+
+  // A PURE reorder - the same set of names stayed in the same section, just
+  // in a different relative sequence - is otherwise invisible: it's not an
+  // add/remove, and not a section change (`moved` above only fires when a
+  // name's SECTION changes, e.g. waitlist -> attendance, not when its
+  // POSITION within one does). Real bug report: reordering a pasted-back
+  // list (e.g. moving someone up the waitlist queue) silently persisted
+  // correctly (current.entries/waitlist ARE reassigned to the new order,
+  // right above) but handleUpdate's own "did anything change" check
+  // (commands/admin.js) had no way to know that, so it told the editor
+  // "No changes found" and never reposted the list - looking exactly like
+  // the edit had been ignored, even though it had actually taken effect.
+  // Restricted to names that were in THIS section both before and after
+  // (a brand-new add, or one that just moved in from the other section,
+  // has no "before" position within this section to compare against).
+  function keptOrder(orderedNames, sectionLabel) {
+    return orderedNames.filter((normalized) => existingByName.get(normalized)?.from === sectionLabel);
+  }
+  const newAttendanceKept = keptOrder(newEntries.map((e) => normalizeName(e.name)), 'attendance');
+  const newWaitlistKept = keptOrder(newWaitlist.map((e) => normalizeName(e.name)), 'waitlist');
+  const oldAttendanceKept = oldEntriesOrder.filter((n) => newAttendanceKept.includes(n));
+  const oldWaitlistKept = oldWaitlistOrder.filter((n) => newWaitlistKept.includes(n));
+  const reordered =
+    JSON.stringify(oldAttendanceKept) !== JSON.stringify(newAttendanceKept)
+    || JSON.stringify(oldWaitlistKept) !== JSON.stringify(newWaitlistKept);
 
   // Tournament/social-only placement - see this function's doc comment for
   // the full reasoning. Only touched at all when the pasted text actually
@@ -1699,7 +1741,7 @@ function applyListUpdate(groupId, parsed, editorId, editorIsAdmin) {
   current.duePayments = newDue;
 
   writeAll(all);
-  return { added, removed, moved, paidAdded, paidRemoved, tournamentChanged };
+  return { added, removed, moved, reordered, paidAdded, paidRemoved, tournamentChanged };
 }
 
 // Wipes the current list's entries AND waitlist in place - same date/

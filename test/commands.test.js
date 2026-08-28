@@ -2049,6 +2049,32 @@ test('handleUpdate: pasting back a tournament-formatted list UNCHANGED (🏆 Tou
   assert.equal(bao.addedBy, 'bao@s.whatsapp.net'); // original metadata intact
 });
 
+// Real bug report: reordering names in a pasted-back edit (e.g. moving
+// someone up the queue) used to be silently invisible - store.js's
+// applyListUpdate DID persist the new order correctly, but handleUpdate's
+// own "did anything change" check had no way to know that, so it replied
+// "No changes found" and never reposted the list, looking exactly like the
+// edit had been ignored.
+test('handleUpdate: reordering names (no add/remove) is recognized as a real change - a proper reply and a repost, not "No changes found"', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
+
+  const before = sock.sentMessages.length;
+  const pastedEdit = ['*Attendance*', '', '1. Henry', '2. Grace'].join('\n'); // swapped
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: pastedEdit });
+  await adminCommands.handleUpdate(ctx);
+
+  assert.match(replies[0], /Reordered to match your edit/);
+  assert.ok(!/No changes found/.test(replies[0]));
+  assert.equal(sock.sentMessages.length, before + 2); // the summary reply AND a repost
+  assert.deepEqual(
+    store.getCurrentEvent(groupId).entries.map((e) => e.name),
+    ['Henry', 'Grace']
+  );
+});
+
 test('handleUpdate: editing who\'s listed under "🏆 Tournament" vs "Social only" actually swaps tournament membership, with a summary reply and a repost', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });

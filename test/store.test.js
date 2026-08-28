@@ -698,6 +698,100 @@ test('applyListUpdate: kept names preserve their original addedBy/addedByIsAdmin
   assert.equal(entries[1].addedBy, 'alex@s.whatsapp.net');
 });
 
+// --- applyListUpdate()'s `reordered` flag - real bug report: a PURE
+// reorder (same names, same section, different position) used to be
+// completely invisible to handleUpdate (commands/admin.js), which only
+// checked added/removed/moved/etc - so reordering someone (e.g. moving a
+// name up the waitlist queue) replied "No changes found" and never
+// reposted the list, even though the new order WAS correctly persisted. ---
+
+test('applyListUpdate: reordering names within Attendance (no add/remove/section-change) sets reordered: true', () => {
+  const groupId = freshGroupId();
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
+
+  const result = store.applyListUpdate(
+    groupId,
+    { attendance: ['Henry', 'Grace'], waitlist: [], duePayments: [] }, // swapped
+    'editor@s.whatsapp.net',
+    true
+  );
+  assert.equal(result.reordered, true);
+  // Nothing else changed - no add/remove/section-move for this pure reorder.
+  assert.deepEqual(result.added, []);
+  assert.deepEqual(result.removed, []);
+  assert.deepEqual(result.moved, []);
+  assert.deepEqual(
+    store.getCurrentEvent(groupId).entries.map((e) => e.name),
+    ['Henry', 'Grace']
+  );
+});
+
+test('applyListUpdate: reordering names within the Waitlist sets reordered: true', () => {
+  const groupId = freshGroupId();
+  store.setLimit(groupId, 0); // force straight onto the waitlist
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
+  assert.equal(store.getCurrentEvent(groupId).waitlist.length, 2);
+
+  const result = store.applyListUpdate(
+    groupId,
+    { attendance: [], waitlist: ['Henry', 'Grace'], duePayments: [] }, // swapped
+    'editor@s.whatsapp.net',
+    true
+  );
+  assert.equal(result.reordered, true);
+  assert.deepEqual(
+    store.getCurrentEvent(groupId).waitlist.map((e) => e.name),
+    ['Henry', 'Grace']
+  );
+});
+
+test('applyListUpdate: pasting the SAME order back (no actual edit at all) leaves reordered: false', () => {
+  const groupId = freshGroupId();
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
+
+  const result = store.applyListUpdate(
+    groupId,
+    { attendance: ['Grace', 'Henry'], waitlist: [], duePayments: [] }, // same order
+    'editor@s.whatsapp.net',
+    true
+  );
+  assert.equal(result.reordered, false);
+});
+
+test('applyListUpdate: a pure add (new name appended at the end, everyone else unmoved) is NOT counted as reordered', () => {
+  const groupId = freshGroupId();
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
+
+  const result = store.applyListUpdate(
+    groupId,
+    { attendance: ['Grace', 'Henry', 'NewPerson'], waitlist: [], duePayments: [] },
+    'editor@s.whatsapp.net',
+    true
+  );
+  assert.deepEqual(result.added, ['NewPerson']);
+  assert.equal(result.reordered, false, 'the two EXISTING names kept their same relative order - only a genuine add happened');
+});
+
+test('applyListUpdate: a section move (Waitlist -> Attendance) alone does not also count as reordered for the OTHER kept names', () => {
+  const groupId = freshGroupId();
+  store.setLimit(groupId, 1);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Quinn', 'jo@s.whatsapp.net', false); // waitlisted (limit 1)
+
+  const result = store.applyListUpdate(
+    groupId,
+    { attendance: ['Grace', 'Quinn'], waitlist: [], duePayments: [] }, // Quinn promoted, Grace's own position unchanged
+    'editor@s.whatsapp.net',
+    true
+  );
+  assert.deepEqual(result.moved, [{ name: 'Quinn', from: 'waitlist', to: 'attendance' }]);
+  assert.equal(result.reordered, false, 'Grace (the only OTHER attendance-kept name) stayed exactly where she was');
+});
+
 test('applyListUpdate: a brand-new name is attributed to the editor', () => {
   const groupId = freshGroupId();
   store.applyListUpdate(
