@@ -1786,33 +1786,39 @@ Check these in order:
    solo, you need a *second* WhatsApp account (e.g. your personal one) that's
    also a member of the group, and send the command from that one.
 
-2. **Is `ALLOWED_GROUPS` already set to something in your `.env`?** Once it
+2. **Did you send it as a direct message instead of in the group?** The bot
+   only ever runs the list from inside the group chat - a DM gets a fixed
+   one-line redirect ("I only run the signup list from inside the group
+   chat...") rather than actually doing anything, since a DM has no group
+   for a command to apply to.
+
+3. **Is `ALLOWED_GROUPS` already set to something in your `.env`?** Once it
    has any value, the bot stops logging "unconfigured group" messages for
    groups that don't match - it just silently ignores them. If you're still
    trying to find a JID, clear `ALLOWED_GROUPS=` back to empty, restart the
    bot (or run `npm run list-groups` instead, which doesn't care about
    `ALLOWED_GROUPS` at all).
 
-3. **Is the bot actually connected?** Check the terminal/`pm2 logs` for
+4. **Is the bot actually connected?** Check the terminal/`pm2 logs` for
    `[bot] Connected to WhatsApp.` If you don't see it, the bot isn't
    receiving anything yet - check for errors above that line.
 
-4. **Is the linked account actually a member of the group?** The bot only
+5. **Is the linked account actually a member of the group?** The bot only
    receives messages from groups the linked WhatsApp account has joined.
 
-5. **Turn on debug logging.** Set `DEBUG=true` in `.env` and restart the
+6. **Turn on debug logging.** Set `DEBUG=true` in `.env` and restart the
    bot. It will now print every incoming message (chat, sender, whether it
    was `fromMe`, and the text) before any filtering happens - this tells you
    exactly what the bot is seeing, or confirms it's seeing nothing at all
-   (which points back to step 3 or 4).
+   (which points back to step 4 or 5).
 
-6. **Was the command sent while the bot's host was offline?** If so, and
+7. **Was the command sent while the bot's host was offline?** If so, and
    it wasn't `!in`, `!out`, or `!paid`, that's expected - see "Catching up
-   after a network outage" below. The debug log from step 5 will show
+   after a network outage" below. The debug log from step 6 will show
    `upsertType: 'append'` for a message like this, versus `'notify'` for a
    normal live one.
 
-7. **Do the logs show `[bot] Connection closed.` (e.g. after the host slept,
+8. **Do the logs show `[bot] Connection closed.` (e.g. after the host slept,
    lost Wi-Fi, or a router hiccup)?** This is expected any time the
    underlying network connection drops - the `statusCode` shown alongside it
    (e.g. `400`, `408`) isn't a specific error to chase down, it's just
@@ -1840,7 +1846,7 @@ Check these in order:
    `[bot] Dropped an @-mention of me in <group> ...` (natural-language
    mentions), which explains exactly which of these caused it:
    - **It arrived as a catch-up (`'append'`) redelivery, not live** - same
-     root cause as step 6 above (the bot's connection was briefly down when
+     root cause as step 7 above (the bot's connection was briefly down when
      it first arrived). Only `!in`/`!out`/`!paid` are ever honored on
      catch-up (see "Catching up after a network outage" below) - every
      other command, and every natural-language mention, is dropped even
@@ -1855,7 +1861,7 @@ Check these in order:
    deliberately silent, by design). For a natural-language mention with no
    log line, the mention itself likely didn't resolve to the bot's own
    WhatsApp identity (a JID/LID addressing quirk - see
-   `messageMentionsBot()` in `index.js`) - `DEBUG=true` (step 5) will show
+   `messageMentionsBot()` in `index.js`) - `DEBUG=true` (step 6) will show
    the raw `mentionedJid` array Baileys reported for that message, which is
    the next thing to compare against the bot's own `botJid` shown in the
    same debug line.

@@ -754,6 +754,16 @@ const AI_TIMEOUT_REPLY = `Whoops, daydreamed a bit too long on that one - took t
 // running the bot to investigate.
 const UNEXPECTED_ERROR_REPLY = "Uh oh, tripped over my own paws there - something went wrong on my end handling that. Try again in a bit, and let an admin know if it keeps happening.";
 
+// Shown once for every direct message the bot receives (see the DM branch
+// in handleMessage below) - a fixed redirect, not silence, so someone who
+// tries messaging it privately gets a clear signal rather than wondering
+// if it's broken. Deliberately just a redirect, not any real functionality:
+// every command/list here is scoped to a specific GROUP (see `groupId`
+// throughout this file), and a DM has no group to act on - resolving
+// "which group" for a DM sender is a bigger feature than a redirect
+// reply needs to solve.
+const DM_REDIRECT_REPLY = "Oh, a private visitor to the doghouse! I only run the signup list from inside the group chat itself, though - track me down there and I'll be glad to help.";
+
 // Handles a live, non-"!"-prefixed message that @-mentioned the bot, in a
 // group that has !ai turned on (see the call site in handleMessage below
 // for the other trigger conditions). Asks Gemini to interpret it as ONE OR
@@ -1141,7 +1151,24 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
   if (msg.key.fromMe) return;
 
   const groupId = msg.key.remoteJid;
-  if (!groupId || !groupId.endsWith('@g.us')) return; // only moderate group chats
+  if (!groupId || !groupId.endsWith('@g.us')) {
+    // A genuine 1:1 direct message - JIDs for a real WhatsApp account
+    // always end in one of these two suffixes (same two forms
+    // messageMentionsBot() above checks for the bot's OWN id/lid), which
+    // rules out other non-group traffic Baileys can surface here too, e.g.
+    // "status@broadcast" for a contact's WhatsApp Status updates - not
+    // something to ever reply to. No real content (msg.message, e.g. a
+    // reaction or protocol message) is skipped the same way the group path
+    // below skips it - nothing to actually respond to there either.
+    if (msg.message && (groupId.endsWith('@s.whatsapp.net') || groupId.endsWith('@lid'))) {
+      try {
+        await sock.sendMessage(groupId, { text: DM_REDIRECT_REPLY }, { quoted: msg });
+      } catch (err) {
+        console.error(`[bot] Failed to reply to a DM from ${groupId}:`, err.message);
+      }
+    }
+    return;
+  }
 
   if (!msg.message) return; // no real content (e.g. a reaction or protocol message) - nothing to record or act on
 

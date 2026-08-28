@@ -2183,6 +2183,79 @@ test('e2e: messages from an unconfigured/disallowed group are ignored entirely',
   assert.equal(fakeSockInstance.sentMessages.length, 0);
 });
 
+// Direct messages (see the DM redirect branch in index.js's handleMessage,
+// right where it first checks the chat JID ends in "@g.us") - a genuine
+// 1:1 chat's remoteJid is the SENDER's own JID (no separate `participant`,
+// unlike a group message), which real Baileys always sends as either the
+// classic @s.whatsapp.net form or the newer @lid form.
+test('e2e: a direct message gets one fixed redirect reply, not silence', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+  const upsertHandler = capturedHandlers['messages.upsert'];
+
+  await upsertHandler({
+    messages: [{
+      key: { remoteJid: 'morgan@s.whatsapp.net', fromMe: false, id: 'DM1' },
+      pushName: 'morgan',
+      message: { conversation: '!in' },
+    }],
+    type: 'notify',
+  });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1, 'expected exactly one reply to a DM');
+  assert.equal(fakeSockInstance.sentMessages[0].jid, 'morgan@s.whatsapp.net');
+  assert.ok(/doghouse|group chat/i.test(fakeSockInstance.sentMessages[0].content.text), 'expected the fixed DM redirect text');
+});
+
+test('e2e: a direct message from the newer @lid JID form also gets the redirect reply', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+  const upsertHandler = capturedHandlers['messages.upsert'];
+
+  await upsertHandler({
+    messages: [{
+      key: { remoteJid: '999888111@lid', fromMe: false, id: 'DM2' },
+      pushName: 'reese',
+      message: { conversation: 'hey are you there' },
+    }],
+    type: 'notify',
+  });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+});
+
+test('e2e: a WhatsApp Status update ("status@broadcast") never gets a reply - not a real DM', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+  const upsertHandler = capturedHandlers['messages.upsert'];
+
+  await upsertHandler({
+    messages: [{
+      key: { remoteJid: 'status@broadcast', participant: 'morgan@s.whatsapp.net', fromMe: false, id: 'STATUS1' },
+      pushName: 'morgan',
+      message: { conversation: 'some status text' },
+    }],
+    type: 'notify',
+  });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 0, 'status@broadcast must never be treated as a DM');
+});
+
+test('e2e: a DM with no real message content (e.g. a bare protocol message) gets no reply', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+  const upsertHandler = capturedHandlers['messages.upsert'];
+
+  await upsertHandler({
+    messages: [{
+      key: { remoteJid: 'casey@s.whatsapp.net', fromMe: false, id: 'DM3' },
+      pushName: 'casey',
+      // no `message` at all - same "nothing real to respond to" shape the
+      // group path already skips (see the !msg.message check just below
+      // the DM branch).
+    }],
+    type: 'notify',
+  });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 0);
+});
+
 // Regression coverage for the reconnect-after-sleep bug: a non-logged-out
 // close used to call `start()` with no error handling and no delay, which
 // (a) could crash the whole process via an unhandled rejection if the
