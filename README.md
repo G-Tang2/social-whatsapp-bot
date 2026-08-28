@@ -1794,6 +1794,17 @@ Check these in order:
    once per message, even if WhatsApp happens to redeliver the same DM more
    than once.
 
+   **Getting TWO redirect replies to the same DM?** This means the phone
+   number is linked as more than one companion device at once (e.g. you're
+   running two separate deployments of this bot - different `AUTH_DIR`s,
+   different `.env`s - both linked from the same phone's WhatsApp, maybe
+   one per group). WhatsApp delivers a DM to every linked companion device,
+   and each deployment is otherwise fully independent with no way to know
+   the others already replied. Set `DM_REPLIES_ENABLED=false` in all but
+   one deployment's `.env` so only one of them ever replies to a DM - see
+   `.env.example`. This doesn't affect group commands at all, since
+   `ALLOWED_GROUPS` already scopes those correctly per deployment.
+
 3. **Is `ALLOWED_GROUPS` already set to something in your `.env`?** Once it
    has any value, the bot stops logging "unconfigured group" messages for
    groups that don't match - it just silently ignores them. If you're still

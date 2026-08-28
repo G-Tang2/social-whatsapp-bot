@@ -283,6 +283,7 @@ const {
   COMMAND_PREFIX,
   DEBUG,
   LAST_SEEN_STATUS_ENABLED,
+  DM_REPLIES_ENABLED,
   LAST_SEEN_STATUS_INTERVAL_MS,
   VACANCY_REMINDER_INTERVAL_MS,
   INACTIVITY_CHECK_INTERVAL_MS,
@@ -1181,7 +1182,8 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
     // here is what stops that from becoming two redirect replies for what
     // was really one DM. See repliedDmMessageIds above.
     if (
-      msg.message
+      DM_REPLIES_ENABLED
+      && msg.message
       && (groupId.endsWith('@s.whatsapp.net') || groupId.endsWith('@lid'))
       && msg.key.id
       && !repliedDmMessageIds.has(msg.key.id)
