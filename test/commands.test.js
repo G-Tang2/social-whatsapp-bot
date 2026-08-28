@@ -491,6 +491,63 @@ test('handleOut: bare "!out tournament" resolves to the sender\'s own entry', as
   assert.equal(entry.tournament, false);
 });
 
+// Real bug report: a natural-language "make me social only"/"take me out
+// of the tournament" always maps to bare "!out tournament" (see
+// lib/geminiCommand.js's "out" SPECIAL CASE) even when the sender turns
+// out to have never joined the list at all - the model can't tell "already
+// in the tournament" apart from "not on the list at all" for a bare
+// self-reference (unlike a NAMED target, it has no way to match "me"
+// against a printed name). Rather than a dead-end rejection, this now adds
+// the sender fresh instead, social only - achieving what "social only"
+// actually asked for either way.
+test('handleOut: bare "!out tournament" from someone with NO existing entry adds them fresh, social only, instead of rejecting', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, true);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'weellie@s.whatsapp.net', senderName: 'Weellie', argText: 'tournament' });
+  await listCommands.handleOut(ctx);
+
+  const entries = store.getCurrentEvent(groupId).entries;
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].name, 'Weellie');
+  assert.equal(entries[0].tournament, false);
+  assert.equal(entries[0].self, true);
+  assert.match(replies[0], /added you to the list instead - social only/);
+});
+
+test('handleOut: bare "!out tournament" from someone with no entry, when the list is full, adds them to the waitlist instead', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, true);
+  store.setLimit(groupId, 0); // force straight onto the waitlist
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'weellie@s.whatsapp.net', senderName: 'Weellie', argText: 'tournament' });
+  await listCommands.handleOut(ctx);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.entries.length, 0);
+  assert.equal(event.waitlist.length, 1);
+  assert.equal(event.waitlist[0].name, 'Weellie');
+  assert.match(replies[0], /added you to the list instead \(social only\) - you're on the waitlist/);
+});
+
+test('handleOut: bare "!out tournament" combines the fresh-add fallback with a leading "paid" keyword, independent of each other', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, true);
+  store.addEntry(groupId, 'Weellie', 'weellie@s.whatsapp.net', false, true); // self-added, owes payment
+  store.newList(groupId, '2026-08-20', {}); // archives Weellie into duePayments; entries reset
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'weellie@s.whatsapp.net', senderName: 'Weellie', argText: 'tournament paid' });
+  await listCommands.handleOut(ctx);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.entries.find((e) => e.name === 'Weellie').tournament, false);
+  assert.equal(event.duePayments.length, 0); // marked paid too, independently
+  assert.match(replies.join('\n'), /added you to the list instead - social only/);
+});
+
 test('handleOut: "!out tournament Grace, Henry" moves MULTIPLE names to social only in one command', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});

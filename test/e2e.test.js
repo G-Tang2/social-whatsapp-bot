@@ -759,6 +759,54 @@ test('e2e: a compound @-mention with a real dispatchable action plus an off-topi
   assert.match(offTopic.content.text, /join the social/i);
 });
 
+// Real bug report: "@Snoopy I paid and me to social only" from someone who
+// owed payment from a PAST cycle but wasn't on the CURRENT attendance list
+// at all (under any name) - the model (correctly, per lib/geminiCommand.js's
+// "out" SPECIAL CASE) maps the bare self "social only" half to "out"
+// "tournament", the one dispatch that also works when the sender genuinely
+// IS still in the tournament - but commands/list.js's handleLeaveTournament
+// used to just reject with "you're not even on the list" when there was no
+// existing entry, instead of ending up social-only like the sender asked.
+test('e2e: "I paid and me to social only" from someone not on the current list at all marks them paid AND adds them fresh, social only', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  store.setTournamentEnabled(GROUP_ID, true);
+  // Removes the cap first - GROUP_ID accumulates entries across this whole
+  // file's other tests, and a capped limit would silently waitlist this
+  // seed instead of landing it in `entries` (newList only archives
+  // `entries` into duePayments, never the waitlist - see store.js's own
+  // newList()), breaking the sanity checks just below for a reason
+  // completely unrelated to what this test actually covers.
+  store.setLimit(GROUP_ID, null);
+  store.addEntry(GROUP_ID, 'weellie', 'weellieProbe@s.whatsapp.net', false, true); // self-added, owes payment
+  store.newList(GROUP_ID, '2026-08-23', {}); // archives into duePayments; entries reset - weellie is on NEITHER now
+  assert.ok(store.getCurrentEvent(GROUP_ID).duePayments.some((e) => e.name === 'weellie'));
+  assert.ok(!store.getCurrentEvent(GROUP_ID).entries.some((e) => e.name === 'weellie'));
+
+  setNextGeminiResponse({
+    actions: [
+      { command: 'paid', argText: '', confidence: 'high' },
+      { command: 'out', argText: 'tournament', confidence: 'high' },
+    ],
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('I paid and me to social only', { from: 'weellieProbe@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  assert.ok(!store.getCurrentEvent(GROUP_ID).duePayments.some((e) => e.name === 'weellie'), 'expected weellie to be marked paid');
+  // The fresh add uses the sender's CURRENT push name ("weellieProbe", from
+  // the message's own from JID - see makeMsg), not the old list name
+  // ("weellie") the payment side matched by WhatsApp ID instead - same
+  // "a brand new add always uses today's push name" behavior as a normal
+  // bare "!in" from someone whose display name has changed since.
+  const entry = store.getCurrentEvent(GROUP_ID).entries.find((e) => e.name === 'weellieProbe');
+  assert.ok(entry, 'expected the sender to have been added to the current list, social only');
+  assert.equal(entry.tournament, false);
+  assert.ok(
+    !fakeSockInstance.sentMessages.some((m) => /not even on the list/.test(m.content.text || '')),
+    'expected no dead-end "not even on the list" rejection'
+  );
+});
+
 test('e2e: a fully-low-confidence AI mention with a "question" from the model asks that question and tells the sender to reply, instead of the generic "not capable" fallback', async () => {
   ai.setEnabled(GROUP_ID, true);
   setNextGeminiResponse({

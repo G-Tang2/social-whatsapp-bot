@@ -585,7 +585,9 @@ async function handleIn(ctx) {
 // entry the same way handleOut's own bare-self path does, but only against
 // `entries` (not the waitlist) - the tournament flags only ever live on
 // confirmed entries, never a waitlist one - see joinTournament()'s doc
-// comment for why.
+// comment for why. If the sender has NO entry at all to remove from the
+// tournament, this adds them fresh instead (social only) rather than just
+// rejecting - see its own doc comment inside, right where that happens.
 async function handleLeaveTournament(ctx, rest, paidFlag) {
   const { sock, msg, groupId, senderId, senderName, argText, upsertType, reply, postList } = ctx;
   const isCatchUp = upsertType === 'append';
@@ -595,6 +597,44 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
     const event = getCurrentEvent(groupId);
     const own = event.entries.filter((e) => e.addedBy === senderId && e.self !== false);
     if (own.length === 0) {
+      // No entry to take OUT of the tournament at all - rather than a dead
+      // end, add the sender fresh instead, social only (no tournament
+      // flag). Real bug report: a bare self "social only" request (e.g.
+      // natural language "make me social only"/"take me out of the
+      // tournament") always maps to THIS command (see lib/geminiCommand.js's
+      // "out" SPECIAL CASE) even when the sender turns out to have never
+      // joined at all - the model has no way to check "is 'me' currently in
+      // the tournament" against the CURRENT LIST the way it can for a NAMED
+      // target (it can't match a WhatsApp ID to a printed name), so it
+      // can't reliably choose "in" vs "out" itself here. This code CAN check
+      // (via addedBy, just above), so it resolves the ambiguity the same
+      // way the "in"/"out" SPECIAL CASE already does for a named target -
+      // ending up social-only either way achieves what "social only"
+      // actually asked for, whether that's satisfied by removing an
+      // existing tournament entry or by adding a fresh non-tournament one.
+      const modResult = checkEntry(senderName);
+      if (modResult.ok) {
+        const senderIsAdmin = await isGroupAdmin(sock, groupId, senderId);
+        const addResult = addEntry(groupId, senderName, senderId, senderIsAdmin, true, false);
+        if (addResult.ok) {
+          const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
+          if (!isCatchUp) {
+            await reply(
+              addResult.waitlisted
+                ? `Weren't even on the tournament to begin with, so I've added you to the list instead (social only) - you're on the waitlist for now, promoted the moment a spot frees up.`
+                : `Weren't even on the tournament to begin with, so I've added you to the list instead - social only, as asked.`
+            );
+            await replyPaidOutcome(reply, paidOutcome);
+            await postList();
+          }
+          return { command: 'out', senderName, argText, addedSocialOnly: [senderName], waitlisted: addResult.waitlisted, ...paidOutcome };
+        }
+        // addResult.ok === false here means a same-named entry already
+        // exists under a DIFFERENT WhatsApp ID (store.js's addEntry
+        // "duplicate" reason) - falls through to the plain rejection below,
+        // same as checkEntry rejecting the push name would.
+      }
+
       const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
