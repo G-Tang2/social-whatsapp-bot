@@ -1787,21 +1787,24 @@ Check these in order:
    also a member of the group, and send the command from that one.
 
 2. **Did you send it as a direct message instead of in the group?** The bot
-   only ever runs the list from inside the group chat - a DM gets a fixed
-   one-line redirect ("Hi, this is an automated bot... please contact the
-   organiser in the group chat instead") rather than actually doing
-   anything, since a DM has no group for a command to apply to. Only sent
-   once per message, even if WhatsApp happens to redeliver the same DM more
+   only ever runs the list from inside the group chat - a DM never does
+   anything, since a DM has no group for a command to apply to. By default
+   it's silent about this (no reply at all); set `DM_REPLIES_ENABLED=true`
+   in `.env` if you'd rather it send a fixed one-line redirect ("Hi, this
+   is an automated bot... please contact the organiser in the group chat
+   instead") - see `.env.example`. Only ever sent once per message even
+   with that on, even if WhatsApp happens to redeliver the same DM more
    than once.
 
-   **Getting TWO redirect replies to the same DM?** This means the phone
-   number is linked as more than one companion device at once (e.g. you're
-   running two separate deployments of this bot - different `AUTH_DIR`s,
-   different `.env`s - both linked from the same phone's WhatsApp, maybe
-   one per group). WhatsApp delivers a DM to every linked companion device,
-   and each deployment is otherwise fully independent with no way to know
-   the others already replied. Set `DM_REPLIES_ENABLED=false` in all but
-   one deployment's `.env` so only one of them ever replies to a DM - see
+   **Getting TWO redirect replies to the same DM** (only possible once
+   you've turned `DM_REPLIES_ENABLED` on)? This means the phone number is
+   linked as more than one companion device at once (e.g. you're running
+   two separate deployments of this bot - different `AUTH_DIR`s, different
+   `.env`s - both linked from the same phone's WhatsApp, maybe one per
+   group, and both have it turned on). WhatsApp delivers a DM to every
+   linked companion device, and each deployment is otherwise fully
+   independent with no way to know the others already replied. Leave
+   `DM_REPLIES_ENABLED=true` on only ONE of them - see
    `.env.example`. This doesn't affect group commands at all, since
    `ALLOWED_GROUPS` already scopes those correctly per deployment.
 

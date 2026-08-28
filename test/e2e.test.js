@@ -32,6 +32,10 @@ process.env.CATCH_UP_FLUSH_DELAY_SECONDS = '0.2';
 // minutes per assertion.
 process.env.LAST_SEEN_STATUS_INTERVAL_MINUTES = '0.01'; // ~600ms
 process.env.TIMEZONE = 'UTC';
+// Off by default (see lib/config.js) - opted in here so this file's DM
+// redirect tests below actually exercise the reply path, same reasoning
+// as GEMINI_API_KEY just below for the natural-language tests.
+process.env.DM_REPLIES_ENABLED = 'true';
 // Fake (never-reaches-a-real-network) key - just enough for !ai on to be
 // allowed and for lib/geminiCommand.js's interpretMessage() to attempt a
 // call at all. The fake @google/genai module injected below is what
