@@ -240,10 +240,10 @@ function makeMsg({ from, text, fromMe = false, mentions, quotedParticipant, quot
   };
 }
 
-async function deliver(text, { from = 'alex@s.whatsapp.net', type = 'notify', mentions, quotedParticipant, quotedMessageText, messageTimestamp } = {}) {
+async function deliver(text, { from = 'alex@s.whatsapp.net', type = 'notify', fromMe = false, mentions, quotedParticipant, quotedMessageText, messageTimestamp } = {}) {
   const upsertHandler = capturedHandlers['messages.upsert'];
   assert.ok(upsertHandler, 'expected index.js to have registered a messages.upsert handler');
-  const msg = makeMsg({ from, text, mentions, quotedParticipant, quotedMessageText, messageTimestamp });
+  const msg = makeMsg({ from, text, fromMe, mentions, quotedParticipant, quotedMessageText, messageTimestamp });
   await upsertHandler({ messages: [msg], type });
   return msg; // so a test can build an edit (see deliverEdit below) against this exact message's key
 }
@@ -621,9 +621,9 @@ test('e2e: AI mention still triggers when WhatsApp sends the bot\'s LID (not its
   assert.ok(posted, 'expected the LID-form mention to still be recognized as mentioning the bot');
 });
 
-test('e2e: a LID mention still triggers even when sock.user.lid itself is missing - regression for a real production bug (falls back to groupMetadata() via lib/botIdentity.js)', async () => {
+test('e2e: without sock.user.lid, a LID mention is NOT recognized before the bot has ever sent anything in this group - reproduces the original production bug', async () => {
   ai.setEnabled(GROUP_ID, true);
-  setNextGeminiResponse({ command: 'in', argText: '', confidence: 'high' });
+  const callsBefore = geminiCallCount;
   fakeSockInstance.sentMessages.length = 0;
 
   // Real bug report: a production log showed sock.user.lid staying
@@ -632,28 +632,41 @@ test('e2e: a LID mention still triggers even when sock.user.lid itself is missin
   // "@lid" JID) - meaning a genuine "@Snoopy ..." mention was silently
   // never recognized. Simulated here by deleting user.lid from the
   // otherwise-normal fake sock, restored in `finally` so later tests in
-  // this shared-instance file aren't affected.
+  // this shared-instance file aren't affected. Nothing has taught the bot
+  // its own lid yet at this point (see the next test), so this reproduces
+  // the bug exactly.
   const realLid = fakeSockInstance.user.lid;
   delete fakeSockInstance.user.lid;
   try {
     await deliver('put me down for Saturday', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_LID] });
-
-    const posted = fakeSockInstance.sentMessages.find((m) => /jordan/i.test(m.content.text || ''));
-    assert.ok(posted, 'expected the LID mention to still be recognized via the groupMetadata() fallback, even with sock.user.lid missing');
+    assert.equal(geminiCallCount, callsBefore, 'expected the mention to NOT be recognized - this is the bug this fix addresses');
   } finally {
     fakeSockInstance.user.lid = realLid;
   }
 });
 
-test('e2e: without sock.user.lid, an ordinary message with NO lid-form mention at all does not trigger a groupMetadata() lookup (Gemini never called)', async () => {
+test('e2e: ...but once the bot has self-learned its own lid from an earlier outgoing message, the SAME LID mention now works, even with sock.user.lid still missing', async () => {
   ai.setEnabled(GROUP_ID, true);
-  const callsBefore = geminiCallCount;
+  setNextGeminiResponse({ command: 'in', argText: '', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
 
   const realLid = fakeSockInstance.user.lid;
   delete fakeSockInstance.user.lid;
   try {
-    await deliver('just some ordinary chat, nothing to see here', { from: 'jordan@s.whatsapp.net', type: 'notify' });
-    assert.equal(geminiCallCount, callsBefore, 'a plain message with no mention/quote at all should never even attempt the fallback lookup');
+    // Simulates WhatsApp echoing one of the bot's OWN messages back
+    // through messages.upsert (fromMe: true) - real Baileys does this for
+    // every message the bot sends, and (per the same production log)
+    // reports msg.key.participant as the bot's own lid in a lid-addressed
+    // group. index.js's handleMessage() learns from exactly this, via
+    // lib/botIdentity.js's recordBotLid() - see its own doc comment for
+    // why this, not sock.user.lid or groupMetadata(), is what's actually
+    // reliable here.
+    await deliver('some earlier reply the bot sent', { from: BOT_LID, fromMe: true, type: 'notify' });
+
+    await deliver('put me down for Saturday', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_LID] });
+
+    const posted = fakeSockInstance.sentMessages.find((m) => /jordan/i.test(m.content.text || ''));
+    assert.ok(posted, 'expected the LID mention to be recognized via the self-learned lid, even with sock.user.lid missing');
   } finally {
     fakeSockInstance.user.lid = realLid;
   }

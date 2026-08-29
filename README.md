@@ -1949,13 +1949,17 @@ Check these in order:
    deliberately silent, by design). For a natural-language mention with no
    log line, the mention itself likely didn't resolve to the bot's own
    WhatsApp identity (a JID/LID addressing quirk - see
-   `messageMentionsBot()` in `index.js`, and `lib/botIdentity.js`'s
-   `resolveBotLid()`, which already covers the most common case of this -
-   `sock.user.lid` itself not being populated - by looking the bot's own
-   lid up independently via `groupMetadata()`) - `DEBUG=true` (step 6) will
-   show the raw `mentionedJid` array Baileys reported for that message,
-   which is the next thing to compare against the bot's own `botJid`/
-   `botLid` shown in the same debug line.
+   `messageMentionsBot()` in `index.js`) - `DEBUG=true` (step 6) will show
+   the raw `mentionedJid` array Baileys reported for that message, which is
+   the next thing to compare against the bot's own `botJid`/`botLid` shown
+   in the same debug line. If `botLid` shows `undefined` even though the
+   mention is clearly a "@lid" address, that's covered automatically:
+   `lib/botIdentity.js` learns the bot's own lid from its own outgoing
+   messages in that group (`msg.key.participant` on anything the bot
+   itself sends) and `messageMentionsBot()` falls back to that - it just
+   needs the bot to have sent AT LEAST ONE message in that group since it
+   started, which in practice happens almost immediately (a list repost,
+   a reply, ...).
 
 ## 4. Alternative: deploy to a cloud server instead (Fly.io)
 
@@ -2100,10 +2104,10 @@ one giant switch statement. The actual work is split across two folders:
 
 - `lib/` - shared, non-command code: `config.js` (all `.env`-derived
   settings, in one place), `adminCheck.js` (`isGroupAdmin()`, with a
-  short-lived cache - see below), `botIdentity.js` (`resolveBotLid()` -
-  looks the bot's own WhatsApp "LID" up via `groupMetadata()`, cached the
-  same way, for the rare case `sock.user.lid` itself isn't populated - see
-  `messageMentionsBot()` in `index.js`), `helpers.js` (formatting/parsing helpers
+  short-lived cache - see below), `botIdentity.js` (`recordBotLid()`/
+  `getKnownBotLid()` - learns the bot's own WhatsApp "LID" per group from
+  its own outgoing messages, for the rare case `sock.user.lid` itself
+  isn't populated - see `messageMentionsBot()` in `index.js`), `helpers.js` (formatting/parsing helpers
   like `formatList()`/`parseNames()`), `listParser.js` (`parseListSections()`
   - the reverse of `formatList()`, tolerantly re-reading a copy-pasted,
   edited list's name lists back out for `!update` - see "Bulk-editing the

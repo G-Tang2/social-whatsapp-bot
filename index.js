@@ -265,7 +265,7 @@ const { getMessageText, formatList, getMentionedJids, getQuotedParticipant, getQ
 const { parseListSections } = require('./lib/listParser');
 const { getRegularPlayers, getUndoableState, saveUndoSnapshot, getUndoSnapshot, restoreUndoableState } = require('./store');
 const { isGroupAdmin } = require('./lib/adminCheck');
-const { resolveBotLid } = require('./lib/botIdentity');
+const { recordBotLid, getKnownBotLid } = require('./lib/botIdentity');
 const catchUpQueue = require('./lib/catchUpQueue');
 const { updateLastSeenStatus } = require('./lib/lastSeenStatus');
 const { checkVacancyReminders } = require('./lib/vacancyReminder');
@@ -705,16 +705,20 @@ async function start() {
 //
 // Real bug: sock.user.lid isn't always actually populated even in a group
 // that's clearly LID-addressed (a real production log showed
-// sock.user.lid staying undefined all connection long, while an incoming
-// mention's own contextInfo.mentionedJid was a genuine "@lid" address) -
-// so when sock.user.lid is missing AND this message has a "@lid"-form
-// mention/quote to check against, this falls back to
-// lib/botIdentity.js's resolveBotLid(), which looks the bot's own lid up
-// independently via groupMetadata() instead of trusting sock.user. Only
-// attempted in that specific situation (not on every message) since it's
-// a network call (cached, but still) - the vast majority of messages have
-// no mention/quote at all, or already matched via sock.user above,
-// neither of which need it.
+// sock.user.lid staying undefined all connection long, while every
+// mention/participant in that same group was a genuine "@lid" address) -
+// so when sock.user.lid is missing, this also checks against
+// lib/botIdentity.js's getKnownBotLid(groupId): the bot's own lid, as
+// self-learned from its own OUTGOING messages in that group (see
+// handleMessage's recordBotLid() call, right where a fromMe message is
+// otherwise discarded) - confirmed directly from that same production log
+// to be exactly what WhatsApp itself reports as the sender on any message
+// the bot sends there. (An earlier version of this fix tried asking
+// sock.groupMetadata() for the bot's own participant entry instead - that
+// turned out to be unreliable in a fully lid-migrated group, where the
+// participant list exposes everyone's lid but no longer a reliable
+// phone-number cross-reference to match sock.user.id against, so "which
+// participant is me" couldn't actually be determined that way.)
 //
 // `text` (optional - every real call site has it already computed, see
 // each one's own scope) additionally catches a literal "@Snoopy" TYPED as
@@ -731,30 +735,21 @@ async function start() {
 // mention still works even in the narrow window right after a fresh
 // connection before that's populated.
 //
-// `groupId` (optional) is only needed for the resolveBotLid() fallback
+// `groupId` (optional) is only needed for the getKnownBotLid() fallback
 // above - every real call site already has it in scope (or, for the one
 // call site before `groupId` itself is computed, the equivalent
 // msg.key.remoteJid) except tests that don't care about this specific
 // edge case, which can omit it and simply skip the fallback.
-async function messageMentionsBot(sock, msg, text, groupId) {
+function messageMentionsBot(sock, msg, text, groupId) {
   const mentioned = getMentionedJids(msg);
   const quotedParticipant = getQuotedParticipant(msg);
 
-  const candidates = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
+  const candidates = [sock?.user?.id, sock?.user?.lid, groupId && getKnownBotLid(groupId)]
+    .filter(Boolean)
+    .map(normalizeJid);
   if (candidates.length) {
     if (mentioned.some((jid) => candidates.includes(normalizeJid(jid)))) return true;
     if (quotedParticipant && candidates.includes(normalizeJid(quotedParticipant))) return true;
-  }
-
-  if (!sock?.user?.lid && groupId) {
-    const lidCandidates = [...mentioned, quotedParticipant].filter((jid) => jid && jid.endsWith('@lid'));
-    if (lidCandidates.length) {
-      const resolvedLid = await resolveBotLid(sock, groupId);
-      if (resolvedLid) {
-        const normalizedResolvedLid = normalizeJid(resolvedLid);
-        if (lidCandidates.some((jid) => normalizeJid(jid) === normalizedResolvedLid)) return true;
-      }
-    }
   }
 
   return typeof text === 'string' && LITERAL_BOT_MENTION_REGEX.test(text);
@@ -1186,8 +1181,17 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
       // undefined/different) is exactly how a genuine @-mention or reply
       // silently fails to trigger !ai.
       botLid: sock?.user?.lid,
-      mentionsBot: await messageMentionsBot(sock, msg, getMessageText(msg), msg.key.remoteJid),
+      mentionsBot: messageMentionsBot(sock, msg, getMessageText(msg), msg.key.remoteJid),
     });
+  }
+
+  // Learn the bot's own lid for this group from its own outgoing
+  // messages, before the fromMe check right below discards them - see
+  // lib/botIdentity.js's own doc comment for why this (not sock.user.lid,
+  // which isn't always populated) is what messageMentionsBot() actually
+  // relies on to recognize a "@lid"-form mention of the bot.
+  if (msg.key.fromMe && msg.key.remoteJid && msg.key.remoteJid.endsWith('@g.us') && msg.key.participant && msg.key.participant.endsWith('@lid')) {
+    recordBotLid(msg.key.remoteJid, msg.key.participant);
   }
 
   // Ignore messages the bot itself sent (its own replies, status updates, etc.)
@@ -1436,7 +1440,7 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
       console.log(
         `[bot] Dropped "${rawCmd}" in ${groupId} (from ${senderId}) because it arrived as a catch-up ('append') redelivery, not live - only ${[...CATCH_UP_COMMANDS].join('/')} are honored on catch-up (see the README's "Catching up after a network outage"). If this was a genuine request, the sender needs to send it again.`
       );
-    } else if (!text.startsWith(COMMAND_PREFIX) && await messageMentionsBot(sock, msg, text, groupId)) {
+    } else if (!text.startsWith(COMMAND_PREFIX) && messageMentionsBot(sock, msg, text, groupId)) {
       const bareMention = !stripMentionTokens(text, getMentionedJids(msg)).trim();
       if (bareMention) {
         // No language to interpret at all - same "@Snoopy on its own
@@ -1500,7 +1504,7 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
   }
 
   if (!text.startsWith(COMMAND_PREFIX)) {
-    const mentionsBot = await messageMentionsBot(sock, msg, text, groupId);
+    const mentionsBot = messageMentionsBot(sock, msg, text, groupId);
 
     // Acknowledge an @-mention immediately with 💬 ("seen"), then swap it
     // for ✅ below once the bot has actually sent something back - a quick
