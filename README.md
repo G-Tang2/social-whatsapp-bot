@@ -1766,6 +1766,39 @@ under `/opt/homebrew` instead of `/usr/local`). Run `which node` and
 `pm2 startup` again, making sure the `sudo env PATH=...` command it gives
 you actually includes those paths before you run it.
 
+### Running more than one deployment
+
+If you want to run this for more than one group (e.g. two social groups,
+each wanting their own bot), each deployment needs to be **fully
+isolated** - its own folder, its own `.env`, its own `ecosystem.config.js`
+with a unique pm2 `name` (see `ecosystem.config.example.js`'s own comment
+for why committing that file instead of copying it would break this). Two
+rules matter enough to call out on their own, because breaking either one
+doesn't fail loudly - it just quietly corrupts things until something
+stops working days later:
+
+- **Never copy an `auth_info` folder between deployments**, and never let
+  two deployments' `.env` files point `AUTH_DIR` at the same path. A
+  WhatsApp session is single-user state (the Signal protocol "double
+  ratchet" that decrypts incoming messages) - two processes touching the
+  same one, even briefly, desyncs it in a way that doesn't self-heal.
+  You'll see it as a flood of `Bad MAC` / `MessageCounterError: Key used
+  already or never filled` / `Closing open session in favor of incoming
+  prekey bundle` errors in `pm2 logs ... --err`, and the only fix at that
+  point is deleting `auth_info` and re-linking from scratch (see the
+  Troubleshooting section below). If you ever need to run a deployment
+  manually for any reason (e.g. to re-scan its QR code because the code
+  rendered awkwardly through `pm2 logs`), always `pm2 stop` it first - a
+  manual `node index.js` running alongside its own still-live pm2 copy is
+  exactly this same mistake.
+- **Two deployments CAN share one phone number** (each linked as its own
+  companion device, like having WhatsApp Web open in two browsers) without
+  hitting the problem above, as long as each still has its own `auth_info`
+  from its own QR scan - but WhatsApp then delivers every direct message
+  to *every* companion device linked to that number, so leave
+  `DM_REPLIES_ENABLED=true` (see `.env.example`) on only ONE of them, or
+  people DMing the bot get more than one reply.
+
 ### Useful ongoing commands (same on both platforms)
 
 ```bash
@@ -1852,7 +1885,27 @@ Check these in order:
    network problem on the host rather than something the bot can fix by
    retrying - check the machine's actual internet connection.
 
-8. **Was it a real, known command - typed (e.g. `!limit`, `!allow`,
+9. **Do `pm2 logs ... --err` show a flood of `Bad MAC`, `MessageCounterError:
+   Key used already or never filled`, or repeated `Closing open session in
+   favor of incoming prekey bundle` lines?** This is a corrupted WhatsApp
+   session (the Signal protocol state has desynced from what the sender's
+   phone expects), most often caused by two processes having touched the
+   same `auth_info` at once at some point - see "Running more than one
+   deployment" above for how that happens and how to avoid it going
+   forward. Once desynced, it doesn't self-heal - the fix is:
+   ```bash
+   pm2 stop <name>
+   mv auth_info auth_info.bak   # keep a backup rather than deleting outright
+   pm2 restart <name>
+   pm2 logs <name>              # scan the fresh QR code shown here
+   ```
+   This only resets the WhatsApp login session - the group's list data
+   (`data/lists.json` etc.) is untouched. If the QR code renders unreadable
+   through `pm2 logs` (garbled/misaligned ASCII art - `pm2 logs` prefixes
+   every line, which can mangle it), `pm2 stop` it and run `node index.js`
+   directly in your terminal instead, scan it there, then `pm2 restart`.
+
+10. **Was it a real, known command - typed (e.g. `!limit`, `!allow`,
    `!update`) or an `@Snoopy ...` natural-language mention - that just got
    no response at all?** An UNKNOWN typed command (a genuine typo, or
    ordinary chat that happens to start with `!`) is silently ignored on
