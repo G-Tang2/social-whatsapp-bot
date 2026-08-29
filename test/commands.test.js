@@ -1558,6 +1558,61 @@ test('handleTournamentWinners waives the winners\' payment debt for the week the
   assert.deepEqual(due.map((e) => e.name), ['Henry']);
 });
 
+test('handleTournamentWinners also records both names on the leaderboard, one win each', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Noah, Ellen' });
+  await adminCommands.handleTournamentWinners(set.ctx);
+
+  assert.deepEqual(store.getTournamentLeaderboard(groupId), [
+    { name: 'Ellen', wins: 1 },
+    { name: 'Noah', wins: 1 },
+  ]);
+});
+
+test('handleTournamentWinners: setting winners again (even the same two names) adds another win each, on top of the previous total', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  await adminCommands.handleTournamentWinners(makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Noah, Ellen' }).ctx);
+  await adminCommands.handleTournamentWinners(makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Noah, Henry' }).ctx);
+
+  const board = store.getTournamentLeaderboard(groupId);
+  assert.deepEqual(board, [
+    { name: 'Noah', wins: 2 },
+    { name: 'Ellen', wins: 1 },
+    { name: 'Henry', wins: 1 },
+  ]);
+});
+
+test('handleLeaderboard: shows "no wins yet" when nobody has won anything, open to non-admins too', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
+  await adminCommands.handleLeaderboard(ctx);
+
+  assert.match(replies[0], /no tournament wins/i);
+});
+
+test('handleLeaderboard: lists winners most-wins-first once !tournamentwinners has recorded some', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  await adminCommands.handleTournamentWinners(makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Noah, Ellen' }).ctx);
+  await adminCommands.handleTournamentWinners(makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Noah, Henry' }).ctx);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
+  await adminCommands.handleLeaderboard(ctx);
+
+  assert.equal(replies.length, 1);
+  const lines = replies[0].split('\n');
+  assert.match(lines[0], /leaderboard/i);
+  assert.match(lines[1], /1\. Noah - 2 wins/);
+  assert.match(lines[2], /2\. Ellen - 1 win\b/); // singular "win", not "1 wins"
+  assert.match(lines[3], /3\. Henry - 1 win\b/);
+});
+
 test('handleIn: a trailing "tournament" keyword opts a new joiner in, when there\'s room', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});

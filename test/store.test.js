@@ -1283,6 +1283,71 @@ test('getTournamentWinners/setTournamentWinners: null by default, round-trips a 
   assert.deepEqual(store.getTournamentWinners(groupId), ['Noah', 'Ellen']);
 });
 
+test('getTournamentLeaderboard: empty array by default, recordTournamentWin adds a first-time winner with 1 win', () => {
+  const groupId = freshGroupId();
+  assert.deepEqual(store.getTournamentLeaderboard(groupId), []);
+  store.recordTournamentWin(groupId, ['Noah', 'Ellen']);
+  assert.deepEqual(store.getTournamentLeaderboard(groupId), [
+    { name: 'Ellen', wins: 1 },
+    { name: 'Noah', wins: 1 },
+  ]);
+});
+
+test('recordTournamentWin: a repeat winner accumulates wins instead of getting a second entry', () => {
+  const groupId = freshGroupId();
+  store.recordTournamentWin(groupId, ['Noah', 'Ellen']);
+  store.recordTournamentWin(groupId, ['Noah', 'Henry']);
+  const board = store.getTournamentLeaderboard(groupId);
+  assert.deepEqual(board, [
+    { name: 'Noah', wins: 2 },
+    { name: 'Ellen', wins: 1 },
+    { name: 'Henry', wins: 1 },
+  ]);
+});
+
+test('recordTournamentWin matches by normalized name (case/whitespace-insensitive), keeping the first-seen spelling', () => {
+  const groupId = freshGroupId();
+  store.recordTournamentWin(groupId, ['Noah']);
+  store.recordTournamentWin(groupId, ['  noah  ']);
+  store.recordTournamentWin(groupId, ['NOAH']);
+  const board = store.getTournamentLeaderboard(groupId);
+  assert.deepEqual(board, [{ name: 'Noah', wins: 3 }]);
+});
+
+test('getTournamentLeaderboard: sorted by wins descending, ties broken alphabetically', () => {
+  const groupId = freshGroupId();
+  store.recordTournamentWin(groupId, ['Zack']);
+  store.recordTournamentWin(groupId, ['Amy']);
+  store.recordTournamentWin(groupId, ['Zack']); // Zack now has 2, the clear leader
+  const board = store.getTournamentLeaderboard(groupId);
+  assert.deepEqual(board, [
+    { name: 'Zack', wins: 2 },
+    { name: 'Amy', wins: 1 },
+  ]);
+});
+
+test('leaderboard entries survive !newlist, unlike tournamentWinners - a win count is permanent history, not a per-cycle announcement', () => {
+  const groupId = freshGroupId();
+  store.recordTournamentWin(groupId, ['Noah', 'Ellen']);
+  store.setTournamentWinners(groupId, ['Noah', 'Ellen']);
+  store.newList(groupId, '2026-08-20', {});
+  assert.equal(store.getTournamentWinners(groupId), null); // wiped, as before
+  assert.deepEqual(store.getTournamentLeaderboard(groupId), [
+    { name: 'Ellen', wins: 1 },
+    { name: 'Noah', wins: 1 },
+  ]); // untouched
+});
+
+test('getUndoableState/restoreUndoableState round-trip the tournament leaderboard', () => {
+  const groupId = freshGroupId();
+  store.recordTournamentWin(groupId, ['Noah']);
+  const snapshot = store.getUndoableState(groupId);
+  store.recordTournamentWin(groupId, ['Ellen']);
+  assert.equal(store.getTournamentLeaderboard(groupId).length, 2);
+  store.restoreUndoableState(groupId, snapshot);
+  assert.deepEqual(store.getTournamentLeaderboard(groupId), [{ name: 'Noah', wins: 1 }]);
+});
+
 test('getTournamentRules/setTournamentRules: null by default, round-trips free text', () => {
   const groupId = freshGroupId();
   assert.equal(store.getTournamentRules(groupId), null);

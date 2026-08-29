@@ -28,7 +28,8 @@ every change.
 | `!settournament [on\|off\|rules <text>]` | viewing: anyone; changing: group admins only | Turns the tournament sub-feature (see "Tournament" below) on or off for *this* group, and sets the rules text `!tournament` (below) shows. On by default everywhere. With no argument, shows who's currently opted in instead of changing anything. `!settournament rules <text>` sets the rules text (e.g. `!settournament rules Best of 3, single elimination`); `!settournament rules` with no text shows the current rules |
 | `!tournament` | anyone | Shows the tournament rules text set via `!settournament rules <text>` (see "Tournament" below) - does not show who's opted in (that's `!settournament`) |
 | `!tournamentlimit [number]` | viewing: anyone; changing: group admins only | Caps how many people can be opted into the tournament - separate from the main `!limit`. With no number, shows the current tournament limit without changing it. `!tournamentlimit off` removes the cap |
-| `!tournamentwinners [Name1, Name2]` | viewing: anyone; changing: group admins only | Sets the two-name "Congrats to Name1 and Name2 for winning last week's tournament" banner shown above the list while the tournament is on. With no text, shows the currently set winners without changing them |
+| `!tournamentwinners [Name1, Name2]` | viewing: anyone; changing: group admins only | Sets the two-name "Congrats to Name1 and Name2 for winning last week's tournament" banner shown above the list while the tournament is on. With no text, shows the currently set winners without changing them. Also adds one win each to `!leaderboard` |
+| `!leaderboard` | anyone | Shows cumulative tournament win counts, most wins first - only players with at least one win appear. Only `!tournamentwinners` adds to it; there's no way to set or reset it directly |
 | `!spamfilter [on\|off]` | viewing: anyone; changing: group admins only | Turns auto-deletion of stock/crypto spam (see "Spam filtering" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!welcome [on\|off]` | viewing: anyone; changing: group admins only | Turns the "someone just joined" welcome message (see "Welcoming new members" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!ai [on\|off]` | viewing: anyone; changing: group admins only | Turns natural-language command interpretation (see "Natural-language commands" below) on or off for *this* group. OFF by default everywhere, and requires `GEMINI_API_KEY` to be configured. With no argument, shows the current on/off state without changing it |
@@ -811,6 +812,24 @@ earlier missed week is left untouched - this is a one-off thank-you for
 that week's win, not blanket forgiveness. It's not retroactive either -
 running `!tournamentwinners` again later for a different week only waives
 that new week's debt, not the previous winners' again.
+
+**Leaderboard:** every `!tournamentwinners` announcement also adds one win
+each to a running, permanent leaderboard - unlike the "Congrats..." banner
+itself, this is **never** cleared by `!newlist`. Check it any time with
+`!leaderboard` (anyone can view it - nothing to set directly, it only ever
+grows via `!tournamentwinners`):
+
+```
+🏆 Tournament Leaderboard
+1. Noah - 3 wins
+2. Ellen - 1 win
+```
+
+Only players who've actually won at least once appear - there's no
+pre-populated "everyone starts at 0" list. Winners are matched
+tolerantly (same casing/whitespace tolerance as everywhere else names are
+matched in this bot), so "Noah" and "noah" accumulate onto the same row
+rather than splitting into two.
 
 **Turning it off doesn't forget who'd opted in** - it just hides the
 tournament breakdown (and the winners banner) from the posted list until

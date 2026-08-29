@@ -1389,6 +1389,22 @@ test('e2e: !newlist clears the previous cycle\'s tournament winners banner', asy
   assert.doesNotMatch(posted, /Congrats to/);
 });
 
+test('e2e: !leaderboard tracks cumulative wins across !tournamentwinners and survives !newlist, unlike the "Congrats..." banner itself', async () => {
+  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  await deliver('!tournamentwinners E2eBoardA, E2eBoardB', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  await deliver('!newlist 26/08', { from: 'admin@s.whatsapp.net', type: 'notify' }); // clears the banner, not the leaderboard
+  await deliver('!tournamentwinners E2eBoardA, E2eBoardC', { from: 'admin@s.whatsapp.net', type: 'notify' }); // E2eBoardA wins again
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('!leaderboard', { from: 'jordan@s.whatsapp.net', type: 'notify' });
+
+  const posted = fakeSockInstance.sentMessages[0].content.text;
+  assert.match(posted, /leaderboard/i);
+  const lines = posted.split('\n');
+  assert.match(lines[1], /E2eBoardA - 2 wins/);
+  assert.ok(/E2eBoardB - 1 win\b/.test(posted) && /E2eBoardC - 1 win\b/.test(posted));
+});
+
 test('e2e: an admin @-mentioning "create a new list for tomorrow and the tournament winners are Alice and Ethan" runs !newlist FIRST, then !tournamentwinners - the winners land on the fresh list instead of being immediately cleared by it', async () => {
   ai.setEnabled(GROUP_ID, true);
   await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });

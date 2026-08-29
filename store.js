@@ -363,6 +363,17 @@ function emptyGroupState() {
     // remove any debt they already owe from before - see newList()'s own
     // doc comment for why.
     paymentExempt: [],
+    // Cumulative tournament win counts, one entry per player who's ever
+    // won - see getTournamentLeaderboard/recordTournamentWin below and
+    // commands/admin.js's !leaderboard. Same top-level, survives-every-
+    // !newlist/!clear lifecycle as regularPlayers/paymentExempt above (a
+    // win count is a standing historical fact, not something scoped to
+    // one cycle's list) - the opposite lifecycle from `current.
+    // tournamentWinners` just below (current's own field), which
+    // announces only the CYCLE THAT JUST ENDED and is wiped by every
+    // !newlist. `[]` (not null) so callers never need to null-check before
+    // reading its length/iterating.
+    tournamentLeaderboard: [],
     // The specific person to @-mention if the group is still well short of
     // vacant spots as the social's start time closes in - see
     // !courtcanceller (commands/admin.js) and lib/vacancyReminder.js's
@@ -781,6 +792,53 @@ function waiveDuePaymentsForWinners(groupId, names) {
   return waived;
 }
 
+// Increments each named winner's cumulative tournament win count by one -
+// called alongside setTournamentWinners/waiveDuePaymentsForWinners above,
+// whenever an admin announces a result via !tournamentwinners
+// (commands/admin.js). Unlike tournamentWinners itself (wiped by every
+// !newlist - see emptyGroupState's own comment on it), this is a running
+// total that persists indefinitely, same lifecycle as regularPlayers/
+// paymentExempt. Matched by normalizeName (same tolerant matching
+// waiveDuePaymentsForWinners/applyListUpdate already use elsewhere in this
+// file) so "Noah" and "noah" accumulate onto the SAME entry rather than
+// forking into two separate rows - once a player has an entry, later wins
+// keep whichever spelling they first won under rather than flip-flopping
+// to whatever variant got typed most recently, same "first-seen spelling
+// wins" convention resolveOwnDue's callers rely on elsewhere.
+function recordTournamentWin(groupId, names) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  if (!all[groupId].tournamentLeaderboard) all[groupId].tournamentLeaderboard = [];
+  const board = all[groupId].tournamentLeaderboard;
+  for (const name of names || []) {
+    const normalized = normalizeName(name);
+    const existing = board.find((entry) => normalizeName(entry.name) === normalized);
+    if (existing) {
+      existing.wins += 1;
+    } else {
+      board.push({ name: name.trim(), wins: 1 });
+    }
+  }
+  writeAll(all);
+  return board;
+}
+
+// The group's tournament leaderboard - cumulative win counts per player
+// (see recordTournamentWin above for how entries get here), sorted by
+// wins descending, ties broken alphabetically for a stable order. Only
+// ever contains players with at least one win - recordTournamentWin has
+// no code path that creates a zero-win entry - so callers (see
+// commands/admin.js's !leaderboard) never need to filter this themselves.
+// Returns a fresh sorted copy, never the stored array itself, so sorting
+// here can never accidentally reorder what's actually persisted on disk.
+function getTournamentLeaderboard(groupId) {
+  const all = readAll();
+  const board = (all[groupId] || emptyGroupState()).tournamentLeaderboard || [];
+  return board
+    .slice()
+    .sort((a, b) => b.wins - a.wins || a.name.localeCompare(b.name));
+}
+
 // Free-text tournament rules set by an admin via !settournament rules <text>,
 // shown to anyone who runs bare !tournament. Same shape/division-of-labor as
 // getTournamentWinners/setTournamentWinners above.
@@ -1006,16 +1064,17 @@ function getUndoableState(groupId) {
     regularPlayers: state.regularPlayers || [],
     paymentExempt: state.paymentExempt || [],
     courtCanceller: state.courtCanceller || null,
+    tournamentLeaderboard: state.tournamentLeaderboard || [],
   };
 }
 
 // Overwrites the group's current/history/regularPlayers/paymentExempt/
-// courtCanceller wholesale from a snapshot previously returned by
-// getUndoableState() - the actual "restore" half of !undo. Leaves `undo`
-// itself untouched - the dispatch wrapper (commands/index.js) is what
-// updates that, generically, exactly as it would for any other command
-// that changes something (see the file-level comment above for why
-// running !undo again then acts as a redo).
+// courtCanceller/tournamentLeaderboard wholesale from a snapshot
+// previously returned by getUndoableState() - the actual "restore" half
+// of !undo. Leaves `undo` itself untouched - the dispatch wrapper
+// (commands/index.js) is what updates that, generically, exactly as it
+// would for any other command that changes something (see the file-level
+// comment above for why running !undo again then acts as a redo).
 function restoreUndoableState(groupId, snapshot) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
@@ -1024,6 +1083,7 @@ function restoreUndoableState(groupId, snapshot) {
   all[groupId].regularPlayers = snapshot.regularPlayers;
   all[groupId].paymentExempt = snapshot.paymentExempt !== undefined ? snapshot.paymentExempt : [];
   all[groupId].courtCanceller = snapshot.courtCanceller !== undefined ? snapshot.courtCanceller : null;
+  all[groupId].tournamentLeaderboard = snapshot.tournamentLeaderboard !== undefined ? snapshot.tournamentLeaderboard : [];
   writeAll(all);
 }
 
@@ -1981,6 +2041,8 @@ module.exports = {
   getTournamentWinners,
   setTournamentWinners,
   waiveDuePaymentsForWinners,
+  getTournamentLeaderboard,
+  recordTournamentWin,
   getTournamentRules,
   setTournamentRules,
   joinTournament,

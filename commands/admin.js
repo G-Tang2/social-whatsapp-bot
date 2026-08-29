@@ -3,9 +3,9 @@
 // !location, !courts, !time, !limit, !allow, !paymentlabel, !regulars,
 // !exempt, !settournament, !tournamentlimit, !tournamentwinners, !undo,
 // !update.
-// (!tournament itself - the rules-viewing command - lives here too, but is
-// NOT admin-gated; see its doc comment below for why it's in this file
-// anyway.)
+// (!tournament and !leaderboard themselves - both view-only - live here
+// too, but are NOT admin-gated; see their own doc comments below for why
+// they're in this file anyway.)
 // Faithful ports of the corresponding switch cases from
 // the old monolithic index.js - reply strings and control flow are
 // unchanged. !clear and !clearpayments have no confirmation prompt or
@@ -44,6 +44,8 @@ const {
   getTournamentWinners,
   setTournamentWinners,
   waiveDuePaymentsForWinners,
+  getTournamentLeaderboard,
+  recordTournamentWin,
   getTournamentRules,
   setTournamentRules,
   getCourtCanceller,
@@ -989,9 +991,31 @@ async function handleTournamentWinners(ctx) {
 
   setTournamentWinners(groupId, names);
   const waived = waiveDuePaymentsForWinners(groupId, names);
+  recordTournamentWin(groupId, names);
   const waivedNote = waived.length ? ` (payment waived for ${waived.join(' and ')} for that week)` : '';
   await reply(`Tournament winners set: ${names[0]} and ${names[1]}${waivedNote}`);
   await postList();
+}
+
+// Shows the group's cumulative tournament leaderboard - who's won how
+// many times, across every !tournamentwinners announcement ever made for
+// this group (see store.js's recordTournamentWin/getTournamentLeaderboard,
+// called from handleTournamentWinners just above). Unlike
+// !tournamentwinners itself, which resets every !newlist (it's an
+// announcement about the cycle that just ended, not a standing fact),
+// this is a running history that never resets. View-only and open to
+// anyone, like bare !tournament - there's nothing to set directly here;
+// entries only ever come from !tournamentwinners, so admin-gating a
+// read-only view would just be friction with nothing to protect.
+async function handleLeaderboard(ctx) {
+  const { groupId, reply } = ctx;
+  const board = getTournamentLeaderboard(groupId);
+  if (!board.length) {
+    await reply(`No tournament wins on the board yet - ${COMMAND_PREFIX}tournamentwinners Name1, Name2 puts the first names up here.`);
+    return;
+  }
+  const lines = board.map((entry, i) => `${i + 1}. ${entry.name} - ${entry.wins} win${entry.wins === 1 ? '' : 's'}`);
+  await reply(`🏆 *Tournament Leaderboard*\n${lines.join('\n')}`);
 }
 
 // !courtcanceller sets (or views) the specific person lib/vacancyReminder.js
@@ -1401,6 +1425,7 @@ module.exports = {
   handleSettournament,
   handleTournamentLimit,
   handleTournamentWinners,
+  handleLeaderboard,
   handleCourtCanceller,
   handleUndo,
   handleUpdate,

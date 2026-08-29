@@ -74,6 +74,7 @@ const rawCommands = {
   [`${COMMAND_PREFIX}settournament`]: adminCommands.handleSettournament,
   [`${COMMAND_PREFIX}tournamentlimit`]: adminCommands.handleTournamentLimit,
   [`${COMMAND_PREFIX}tournamentwinners`]: adminCommands.handleTournamentWinners,
+  [`${COMMAND_PREFIX}leaderboard`]: adminCommands.handleLeaderboard,
   [`${COMMAND_PREFIX}courtcanceller`]: adminCommands.handleCourtCanceller,
   [`${COMMAND_PREFIX}undo`]: adminCommands.handleUndo,
   [`${COMMAND_PREFIX}update`]: adminCommands.handleUpdate,
