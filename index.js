@@ -265,6 +265,7 @@ const { getMessageText, formatList, getMentionedJids, getQuotedParticipant, getQ
 const { parseListSections } = require('./lib/listParser');
 const { getRegularPlayers, getUndoableState, saveUndoSnapshot, getUndoSnapshot, restoreUndoableState } = require('./store');
 const { isGroupAdmin } = require('./lib/adminCheck');
+const { resolveBotLid } = require('./lib/botIdentity');
 const catchUpQueue = require('./lib/catchUpQueue');
 const { updateLastSeenStatus } = require('./lib/lastSeenStatus');
 const { checkVacancyReminders } = require('./lib/vacancyReminder');
@@ -696,11 +697,24 @@ async function start() {
 // numeric ID for the same account). Which one a client puts in
 // contextInfo.mentionedJid/contextInfo.participant depends on that
 // group's/that sender's settings - some groups send the classic JID,
-// others send the LID one. Baileys exposes the bot's own LID as
-// sock.user.lid (populated after connecting, alongside sock.user.id), so
-// both are checked here - comparing only sock.user.id would silently
-// never match in LID-addressed groups, making the bot look unaddressed but
-// never actually trigger.
+// others send the LID one. Baileys is SUPPOSED to expose the bot's own
+// LID as sock.user.lid (populated after connecting, alongside
+// sock.user.id), so both are checked here - comparing only sock.user.id
+// would silently never match in LID-addressed groups, making the bot look
+// unaddressed but never actually trigger.
+//
+// Real bug: sock.user.lid isn't always actually populated even in a group
+// that's clearly LID-addressed (a real production log showed
+// sock.user.lid staying undefined all connection long, while an incoming
+// mention's own contextInfo.mentionedJid was a genuine "@lid" address) -
+// so when sock.user.lid is missing AND this message has a "@lid"-form
+// mention/quote to check against, this falls back to
+// lib/botIdentity.js's resolveBotLid(), which looks the bot's own lid up
+// independently via groupMetadata() instead of trusting sock.user. Only
+// attempted in that specific situation (not on every message) since it's
+// a network call (cached, but still) - the vast majority of messages have
+// no mention/quote at all, or already matched via sock.user above,
+// neither of which need it.
 //
 // `text` (optional - every real call site has it already computed, see
 // each one's own scope) additionally catches a literal "@Snoopy" TYPED as
@@ -716,14 +730,33 @@ async function start() {
 // (which needs a live, connected sock.user - this doesn't), so a literal
 // mention still works even in the narrow window right after a fresh
 // connection before that's populated.
-function messageMentionsBot(sock, msg, text) {
+//
+// `groupId` (optional) is only needed for the resolveBotLid() fallback
+// above - every real call site already has it in scope (or, for the one
+// call site before `groupId` itself is computed, the equivalent
+// msg.key.remoteJid) except tests that don't care about this specific
+// edge case, which can omit it and simply skip the fallback.
+async function messageMentionsBot(sock, msg, text, groupId) {
+  const mentioned = getMentionedJids(msg);
+  const quotedParticipant = getQuotedParticipant(msg);
+
   const candidates = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
   if (candidates.length) {
-    const mentioned = getMentionedJids(msg);
     if (mentioned.some((jid) => candidates.includes(normalizeJid(jid)))) return true;
-    const quotedParticipant = getQuotedParticipant(msg);
     if (quotedParticipant && candidates.includes(normalizeJid(quotedParticipant))) return true;
   }
+
+  if (!sock?.user?.lid && groupId) {
+    const lidCandidates = [...mentioned, quotedParticipant].filter((jid) => jid && jid.endsWith('@lid'));
+    if (lidCandidates.length) {
+      const resolvedLid = await resolveBotLid(sock, groupId);
+      if (resolvedLid) {
+        const normalizedResolvedLid = normalizeJid(resolvedLid);
+        if (lidCandidates.some((jid) => normalizeJid(jid) === normalizedResolvedLid)) return true;
+      }
+    }
+  }
+
   return typeof text === 'string' && LITERAL_BOT_MENTION_REGEX.test(text);
 }
 
@@ -1153,7 +1186,7 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
       // undefined/different) is exactly how a genuine @-mention or reply
       // silently fails to trigger !ai.
       botLid: sock?.user?.lid,
-      mentionsBot: messageMentionsBot(sock, msg, getMessageText(msg)),
+      mentionsBot: await messageMentionsBot(sock, msg, getMessageText(msg), msg.key.remoteJid),
     });
   }
 
@@ -1403,7 +1436,7 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
       console.log(
         `[bot] Dropped "${rawCmd}" in ${groupId} (from ${senderId}) because it arrived as a catch-up ('append') redelivery, not live - only ${[...CATCH_UP_COMMANDS].join('/')} are honored on catch-up (see the README's "Catching up after a network outage"). If this was a genuine request, the sender needs to send it again.`
       );
-    } else if (!text.startsWith(COMMAND_PREFIX) && messageMentionsBot(sock, msg, text)) {
+    } else if (!text.startsWith(COMMAND_PREFIX) && await messageMentionsBot(sock, msg, text, groupId)) {
       const bareMention = !stripMentionTokens(text, getMentionedJids(msg)).trim();
       if (bareMention) {
         // No language to interpret at all - same "@Snoopy on its own
@@ -1467,7 +1500,7 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
   }
 
   if (!text.startsWith(COMMAND_PREFIX)) {
-    const mentionsBot = messageMentionsBot(sock, msg, text);
+    const mentionsBot = await messageMentionsBot(sock, msg, text, groupId);
 
     // Acknowledge an @-mention immediately with 💬 ("seen"), then swap it
     // for ✅ below once the bot has actually sent something back - a quick

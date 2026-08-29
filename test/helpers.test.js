@@ -35,6 +35,7 @@ const {
 } = require('../lib/helpers');
 const store = require('../store');
 const adminCheck = require('../lib/adminCheck');
+const botIdentity = require('../lib/botIdentity');
 const { createFakeSock } = require('./helpers/mockBaileys');
 
 let regularPlayersGroupCounter = 0;
@@ -623,4 +624,50 @@ test('adminCheck: isGroupAdmin fails closed (returns false) if groupMetadata thr
   const groupId = 'admincheck-test-2@g.us';
   const sock = { groupMetadata: async () => { throw new Error('network down'); } };
   assert.equal(await adminCheck.isGroupAdmin(sock, groupId, 'anyone@s.whatsapp.net'), false);
+});
+
+test('botIdentity: resolveBotLid finds the bot\'s own lid from groupMetadata and caches it', async () => {
+  const groupId = 'botidentity-test-1@g.us';
+  let fetchCount = 0;
+  const sock = {
+    user: { id: 'bot:7@s.whatsapp.net' },
+    groupMetadata: async () => {
+      fetchCount += 1;
+      return {
+        participants: [
+          { id: 'bot:7@s.whatsapp.net', lid: '999888777@lid' },
+          { id: 'alex@s.whatsapp.net' },
+        ],
+      };
+    },
+  };
+
+  assert.equal(await botIdentity.resolveBotLid(sock, groupId), '999888777@lid');
+  assert.equal(await botIdentity.resolveBotLid(sock, groupId), '999888777@lid');
+  assert.equal(fetchCount, 1, 'the second call should have hit the cache, not fetched again');
+
+  botIdentity.invalidate(groupId);
+  assert.equal(await botIdentity.resolveBotLid(sock, groupId), '999888777@lid');
+  assert.equal(fetchCount, 2, 'invalidate should have forced a re-fetch');
+});
+
+test('botIdentity: resolveBotLid returns null when the bot has no lid entry, or groupMetadata throws', async () => {
+  const noLidSock = {
+    user: { id: 'bot:7@s.whatsapp.net' },
+    groupMetadata: async () => ({ participants: [{ id: 'bot:7@s.whatsapp.net' }] }),
+  };
+  assert.equal(await botIdentity.resolveBotLid(noLidSock, 'botidentity-test-2@g.us'), null);
+
+  const throwingSock = { user: { id: 'bot:7@s.whatsapp.net' }, groupMetadata: async () => { throw new Error('network down'); } };
+  assert.equal(await botIdentity.resolveBotLid(throwingSock, 'botidentity-test-3@g.us'), null);
+});
+
+test('botIdentity: resolveBotLid matches the bot\'s own participant id even across a device-id suffix mismatch (normalizeJid stripping)', async () => {
+  const sock = {
+    user: { id: 'bot:7@s.whatsapp.net' }, // has a device suffix
+    groupMetadata: async () => ({
+      participants: [{ id: 'bot@s.whatsapp.net', lid: '111222333@lid' }], // no device suffix here
+    }),
+  };
+  assert.equal(await botIdentity.resolveBotLid(sock, 'botidentity-test-4@g.us'), '111222333@lid');
 });

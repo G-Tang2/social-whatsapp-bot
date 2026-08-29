@@ -66,7 +66,12 @@ function buildFakeSock() {
   const statusUpdates = [];
   const presenceUpdates = [];
   const admins = new Set(['admin@s.whatsapp.net']);
-  const participants = new Set(['admin@s.whatsapp.net', 'alex@s.whatsapp.net', 'sam@s.whatsapp.net']);
+  // Includes the bot's own JID, with BOT_LID attached below via
+  // groupMetadata()'s participants mapping - see the "sock.user.lid isn't
+  // populated" e2e tests below (lib/botIdentity.js's resolveBotLid()),
+  // which need groupMetadata() to expose the bot's own lid independently
+  // of sock.user, the same way real WhatsApp's own participant list does.
+  const participants = new Set(['admin@s.whatsapp.net', 'alex@s.whatsapp.net', 'sam@s.whatsapp.net', BOT_JID]);
 
   const sock = {
     sentMessages,
@@ -99,7 +104,11 @@ function buildFakeSock() {
     groupMetadata: async (jid) => ({
       id: jid,
       subject: 'Fake Group',
-      participants: [...participants].map((id) => ({ id, admin: admins.has(id) ? 'admin' : null })),
+      participants: [...participants].map((id) => ({
+        id,
+        lid: id === BOT_JID ? BOT_LID : undefined,
+        admin: admins.has(id) ? 'admin' : null,
+      })),
     }),
     updateProfileStatus: async (status) => {
       statusUpdates.push(status);
@@ -610,6 +619,44 @@ test('e2e: AI mention still triggers when WhatsApp sends the bot\'s LID (not its
 
   const posted = fakeSockInstance.sentMessages.find((m) => /jordan/i.test(m.content.text || ''));
   assert.ok(posted, 'expected the LID-form mention to still be recognized as mentioning the bot');
+});
+
+test('e2e: a LID mention still triggers even when sock.user.lid itself is missing - regression for a real production bug (falls back to groupMetadata() via lib/botIdentity.js)', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({ command: 'in', argText: '', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  // Real bug report: a production log showed sock.user.lid staying
+  // undefined for an entire connection, even though the SAME group's
+  // mentions were clearly LID-addressed (contextInfo.mentionedJid was a
+  // "@lid" JID) - meaning a genuine "@Snoopy ..." mention was silently
+  // never recognized. Simulated here by deleting user.lid from the
+  // otherwise-normal fake sock, restored in `finally` so later tests in
+  // this shared-instance file aren't affected.
+  const realLid = fakeSockInstance.user.lid;
+  delete fakeSockInstance.user.lid;
+  try {
+    await deliver('put me down for Saturday', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_LID] });
+
+    const posted = fakeSockInstance.sentMessages.find((m) => /jordan/i.test(m.content.text || ''));
+    assert.ok(posted, 'expected the LID mention to still be recognized via the groupMetadata() fallback, even with sock.user.lid missing');
+  } finally {
+    fakeSockInstance.user.lid = realLid;
+  }
+});
+
+test('e2e: without sock.user.lid, an ordinary message with NO lid-form mention at all does not trigger a groupMetadata() lookup (Gemini never called)', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  const callsBefore = geminiCallCount;
+
+  const realLid = fakeSockInstance.user.lid;
+  delete fakeSockInstance.user.lid;
+  try {
+    await deliver('just some ordinary chat, nothing to see here', { from: 'jordan@s.whatsapp.net', type: 'notify' });
+    assert.equal(geminiCallCount, callsBefore, 'a plain message with no mention/quote at all should never even attempt the fallback lookup');
+  } finally {
+    fakeSockInstance.user.lid = realLid;
+  }
 });
 
 test('e2e: replying to one of the bot\'s own messages (no "@Snoopy" typed at all) triggers AI interpretation, same as an explicit @-mention', async () => {
