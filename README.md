@@ -1858,10 +1858,18 @@ Check these in order:
    receives messages from groups the linked WhatsApp account has joined.
 
 6. **Turn on debug logging.** Set `DEBUG=true` in `.env` and restart the
-   bot. It will now print every incoming message (chat, sender, whether it
-   was `fromMe`, and the text) before any filtering happens - this tells you
-   exactly what the bot is seeing, or confirms it's seeing nothing at all
-   (which points back to step 4 or 5).
+   bot. It will now print every incoming message for a group already in
+   `ALLOWED_GROUPS` (chat, sender, whether it was `fromMe`, and the text)
+   before any filtering happens - this tells you exactly what the bot is
+   seeing, or confirms it's seeing nothing at all (which points back to
+   step 4 or 5). Deliberately scoped to `ALLOWED_GROUPS` rather than every
+   message the socket sees at all: if this bot shares a WhatsApp account
+   with another deployment as a companion device (see "Running more than
+   one deployment" above), WhatsApp delivers a copy of *every* message -
+   every group, every DM - to both connections regardless of either one's
+   own `ALLOWED_GROUPS`, and logging all of that made a single
+   deployment's debug output unreadable, full of the other deployment's
+   own traffic it was never going to act on anyway.
 
 7. **Was the command sent while the bot's host was offline?** If so, and
    it wasn't `!in`, `!out`, or `!paid`, that's expected - see "Catching up

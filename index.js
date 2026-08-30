@@ -1138,10 +1138,23 @@ async function handleAiMentionCatchUp({ sock, msg, groupId, senderId, senderName
 // the whole multi-line message instead of one per line. See the
 // isMultilineCommands block for the flush side of this.
 async function handleMessage(sock, msg, upsertType, responseCollector) {
-  if (DEBUG) {
-    // Logs EVERY incoming message before any filtering, so you can see
+  if (DEBUG && ALLOWED_GROUPS.includes(msg.key.remoteJid)) {
+    // Logs EVERY incoming message for a group this bot is actually
+    // configured to moderate, before any filtering, so you can see
     // exactly what the bot received and figure out which filter (if any)
     // is dropping it. Enable with DEBUG=true in .env.
+    //
+    // Deliberately scoped to ALLOWED_GROUPS, not every message the socket
+    // sees: two deployments of this bot can share one WhatsApp account as
+    // separate companion devices (see the README's "Running more than one
+    // deployment"), in which case WhatsApp delivers a copy of EVERY
+    // message - every group, every DM - to both connections regardless of
+    // either bot's own ALLOWED_GROUPS. Logging all of it made a single
+    // deployment's debug output impossible to read, full of another
+    // deployment's own groups/DMs that this one was never going to act on
+    // anyway. An unconfigured bot (ALLOWED_GROUPS empty) logs nothing
+    // here either - see the separate, always-on "unconfigured group"
+    // console.log below for that bootstrapping case instead.
     console.log('[debug] incoming message', {
       chat: msg.key.remoteJid,
       fromMe: msg.key.fromMe,
