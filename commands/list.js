@@ -596,26 +596,29 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
   if (!rest) {
     const event = getCurrentEvent(groupId);
     const own = event.entries.filter((e) => e.addedBy === senderId && e.self !== false);
+    let resolvedByExistingDuplicate = false;
     if (own.length === 0) {
-      // No entry to take OUT of the tournament at all - rather than a dead
-      // end, add the sender fresh instead, social only (no tournament
-      // flag). Real bug report: a bare self "social only" request (e.g.
-      // natural language "make me social only"/"take me out of the
-      // tournament") always maps to THIS command (see lib/geminiCommand.js's
-      // "out" SPECIAL CASE) even when the sender turns out to have never
-      // joined at all - the model has no way to check "is 'me' currently in
-      // the tournament" against the CURRENT LIST the way it can for a NAMED
-      // target (it can't match a WhatsApp ID to a printed name), so it
-      // can't reliably choose "in" vs "out" itself here. This code CAN check
-      // (via addedBy, just above), so it resolves the ambiguity the same
-      // way the "in"/"out" SPECIAL CASE already does for a named target -
-      // ending up social-only either way achieves what "social only"
-      // actually asked for, whether that's satisfied by removing an
-      // existing tournament entry or by adding a fresh non-tournament one.
+      // No entry FLAGGED as the sender's own to take OUT of the tournament
+      // - rather than a dead end, add the sender fresh instead, social only
+      // (no tournament flag). Real bug report: a bare self "social only"
+      // request (e.g. natural language "make me social only"/"take me out
+      // of the tournament") always maps to THIS command (see
+      // lib/geminiCommand.js's "out" SPECIAL CASE) even when the sender
+      // turns out to have never joined at all - the model has no way to
+      // check "is 'me' currently in the tournament" against the CURRENT
+      // LIST the way it can for a NAMED target (it can't match a WhatsApp
+      // ID to a printed name), so it can't reliably choose "in" vs "out"
+      // itself here. This code CAN check (via addedBy, just above), so it
+      // resolves the ambiguity the same way the "in"/"out" SPECIAL CASE
+      // already does for a named target - ending up social-only either way
+      // achieves what "social only" actually asked for, whether that's
+      // satisfied by removing an existing tournament entry or by adding a
+      // fresh non-tournament one.
       const modResult = checkEntry(senderName);
+      let addResult = { ok: false };
       if (modResult.ok) {
         const senderIsAdmin = await isGroupAdmin(sock, groupId, senderId);
-        const addResult = addEntry(groupId, senderName, senderId, senderIsAdmin, true, false);
+        addResult = addEntry(groupId, senderName, senderId, senderIsAdmin, true, false);
         if (addResult.ok) {
           const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
           if (!isCatchUp) {
@@ -629,25 +632,39 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
           }
           return { command: 'out', senderName, argText, addedSocialOnly: [senderName], waitlisted: addResult.waitlisted, ...paidOutcome };
         }
-        // addResult.ok === false here means a same-named entry already
-        // exists under a DIFFERENT WhatsApp ID (store.js's addEntry
-        // "duplicate" reason) - falls through to the plain rejection below,
-        // same as checkEntry rejecting the push name would.
       }
 
-      const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
-      if (!isCatchUp) {
-        await reply(
-          `Can't take you out of the tournament if you're not even on the list! If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out tournament <name>.`
-        );
-        await replyPaidOutcome(reply, paidOutcome);
-        if (paidOutcome.paid.length) {
-          await postList();
+      if (addResult.reason === 'duplicate') {
+        // A name exactly matching the sender's own push name is ALREADY on
+        // the list - almost always genuinely the sender's own entry, just
+        // never flagged `self` (e.g. added via !update, a bulk "!newlist
+        // ... with ..." list, or someone typing their name explicitly
+        // instead of a bare !in - see addEntry's own doc comment on `self`
+        // for why that doesn't cover every real self-add). Real bug
+        // report: this used to fall straight through to the generic "not
+        // even on the list" rejection below, even with the sender's exact
+        // name sitting right there on the list under "🏆 Tournament" -
+        // resolve it the same way the explicit "!out tournament <name>"
+        // form already would, rather than assuming it must be a different
+        // real person of the same name (that assumption is no more/less
+        // risky than what the explicit named form already accepts).
+        names = [senderName];
+        resolvedByExistingDuplicate = true; // skip the ambiguity/empty checks below - a name is already resolved
+      } else {
+        const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
+        if (!isCatchUp) {
+          await reply(
+            `Can't take you out of the tournament if you're not even on the list! If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out tournament <name>.`
+          );
+          await replyPaidOutcome(reply, paidOutcome);
+          if (paidOutcome.paid.length) {
+            await postList();
+          }
         }
+        return { command: 'out', senderName, argText, noEntry: true, ...paidOutcome };
       }
-      return { command: 'out', senderName, argText, noEntry: true, ...paidOutcome };
     }
-    if (own.length > 1) {
+    if (!resolvedByExistingDuplicate && own.length > 1) {
       const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
@@ -660,7 +677,9 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
       }
       return { command: 'out', senderName, argText, ambiguous: own.map((e) => e.name), ...paidOutcome };
     }
-    names = [own[0].name];
+    if (!resolvedByExistingDuplicate) {
+      names = [own[0].name];
+    }
   } else {
     names = parseNames(rest, senderName);
   }

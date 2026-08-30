@@ -516,6 +516,34 @@ test('handleOut: bare "!out tournament" from someone with NO existing entry adds
   assert.match(replies[0], /added you to the list instead - social only/);
 });
 
+// Real bug report: the sender's own name genuinely was on the tournament
+// list, but their entry wasn't flagged `self` (e.g. it was typed in by an
+// admin, added via !update, or via a bulk "!newlist ... with ..." list -
+// see addEntry's own doc comment on `self` for why that doesn't cover
+// every real self-add). A bare "!out tournament" used to fall all the way
+// through to "not even on the list", even with the sender's exact name
+// sitting right there under "🏆 Tournament" - the fresh-add fallback's own
+// "name already exists" duplicate check was wrongly treated as proof it
+// must be a DIFFERENT real person of the same name, rather than checking
+// whether it's actually the sender's own entry.
+test('handleOut: bare "!out tournament" resolves to the sender\'s own entry even when it was never flagged `self` (e.g. added by someone else, or via !update)', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, true);
+  // Added by an admin, not the sender - self stays false, exactly like a
+  // name typed into !update or a bulk "!newlist ... with ..." list would.
+  store.addEntry(groupId, 'Garvin', 'admin@s.whatsapp.net', true, false, true);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'garvin@s.whatsapp.net', senderName: 'Garvin', argText: 'tournament' });
+  await listCommands.handleOut(ctx);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.entries.length, 1, 'expected the EXISTING entry to be reused, not a duplicate added');
+  assert.equal(event.entries[0].name, 'Garvin');
+  assert.equal(event.entries[0].tournament, false, 'expected Garvin to be moved to social only');
+  assert.doesNotMatch(replies.join('\n'), /not even on the list/i);
+});
+
 test('handleOut: bare "!out tournament" from someone with no entry, when the list is full, adds them to the waitlist instead', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});

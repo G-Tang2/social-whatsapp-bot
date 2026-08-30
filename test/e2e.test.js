@@ -1409,6 +1409,32 @@ test('e2e: a typed !in tournament joins both the social list and the tournament,
   assert.match(posted.content.text, /e2etournamentprobe1/i);
 });
 
+// Real bug report: someone's own name was genuinely on the tournament
+// list, but their entry wasn't flagged `self` because an admin typed it
+// in explicitly (e.g. "!in tournament <name>") rather than the person
+// bare-signing themselves up - bare "!out tournament" from that same
+// person used to fall through to "not even on the list", even with their
+// exact name sitting right there under "🏆 Tournament".
+test('e2e: bare "!out tournament" resolves to the sender\'s own entry even when an admin added them by name, not the sender themselves', async () => {
+  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  await deliver('!in tournament E2eGarvinProbe', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('!out tournament', { from: 'e2egarvinprobe@s.whatsapp.net', type: 'notify' });
+
+  const posted = fakeSockInstance.sentMessages.find((m) => /Social only/.test(m.content.text || ''));
+  assert.ok(posted, 'expected the posted list to show the reposted list');
+  // Isolate just the Tournament section (everything before the "Social
+  // only" heading) - a plain [\s\S]* scan across the whole text would
+  // still "match" E2eGarvinProbe's name further down, under Social only,
+  // even though it's correctly no longer under Tournament.
+  const tournamentSection = posted.content.text.split('Social only')[0];
+  assert.doesNotMatch(tournamentSection, /E2eGarvinProbe/, 'expected E2eGarvinProbe to no longer be under Tournament');
+  assert.match(posted.content.text, /Social only[\s\S]*E2eGarvinProbe/, 'expected E2eGarvinProbe to now be listed under Social only');
+  const rejection = fakeSockInstance.sentMessages.find((m) => /not even on the list/i.test(m.content.text || ''));
+  assert.equal(rejection, undefined, 'expected no "not even on the list" rejection - this is the bug being fixed');
+});
+
 test('e2e: an admin @-mentioning "sign me up for the tournament" dispatches to the real !in handler with the tournament keyword', async () => {
   ai.setEnabled(GROUP_ID, true);
   await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
