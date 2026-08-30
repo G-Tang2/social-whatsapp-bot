@@ -284,7 +284,6 @@ const {
   COMMAND_PREFIX,
   DEBUG,
   LAST_SEEN_STATUS_ENABLED,
-  DM_REPLIES_ENABLED,
   LAST_SEEN_STATUS_INTERVAL_MS,
   VACANCY_REMINDER_INTERVAL_MS,
   INACTIVITY_CHECK_INTERVAL_MS,
@@ -404,16 +403,6 @@ function effectiveUpsertType(msg, type) {
 // window where that would actually matter (a message edited in the
 // instant before a restart) is vanishingly narrow.
 const lastLiveMessageByGroup = new Map();
-
-// Message ids the DM redirect reply (see DM_REDIRECT_REPLY/the DM branch
-// in handleMessage below) has already been sent for - WhatsApp/Baileys can
-// genuinely deliver the exact same direct message through
-// 'messages.upsert' more than once, and without this, each redelivery
-// would earn its own reply, turning one DM into a burst of duplicate
-// "I'm a bot" replies. In-memory only, unbounded (no eviction) - DMs to a
-// group-list bot are rare enough that this never grows large enough to
-// matter, same trade-off as the other plain in-memory state in this file.
-const repliedDmMessageIds = new Set();
 
 // Handles ONE entry of Baileys' 'messages.update' event - the channel a
 // message EDIT (not a brand new message) arrives on, entirely separate
@@ -792,19 +781,6 @@ const AI_TIMEOUT_REPLY = `Whoops, daydreamed a bit too long on that one - took t
 // into the group) - the real detail goes to the console for whoever's
 // running the bot to investigate.
 const UNEXPECTED_ERROR_REPLY = "Uh oh, tripped over my own paws there - something went wrong on my end handling that. Try again in a bit, and let an admin know if it keeps happening.";
-
-// Shown once for every direct message the bot receives (see the DM branch
-// in handleMessage below) - a fixed redirect, not silence, so someone who
-// tries messaging it privately gets a clear signal rather than wondering
-// if it's broken. Deliberately just a redirect, not any real functionality:
-// every command/list here is scoped to a specific GROUP (see `groupId`
-// throughout this file), and a DM has no group to act on - resolving
-// "which group" for a DM sender is a bigger feature than a redirect
-// reply needs to solve. Explicitly states it's an automated bot (unlike
-// every other reply in this file, which stays in Snoopy's voice without
-// ever calling itself that) and points to the group's organiser rather
-// than the bot itself, since there's genuinely no one reading DMs here.
-const DM_REDIRECT_REPLY = "Hi, this is an automated bot - I don't read or respond to direct messages. For help, please contact the organiser in the group chat instead.";
 
 // Handles a live, non-"!"-prefixed message that @-mentioned the bot, in a
 // group that has !ai turned on (see the call site in handleMessage below
@@ -1202,38 +1178,7 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
   if (msg.key.fromMe) return;
 
   const groupId = msg.key.remoteJid;
-  if (!groupId || !groupId.endsWith('@g.us')) {
-    // A genuine 1:1 direct message - JIDs for a real WhatsApp account
-    // always end in one of these two suffixes (same two forms
-    // messageMentionsBot() above checks for the bot's OWN id/lid), which
-    // rules out other non-group traffic Baileys can surface here too, e.g.
-    // "status@broadcast" for a contact's WhatsApp Status updates - not
-    // something to ever reply to. No real content (msg.message, e.g. a
-    // reaction or protocol message) is skipped the same way the group path
-    // below skips it - nothing to actually respond to there either.
-    // WhatsApp/Baileys can genuinely deliver the SAME DM through
-    // 'messages.upsert' more than once (e.g. once as it first arrives and
-    // again shortly after) - the message id itself (set by the sender,
-    // not by us) stays identical across those redeliveries even though
-    // it's a distinct event each time, so tracking ids already replied to
-    // here is what stops that from becoming two redirect replies for what
-    // was really one DM. See repliedDmMessageIds above.
-    if (
-      DM_REPLIES_ENABLED
-      && msg.message
-      && (groupId.endsWith('@s.whatsapp.net') || groupId.endsWith('@lid'))
-      && msg.key.id
-      && !repliedDmMessageIds.has(msg.key.id)
-    ) {
-      repliedDmMessageIds.add(msg.key.id);
-      try {
-        await sock.sendMessage(groupId, { text: DM_REDIRECT_REPLY }, { quoted: msg });
-      } catch (err) {
-        console.error(`[bot] Failed to reply to a DM from ${groupId}:`, err.message);
-      }
-    }
-    return;
-  }
+  if (!groupId || !groupId.endsWith('@g.us')) return; // only moderate group chats - a DM/status/etc. gets no response at all
 
   if (!msg.message) return; // no real content (e.g. a reaction or protocol message) - nothing to record or act on
 

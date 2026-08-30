@@ -1813,10 +1813,10 @@ stops working days later:
 - **Two deployments CAN share one phone number** (each linked as its own
   companion device, like having WhatsApp Web open in two browsers) without
   hitting the problem above, as long as each still has its own `auth_info`
-  from its own QR scan - but WhatsApp then delivers every direct message
-  to *every* companion device linked to that number, so leave
-  `DM_REPLIES_ENABLED=true` (see `.env.example`) on only ONE of them, or
-  people DMing the bot get more than one reply.
+  from its own QR scan. Group commands stay correctly scoped per
+  deployment either way (each one's own `ALLOWED_GROUPS`) - the bot never
+  replies to a direct message at all (see below), so there's no
+  DM-duplication risk to worry about from sharing a number.
 
 ### Useful ongoing commands (same on both platforms)
 
@@ -1839,26 +1839,9 @@ Check these in order:
    also a member of the group, and send the command from that one.
 
 2. **Did you send it as a direct message instead of in the group?** The bot
-   only ever runs the list from inside the group chat - a DM never does
-   anything, since a DM has no group for a command to apply to. By default
-   it's silent about this (no reply at all); set `DM_REPLIES_ENABLED=true`
-   in `.env` if you'd rather it send a fixed one-line redirect ("Hi, this
-   is an automated bot... please contact the organiser in the group chat
-   instead") - see `.env.example`. Only ever sent once per message even
-   with that on, even if WhatsApp happens to redeliver the same DM more
-   than once.
-
-   **Getting TWO redirect replies to the same DM** (only possible once
-   you've turned `DM_REPLIES_ENABLED` on)? This means the phone number is
-   linked as more than one companion device at once (e.g. you're running
-   two separate deployments of this bot - different `AUTH_DIR`s, different
-   `.env`s - both linked from the same phone's WhatsApp, maybe one per
-   group, and both have it turned on). WhatsApp delivers a DM to every
-   linked companion device, and each deployment is otherwise fully
-   independent with no way to know the others already replied. Leave
-   `DM_REPLIES_ENABLED=true` on only ONE of them - see
-   `.env.example`. This doesn't affect group commands at all, since
-   `ALLOWED_GROUPS` already scopes those correctly per deployment.
+   only ever runs the list from inside the group chat, and never responds
+   to a direct message at all - not even to say so. A DM has no group for
+   a command to apply to, so send it in the group chat instead.
 
 3. **Is `ALLOWED_GROUPS` already set to something in your `.env`?** Once it
    has any value, the bot stops logging "unconfigured group" messages for
