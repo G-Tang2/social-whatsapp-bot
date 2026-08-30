@@ -1267,6 +1267,13 @@ function getLimit(groupId) {
 // and returns the entries that got promoted, so callers can mention them.
 // Called whenever a spot might have opened up: someone leaves the main
 // list, or an admin raises/clears the limit.
+//
+// Also resolves any deferred tournament-join intent (see addEntry's own
+// doc comment on `wantsTournament`) via applyTournamentIntent() - real bug
+// fixed here: someone who asked to join the tournament while the general
+// list was full used to get promoted later as a plain social-only entry,
+// with the fact they'd ever asked for the tournament silently lost the
+// moment they landed on the general waitlist instead of `entries`.
 function promoteFromWaitlist(current) {
   if (!current.waitlist) current.waitlist = [];
   const promoted = [];
@@ -1275,6 +1282,7 @@ function promoteFromWaitlist(current) {
     (current.limit === null || current.limit === undefined || current.entries.length < current.limit)
   ) {
     const next = current.waitlist.shift();
+    applyTournamentIntent(current, next);
     current.entries.push(next);
     promoted.push(next);
   }
@@ -1356,6 +1364,13 @@ function allowFromWaitlist(groupId, count) {
   const moved = [];
   for (let i = 0; i < n; i++) {
     const next = current.waitlist.shift();
+    // Resolves any deferred tournament-join intent - see addEntry's own
+    // doc comment on `wantsTournament` and applyTournamentIntent's doc
+    // comment. Same fix as promoteFromWaitlist() above; this is a
+    // deliberately separate promotion path (see this function's own doc
+    // comment on why !allow doesn't just call promoteFromWaitlist()), so
+    // it needs the exact same call site added independently.
+    applyTournamentIntent(current, next);
     current.entries.push(next);
     moved.push(next);
   }
@@ -1392,13 +1407,21 @@ function allowFromWaitlist(groupId, count) {
  * `wantsTournament` (optional) records whether the person asked to also
  * join the group's tournament sub-feature (e.g. via handleIn's leading
  * "tournament" keyword - see lib/helpers.js's stripLeadingInKeywords).
- * Only actually takes effect - `entry.tournament = true` - when ALL of the
- * following hold: tournament is enabled for the group, there's room under
- * `tournamentLimit`, AND the entry lands straight on `entries` rather than
- * the waitlist (someone not yet confirmed for the social list itself can't
- * be in its tournament either - see joinTournament()'s doc comment for how
- * they can opt in later once promoted). If it's enabled but just full,
- * `entry.tournamentWaitlisted` is set instead, which formatList() (see
+ * Someone not yet confirmed for the social list itself can't be in its
+ * tournament either - so if the entry lands on the general WAITLIST
+ * (`current.waitlist`, capacity reached) rather than straight onto
+ * `entries`, the tournament decision can't be made yet either; `entry.
+ * wantsTournament` is kept on the entry so applyTournamentIntent() (below)
+ * can make that same decision LATER, at the moment promoteFromWaitlist()
+ * actually moves them onto `entries` - see its own doc comment. Real bug
+ * this fixes: this used to be silently dropped the moment an entry hit the
+ * general waitlist, so someone who asked to join the tournament while the
+ * list was full would get promoted later as a plain social-only entry,
+ * with no record they'd ever asked for the tournament at all.
+ * If the entry lands straight on `entries` instead (capacity not reached),
+ * applyTournamentIntent() below runs immediately: tournament enabled and
+ * room under `tournamentLimit` sets `entry.tournament = true`; enabled but
+ * full sets `entry.tournamentWaitlisted` instead, which formatList() (see
  * lib/helpers.js) renders as a "(🏆 WL)" tag next to their name - no
  * separate reply needed, the tag in the reposted list says it (see
  * commands/list.js's handleIn for the one exception: if tournament isn't
@@ -1408,6 +1431,30 @@ function allowFromWaitlist(groupId, count) {
  * Returns { ok: true, list, waitlist, waitlisted } on success, or
  * { ok: false, reason } if it's a duplicate.
  */
+// Resolves a `wantsTournament`-flagged entry's actual tournament status at
+// the moment it's ABOUT to land on `current.entries` - shared by addEntry
+// (landing there immediately, capacity not reached) and
+// promoteFromWaitlist (landing there LATER, once a general-waitlist spot
+// frees up) so both apply the exact same "tournament enabled, room under
+// tournamentLimit" decision, whichever moment it actually happens at. See
+// addEntry's own doc comment on `wantsTournament` for why this needs to be
+// deferred at all rather than decided once, up front. No-op (leaves
+// `entry.tournament`/`tournamentWaitlisted` at their current values) for
+// an entry that never asked, or if tournament isn't enabled - safe to call
+// unconditionally on every entry a caller is about to push onto `entries`.
+function applyTournamentIntent(current, entry) {
+  if (!entry.wantsTournament || !current.tournamentEnabled) return;
+  const tournamentCount = current.entries.filter((e) => e.tournament).length;
+  const hasRoom = current.tournamentLimit === null || current.tournamentLimit === undefined
+    || tournamentCount < current.tournamentLimit;
+  // Full, not disabled - tag them (🏆 WL) rather than silently leaving them
+  // indistinguishable from someone who never asked for the tournament at
+  // all. See the file-level tournament comment above and joinTournament()'s
+  // doc comment for the same idea on the already-on-the-list upgrade path.
+  entry.tournament = hasRoom;
+  entry.tournamentWaitlisted = !hasRoom;
+}
+
 function addEntry(groupId, name, addedBy, addedByIsAdmin, selfAdded, wantsTournament) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
@@ -1429,24 +1476,14 @@ function addEntry(groupId, name, addedBy, addedByIsAdmin, selfAdded, wantsTourna
     self: !!selfAdded,
     tournament: false,
     tournamentWaitlisted: false,
+    wantsTournament: !!wantsTournament,
   };
 
   const atCapacity = current.limit !== null && current.limit !== undefined && current.entries.length >= current.limit;
   if (atCapacity) {
     current.waitlist.push(entry);
   } else {
-    if (wantsTournament && current.tournamentEnabled) {
-      const tournamentCount = current.entries.filter((e) => e.tournament).length;
-      const hasRoom = current.tournamentLimit === null || current.tournamentLimit === undefined
-        || tournamentCount < current.tournamentLimit;
-      // Full, not disabled - tag them (🏆 WL) rather than silently leaving
-      // them indistinguishable from someone who never asked for the
-      // tournament at all. See the file-level tournament comment above and
-      // joinTournament()'s doc comment for the same idea on the
-      // already-on-the-list upgrade path.
-      entry.tournament = hasRoom;
-      entry.tournamentWaitlisted = !hasRoom;
-    }
+    applyTournamentIntent(current, entry);
     current.entries.push(entry);
   }
   writeAll(all);

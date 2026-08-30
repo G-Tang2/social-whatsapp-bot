@@ -686,6 +686,16 @@ see below). It combines with `paid` too, in either order - `!in
 tournament paid` and `!in paid tournament` both work (either flag word
 always goes before the name(s), e.g. `!in paid tournament Grace, Henry`).
 
+**If the general list itself is full when you opt in** (not the
+tournament - see "Capacity is separate" below for that case), the new
+entry lands on the regular `*Waitlist*` like any other over-capacity join
+would, same as a plain `!in` - but the request to also join the tournament
+isn't lost. The moment `!allow` (or a freed-up spot) promotes them onto
+the real Attendance list, they're placed straight into `🏆 Tournament` (or
+its `(🏆 WL)` queue, if the tournament itself is full by then) exactly as
+if they'd typed `!in tournament` fresh at that moment - no need to ask
+again after being let in.
+
 **Moving to social only:** lead with the word `tournament` on `!out`
 instead, e.g. `!out tournament` for yourself, or `!out tournament Isaac`
 (or several names, comma-separated) for someone else - this takes them OUT

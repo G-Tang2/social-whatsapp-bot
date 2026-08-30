@@ -1435,6 +1435,30 @@ test('e2e: bare "!out tournament" resolves to the sender\'s own entry even when 
   assert.equal(rejection, undefined, 'expected no "not even on the list" rejection - this is the bug being fixed');
 });
 
+// Real bug report: "@Snoopy add RJ to tournament" while the general list
+// was already full landed RJ on the general waitlist (not the
+// tournament-specific one) with no way to remember they'd asked for the
+// tournament - later promoted with "!allow 1", RJ showed up as a plain
+// social-only entry instead of under "🏆 Tournament".
+test('e2e: someone added to the tournament while the general list is full is placed IN the tournament once "!allow" lets them in, not just social only', async () => {
+  await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  // This shared e2e file accumulates entries in GROUP_ID across the whole
+  // file - set the limit to exactly the CURRENT headcount (rather than a
+  // fixed small number) so the list is "at capacity" for the next add
+  // without demoting anyone already on it.
+  const currentHeadcount = store.getCurrentEvent(GROUP_ID).entries.length;
+  await deliver(`!limit ${currentHeadcount}`, { from: 'admin@s.whatsapp.net', type: 'notify' });
+  await deliver('!in tournament E2eRjProbe', { from: 'admin@s.whatsapp.net', type: 'notify' }); // list's full - lands on the general waitlist
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('!allow 1', { from: 'admin@s.whatsapp.net', type: 'notify' });
+
+  const posted = fakeSockInstance.sentMessages.find((m) => /🏆 \*Tournament\*/.test(m.content.text || ''));
+  assert.ok(posted, 'expected the posted list to show the tournament section');
+  const tournamentSection = posted.content.text.split('Social only')[0];
+  assert.match(tournamentSection, /E2eRjProbe/, 'expected E2eRjProbe to be placed in the tournament once allowed in, not just social only');
+});
+
 test('e2e: an admin @-mentioning "sign me up for the tournament" dispatches to the real !in handler with the tournament keyword', async () => {
   ai.setEnabled(GROUP_ID, true);
   await deliver('!settournament on', { from: 'admin@s.whatsapp.net', type: 'notify' });

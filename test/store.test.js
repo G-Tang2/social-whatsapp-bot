@@ -1402,6 +1402,60 @@ test('addEntry: someone waitlisted (over the MAIN limit) never gets tournament:t
   assert.equal(waitlisted.tournamentWaitlisted, false);
 });
 
+// Real bug report: someone asked to join the tournament while the general
+// list was already full ("add RJ to tournament"), landing them on the
+// general waitlist with no way to reflect that yet (see addEntry's own
+// doc comment on `wantsTournament`) - later promoted off that waitlist via
+// !allow, they showed up as a plain social-only entry instead of under
+// "🏆 Tournament", because the fact they'd ever asked was silently lost the
+// moment they hit the general waitlist rather than `entries`.
+test('allowFromWaitlist: a wantsTournament=true entry promoted off the general waitlist is placed into the tournament, not just social only', () => {
+  const groupId = freshGroupId();
+  store.setTournamentEnabled(groupId, true);
+  store.setLimit(groupId, 1);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true); // fills the one spot
+  const waitlisted = store.addEntry(groupId, 'RJ', 'rj@s.whatsapp.net', false, true, true); // wantsTournament=true
+  assert.equal(waitlisted.waitlisted, true);
+  assert.equal(store.getCurrentEvent(groupId).waitlist[0].tournament, false); // not decided yet
+
+  const { moved } = store.allowFromWaitlist(groupId, 1);
+
+  assert.equal(moved.length, 1);
+  assert.equal(moved[0].name, 'RJ');
+  const rj = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'RJ');
+  assert.equal(rj.tournament, true, 'expected RJ to be placed in the tournament once allowed in, not just social only');
+});
+
+test('promoteFromWaitlist (via removeEntry freeing a spot): a wantsTournament=true entry promoted off the general waitlist is placed into the tournament too', () => {
+  const groupId = freshGroupId();
+  store.setTournamentEnabled(groupId, true);
+  store.setLimit(groupId, 1);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'RJ', 'rj@s.whatsapp.net', false, true, true);
+
+  store.removeEntry(groupId, 'Derek'); // frees the one spot, auto-promoting RJ
+
+  const rj = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'RJ');
+  assert.equal(rj.tournament, true);
+});
+
+test('allowFromWaitlist: a wantsTournament=true entry promoted while the tournament itself is full gets tagged (🏆 WL) instead, same as a fresh add would', () => {
+  const groupId = freshGroupId();
+  store.setTournamentEnabled(groupId, true);
+  store.setTournamentLimit(groupId, 1);
+  store.setLimit(groupId, 2);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true); // fills the tournament's one spot
+  store.setLimit(groupId, 1); // now over the main limit too, so the next add is waitlisted
+  const waitlisted = store.addEntry(groupId, 'RJ', 'rj@s.whatsapp.net', false, true, true);
+  assert.equal(waitlisted.waitlisted, true);
+
+  store.allowFromWaitlist(groupId, 1);
+
+  const rj = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'RJ');
+  assert.equal(rj.tournament, false);
+  assert.equal(rj.tournamentWaitlisted, true);
+});
+
 test('joinTournament: opts an existing attendance entry in, subject to enabled/room/already-in checks', () => {
   const groupId = freshGroupId();
   store.setTournamentEnabled(groupId, false);
