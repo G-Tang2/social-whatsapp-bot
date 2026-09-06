@@ -840,6 +840,35 @@ test('e2e: an off-topic AI mention (command: none) with an "offTopicReply" from 
   assert.doesNotMatch(sent, /not capable of doing that/i);
 });
 
+// Real bug report: replying to someone's own "@Snoopy ..." mention quotes
+// that message back - and WhatsApp's raw mention text is always
+// "@<phone number>" (the bot's own here), never the friendly display name
+// "@Snoopy", so the quote preview showed the bot's raw numeric ID for
+// anyone who hasn't saved that number as a contact.
+test('e2e: the bot\'s reply quotes the triggering "@bot ..." message with the mention STRIPPED from the preview, not the raw numeric mention', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  setNextGeminiResponse({
+    command: 'none',
+    argText: '',
+    confidence: 'high',
+    offTopicReply: 'Doing great, thanks for asking!',
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  // BOT_JID = 'bot:7@s.whatsapp.net' - stripMentionTokens matches on just
+  // the number/local part ("bot"), same as a real WhatsApp raw mention
+  // token always being "@<phone number>", never a friendly display name.
+  await deliver('@bot how are you', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  const sent = fakeSockInstance.sentMessages[0];
+  assert.ok(sent.options && sent.options.quoted, 'expected the reply to be sent as a quote-reply');
+  const quotedText = sent.options.quoted.message.extendedTextMessage
+    ? sent.options.quoted.message.extendedTextMessage.text
+    : sent.options.quoted.message.conversation;
+  assert.equal(quotedText, 'how are you', 'expected the mention stripped from the quote preview, not the raw "@bot" shown');
+  assert.ok(sent.options.quoted.key, 'expected the original message\'s key to be preserved so tapping the quote jumps to the real original message');
+});
+
 test('e2e: a compound @-mention with a real dispatchable action plus an off-topic aside dispatches the real one AND separately replies to the off-topic part', async () => {
   ai.setEnabled(GROUP_ID, true);
   setNextGeminiResponse({

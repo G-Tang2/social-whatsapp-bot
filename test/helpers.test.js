@@ -25,6 +25,7 @@ const {
   getMessageText,
   getQuotedMessageText,
   stripMentionTokens,
+  buildQuotePreviewMsg,
   formatEventHeader,
   formatCount,
   formatElapsed,
@@ -210,6 +211,41 @@ test('stripMentionTokens also strips a literal "@Snoopy" TYPED as plain text, no
 test('stripMentionTokens does not strip "Snoopy" mid-word or without the leading "@" - only a literal "@Snoopy" mention-shaped token', () => {
   assert.equal(stripMentionTokens('is Snoopy around?', []), 'is Snoopy around?');
   assert.equal(stripMentionTokens('@Snoopydog put me down', []), '@Snoopydog put me down');
+});
+
+// Real bug report: replying to (or tagging someone in) a message that
+// itself @-mentioned the bot quotes that message back - and WhatsApp's
+// raw mention text is always "@<phone number>" (see LITERAL_BOT_MENTION_
+// REGEX/stripMentionTokens' own doc comments), never the friendly display
+// name, so the quote preview showed the bot's own raw numeric ID instead
+// of "@Snoopy" for anyone who hasn't saved that number as a contact.
+test('buildQuotePreviewMsg strips a real @-mention from the quote preview text, leaving `key` (and everything else) untouched', () => {
+  const msg = {
+    key: { remoteJid: '123@g.us', participant: 'jordan@s.whatsapp.net', id: 'ABC123' },
+    pushName: 'jordan',
+    message: {
+      extendedTextMessage: {
+        text: '@212004736348198 how are you',
+        contextInfo: { mentionedJid: ['212004736348198@lid'] },
+      },
+    },
+  };
+  const preview = buildQuotePreviewMsg(msg);
+  assert.equal(getMessageText(preview), 'how are you');
+  assert.equal(preview.key, msg.key, 'expected `key` to be the exact same reference - tapping the quote must still jump to the real original message');
+});
+
+test('buildQuotePreviewMsg strips a literal "@Snoopy" from the quote preview too, same as a real mention', () => {
+  const msg = { key: { remoteJid: '123@g.us', id: 'ABC124' }, message: { conversation: '@Snoopy add me' } };
+  assert.equal(getMessageText(buildQuotePreviewMsg(msg)), 'add me');
+});
+
+test('buildQuotePreviewMsg returns the exact original message object when there is nothing to strip (no mention, no message at all)', () => {
+  const plain = { key: { remoteJid: '123@g.us', id: 'ABC125' }, message: { conversation: '!in Sam' } };
+  assert.equal(buildQuotePreviewMsg(plain), plain, 'expected the SAME object back, not a rebuilt copy, when there was nothing to strip');
+
+  const empty = { key: { remoteJid: '123@g.us', id: 'ABC126' }, message: {} };
+  assert.equal(buildQuotePreviewMsg(empty), empty);
 });
 
 test('REGULAR_PLAYERS_TOKEN matches "regular players" and reasonable variants, case-insensitively', () => {

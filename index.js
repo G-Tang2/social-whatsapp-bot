@@ -261,7 +261,7 @@ const P = require('pino');
 const qrcode = require('qrcode-terminal');
 
 const config = require('./lib/config');
-const { getMessageText, formatList, getMentionedJids, getQuotedParticipant, getQuotedMessageText, stripMentionTokens, normalizeJid, LITERAL_BOT_MENTION_REGEX } = require('./lib/helpers');
+const { getMessageText, formatList, getMentionedJids, getQuotedParticipant, getQuotedMessageText, stripMentionTokens, buildQuotePreviewMsg, normalizeJid, LITERAL_BOT_MENTION_REGEX } = require('./lib/helpers');
 const { parseListSections } = require('./lib/listParser');
 const { getRegularPlayers, getUndoableState, saveUndoSnapshot, getUndoSnapshot, restoreUndoableState } = require('./store');
 const { isGroupAdmin } = require('./lib/adminCheck');
@@ -1268,7 +1268,7 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
   // first.
   const reply = async (body) => {
     if (responseCollector) { responseCollector.replyTexts.push(body); return; }
-    return sock.sendMessage(groupId, { text: body }, { quoted: msg });
+    return sock.sendMessage(groupId, { text: body }, { quoted: buildQuotePreviewMsg(msg) });
   };
   const postList = () => {
     if (responseCollector) { responseCollector.listChanged = true; return; }

@@ -10,7 +10,7 @@ const {
   INACTIVITY_REMOVE_AFTER_DAYS,
   INACTIVITY_REMOVE_AFTER_MS,
 } = require('../lib/config');
-const { formatElapsed } = require('../lib/helpers');
+const { formatElapsed, buildQuotePreviewMsg } = require('../lib/helpers');
 
 async function handleInactivityToggle(ctx) {
   const { sock, groupId, senderId, argText, reply } = ctx;
@@ -108,7 +108,7 @@ async function handleStale(ctx) {
       text: `*Inactivity warnings*\n\n${lines.join('\n')}`,
       mentions: warnedList.map((entry) => entry.id),
     },
-    { quoted: msg }
+    { quoted: buildQuotePreviewMsg(msg) }
   );
 }
 

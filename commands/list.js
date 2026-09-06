@@ -31,6 +31,7 @@ const {
   formatTournamentPromotedMessage,
   resolveDuePaymentNumber,
   resolveAttendanceOrWaitlistNumber,
+  buildQuotePreviewMsg,
 } = require('../lib/helpers');
 
 // Bare-self resolution against the payment-due list, shared by handleIn/
@@ -726,7 +727,7 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
       // (not via the `reply` helper) so we can pass `mentions` to actually
       // notify them, not just print their name as plain text.
       const { text, mentions } = formatTournamentPromotedMessage(tournamentPromoted);
-      await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
+      await sock.sendMessage(groupId, { text, mentions }, { quoted: buildQuotePreviewMsg(msg) });
     }
     // No separate reply for a clean tournamentLeft/alreadyOut outcome - the
     // reposted list (now showing them under "Social only" instead of "🏆
@@ -876,7 +877,7 @@ async function handleOut(ctx) {
       // via the `reply` helper) so we can pass `mentions` to actually
       // notify them, not just print their name as plain text.
       const { text, mentions } = formatPromotedMessage(promoted);
-      await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
+      await sock.sendMessage(groupId, { text, mentions }, { quoted: buildQuotePreviewMsg(msg) });
     }
     if (tournamentPromoted.length) {
       // Same idea, but for whoever was leaving had entry.tournament: true -
@@ -884,7 +885,7 @@ async function handleOut(ctx) {
       // (🏆 WL) queue. Separate message from the main-waitlist one above
       // since they're two different queues.
       const { text, mentions } = formatTournamentPromotedMessage(tournamentPromoted);
-      await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
+      await sock.sendMessage(groupId, { text, mentions }, { quoted: buildQuotePreviewMsg(msg) });
     }
     if (removed.length || promoted.length || tournamentPromoted.length || paidOutcome.paid.length) {
       await postList();

@@ -77,6 +77,7 @@ const {
   formatTournamentRoster,
   getMentionedJids,
   normalizeJid,
+  buildQuotePreviewMsg,
 } = require('../lib/helpers');
 
 async function handleClear(ctx) {
@@ -387,7 +388,7 @@ async function handleCourts(ctx) {
     // Sent directly (not `reply`) so we can pass `mentions` and
     // actually notify each promoted person.
     const { text, mentions } = formatPromotedMessage(result.promoted);
-    await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
+    await sock.sendMessage(groupId, { text, mentions }, { quoted: buildQuotePreviewMsg(msg) });
   }
   if (result.demoted.length) {
     await reply(`New limit is below the current headcount - shuffled to the waitlist, in order:\n${result.demoted.map((e) => e.name).join('\n')}`);
@@ -470,7 +471,7 @@ async function handleLimit(ctx) {
     // Sent directly (not `reply`) so we can pass `mentions` and
     // actually notify each promoted person.
     const { text, mentions } = formatPromotedMessage(promoted);
-    await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
+    await sock.sendMessage(groupId, { text, mentions }, { quoted: buildQuotePreviewMsg(msg) });
   }
   if (demoted.length) {
     await reply(`New limit is below the current headcount - shuffled to the waitlist, in order:\n${demoted.map((e) => e.name).join('\n')}`);
@@ -509,7 +510,7 @@ async function handleAllow(ctx) {
   // waitlist - !allow is still a promotion from their point of view,
   // even though it was admin-triggered rather than a freed-up spot.
   const { text, mentions } = formatPromotedMessage(moved);
-  await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
+  await sock.sendMessage(groupId, { text, mentions }, { quoted: buildQuotePreviewMsg(msg) });
   // No further separate confirmation - the posted list (higher count,
   // possibly over the still-unchanged limit, shorter/empty waitlist) is
   // proof the rest went through.
@@ -940,7 +941,7 @@ async function handleTournamentLimit(ctx) {
   const { promoted } = setTournamentLimit(groupId, newLimit);
   if (promoted.length) {
     const { text, mentions } = formatTournamentPromotedMessage(promoted);
-    await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
+    await sock.sendMessage(groupId, { text, mentions }, { quoted: buildQuotePreviewMsg(msg) });
   }
   await postList();
 }
@@ -1055,7 +1056,7 @@ async function handleCourtCanceller(ctx) {
           text: `Court-cancellation reminder currently goes to @${current.jid.split('@')[0]}.\nTo change it (admins only): ${COMMAND_PREFIX}courtcanceller @name, or ${COMMAND_PREFIX}courtcanceller off to turn it off.`,
           mentions: [current.jid],
         },
-        { quoted: msg }
+        { quoted: buildQuotePreviewMsg(msg) }
       );
     } else {
       await reply(
@@ -1100,7 +1101,7 @@ async function handleCourtCanceller(ctx) {
       text: `Court-cancellation reminder set to @${jid.split('@')[0]} - they'll be tagged if the list's still 6+ spots short with 26 hours to go.`,
       mentions: [jid],
     },
-    { quoted: msg }
+    { quoted: buildQuotePreviewMsg(msg) }
   );
 }
 
@@ -1370,7 +1371,7 @@ async function handleUpdate(ctx) {
     // Sent directly (not `reply`) so we can pass `mentions` and actually
     // notify each promoted person - same as !courts (handleCourts above).
     const { text, mentions } = formatPromotedMessage(courtsPromoted);
-    await sock.sendMessage(groupId, { text, mentions }, { quoted: msg });
+    await sock.sendMessage(groupId, { text, mentions }, { quoted: buildQuotePreviewMsg(msg) });
   }
 
   const summaryLines = [];
