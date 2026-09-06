@@ -57,6 +57,7 @@ const {
 const { parseTypedDate, formatDisplayDate, nextOccurrenceOfSameWeekday } = require('../dates');
 const { isGroupAdmin } = require('../lib/adminCheck');
 const { checkEntry } = require('../moderation');
+const ai = require('../ai');
 const { parseListSections, parseHeaderFields } = require('../lib/listParser');
 const {
   COMMAND_PREFIX,
@@ -1169,7 +1170,23 @@ async function handleUpdate(ctx) {
   const { sock, msg, groupId, senderId, argText, reply, postList } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
-    await reply('Only a group admin can bulk-update the list this way - doghouse rules, sorry!');
+    // Deliberately doesn't just dead-end here - real report: a non-admin
+    // pasting an edited copy of the list (or typing !update directly) has
+    // a genuine, specific change in mind, not nothing to say. If natural-
+    // language commands are on for this group, inviting a reply to THIS
+    // message routes it through the exact same "reply to one of my
+    // messages" mechanism messageMentionsBot() (index.js) already treats
+    // as addressing the bot - so whatever they actually wanted gets
+    // handled via the real !in/!out/!paid commands instead of a bulk
+    // update, no re-mention needed. If !ai is off for this group, that
+    // reply would silently go nowhere (see handleAiMention's own "ai is
+    // off" branch), so this falls back to naming the typed commands
+    // directly instead of promising something that wouldn't actually work.
+    await reply(
+      ai.isEnabled(groupId)
+        ? `Only a group admin can bulk-update the list that way, sorry! But tell me what you'd like changed - reply to this message with what you want (e.g. "add me" or "mark Jane paid") and I'll take care of it.`
+        : `Only a group admin can bulk-update the list that way, sorry! Use ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid for whatever you'd like changed instead.`
+    );
     return;
   }
 

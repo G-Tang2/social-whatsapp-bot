@@ -1982,12 +1982,30 @@ test('handleDate: rejects non-admins and invalid dates, and does not touch anyth
   assert.equal(event.duePayments[0].name, 'Grace');
 });
 
-test('handleUpdate: rejects non-admins', async () => {
+// Real request: don't just dead-end a non-admin's paste - invite them to
+// reply with what they actually want, which messageMentionsBot() (index.js)
+// already treats as addressing the bot, so it gets handled via the real
+// !in/!out/!paid commands instead of a bulk update.
+test('handleUpdate: rejects non-admins, inviting a reply with what they want (when !ai is on for this group)', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  ai.setEnabled(groupId, true);
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: '*Attendance*\n\n1. Grace' });
   await adminCommands.handleUpdate(ctx);
   assert.match(replies[0], /Only a group admin/);
+  assert.match(replies[0], /reply to this message/i);
+  assert.equal(store.getCurrentEvent(groupId).entries.length, 0);
+});
+
+test('handleUpdate: rejects non-admins with the typed-command names instead, when !ai is off for this group (a reply wouldn\'t actually be handled)', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  ai.setEnabled(groupId, false);
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: '*Attendance*\n\n1. Grace' });
+  await adminCommands.handleUpdate(ctx);
+  assert.match(replies[0], /Only a group admin/);
+  assert.doesNotMatch(replies[0], /reply to this message/i);
+  assert.match(replies[0], /!in.*!out.*!paid/);
   assert.equal(store.getCurrentEvent(groupId).entries.length, 0);
 });
 
