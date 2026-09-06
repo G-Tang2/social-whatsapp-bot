@@ -406,12 +406,29 @@ async function handleIn(ctx) {
         tournamentFlag
       );
       if (!isCatchUp) {
-        await reply(`Ha, nice try - you're already on the list as "${own.map((e) => e.name).join('", "')}".`);
+        // Real bug report: "add me to tournament" from someone already on
+        // the list successfully upgraded them into the tournament (or
+        // queued them (🏆 WL) if it's full) - a genuine, requested change,
+        // moving them between sections of the very list this reply is
+        // about - but this UNCONDITIONALLY sent "Ha, nice try - you're
+        // already on the list" first regardless, flatly contradicting the
+        // reposted list showing the upgrade actually worked. Suppressed
+        // only for a REAL tournament change - "paid" alone (see just
+        // below) deliberately still gets this message alongside its own
+        // separate paid confirmation, since "already on the list" stays
+        // straightforwardly true there: paid is its own dimension of
+        // state (payment), not something that moves them between sections
+        // of the attendance list itself the way a tournament upgrade
+        // does, so there's no similar contradiction to avoid.
+        const tournamentChanged = tournamentOutcome.joined.length > 0 || tournamentOutcome.full;
+        if (!tournamentChanged) {
+          await reply(`Ha, nice try - you're already on the list as "${own.map((e) => e.name).join('", "')}".`);
+        }
         await replyPaidOutcome(reply, paidOutcome);
         if (tournamentOutcome.disabled) {
           await reply(`Tournament isn't enabled for this group (see ${COMMAND_PREFIX}tournament).`);
         }
-        if (paidOutcome.paid.length || tournamentOutcome.joined.length) {
+        if (paidOutcome.paid.length || tournamentChanged) {
           await postList();
         }
       }

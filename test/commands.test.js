@@ -83,6 +83,51 @@ test('handleIn: already-on-the-list bare !in replies instead of duplicating', as
   assert.equal(store.getCurrentEvent(groupId).entries.length, 1);
 });
 
+// Real bug report: "@Snoopy add me to tournament" from someone already on
+// the list (social only) successfully upgraded them into the tournament -
+// visible in the reposted list, moved from "Social only" into "🏆
+// Tournament" - but still got "Ha, nice try - you're already on the list",
+// flatly contradicting what had actually just happened.
+test('handleIn: bare "!in tournament" from someone already on the list (social only) upgrades them into the tournament WITHOUT the "nice try, already on the list" rejection', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, true);
+  store.addEntry(groupId, 'Amy', 'amy@s.whatsapp.net', false, true); // already on, social only
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'amy@s.whatsapp.net', senderName: 'Amy', argText: 'tournament' });
+  await listCommands.handleIn(ctx);
+
+  const entry = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Amy');
+  assert.equal(entry.tournament, true, 'expected Amy to actually be upgraded into the tournament');
+  assert.doesNotMatch(replies.join('\n'), /nice try|already on the list/i);
+});
+
+test('handleIn: bare "!in tournament" from someone already IN the tournament (a genuine no-op) still gets the "nice try, already on the list" reply', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, true);
+  store.addEntry(groupId, 'Amy', 'amy@s.whatsapp.net', false, true, true); // already IN the tournament
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'amy@s.whatsapp.net', senderName: 'Amy', argText: 'tournament' });
+  await listCommands.handleIn(ctx);
+
+  assert.match(replies.join('\n'), /nice try.*already on the list/i, 'expected the ordinary rejection - nothing actually changed this time');
+});
+
+test('handleIn: bare "!in paid" from someone already on the list still gets BOTH "already on the list" AND the separate paid confirmation - paid is its own dimension, not a tournament-style section move', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false, true);
+  store.newList(groupId, '2026-08-20', {}); // Grace now owes for the new cycle
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false, true); // back on the new list
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Grace', argText: 'paid' });
+  await listCommands.handleIn(ctx);
+
+  assert.match(replies[0], /already on the list/, 'expected this to still appear - paid succeeding does not make it false');
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0, 'expected the paid outcome to have actually applied too');
+});
+
 test('handleIn: signing OTHER people up ("!in Alice, Bob, Carla") does not make a later bare !in from the same sender think they\'re already on as those names', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
