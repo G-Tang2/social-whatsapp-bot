@@ -243,6 +243,31 @@ test('handleIn: "!in Alice, +2" (mixed with an explicit name) does NOT add or ma
   assert.ok(entries.every((e) => e.self === false));
 });
 
+// Real bug report: Abby herself sent "@Snoopy add Abby" (writing her own
+// name out explicitly, rather than "add me") - per lib/geminiCommand.js's
+// SYSTEM_PROMPT, that's mapped to argText "Abby", NOT a bare self-add, so
+// the resulting entry isn't flagged `self` (see store.js's addEntry doc
+// comment - explicitly-typed names never are, even the sender's own).
+// When Abby later said "@Snoopy remove me" (bare self), the ID+self-based
+// lookup found nothing and rejected with "not even on the list" - even
+// though "Abby" was sitting right there. Same bug/fix as
+// handleLeaveTournament's own duplicate-name fallback, applied here to
+// the plain (non-tournament) bare-self removal path.
+test('handleOut: bare "!out"/"remove me" resolves to the sender\'s own entry even when it was never flagged `self` (e.g. they typed their own name explicitly instead of "me")', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  // Someone explicitly typing Abby's name - self stays false even though
+  // Abby IS the one it refers to, exactly like "@Snoopy add Abby" would.
+  store.addEntry(groupId, 'Abby', 'abby@s.whatsapp.net', false, false);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'abby@s.whatsapp.net', senderName: 'Abby', argText: '' });
+  await listCommands.handleOut(ctx);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.entries.length, 0, 'expected Abby\'s existing entry to be removed');
+  assert.doesNotMatch(replies.join('\n'), /not even on the list/i);
+});
+
 test('handleOut: "!out +2" removes only the sender\'s 2 guest entries, not the sender', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});

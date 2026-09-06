@@ -774,19 +774,36 @@ async function handleOut(ctx) {
       (e) => e.addedBy === senderId && e.self !== false
     );
     if (own.length === 0) {
-      const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
-      if (!isCatchUp) {
-        await reply(
-          `Can't remove you from a list you're not even on! If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out <name>.`
-        );
-        await replyPaidOutcome(reply, paidOutcome);
-        if (paidOutcome.paid.length) {
-          await postList();
+      // Real bug report: the sender's own name was genuinely on the list,
+      // but their entry wasn't flagged `self` - e.g. they (or someone
+      // else) typed their name explicitly instead of a bare !in (like
+      // "@Snoopy add Abby" instead of "add me"), or it came from !update
+      // or a bulk "!newlist ... with ..." list (see store.js's addEntry
+      // doc comment on `self` for why that doesn't cover every real
+      // self-add). Before giving up, fall back to an EXACT match against
+      // the sender's own current push name - same reasoning/fix as
+      // handleLeaveTournament's own duplicate-name fallback above, and no
+      // riskier than what the explicit "!out <name>" form already accepts.
+      const normalizedSenderName = normalizeName(senderName);
+      const exactNameMatch = [...event.entries, ...(event.waitlist || [])].find(
+        (e) => normalizeName(e.name) === normalizedSenderName
+      );
+      if (exactNameMatch) {
+        names = [exactNameMatch.name];
+      } else {
+        const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
+        if (!isCatchUp) {
+          await reply(
+            `Can't remove you from a list you're not even on! If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out <name>.`
+          );
+          await replyPaidOutcome(reply, paidOutcome);
+          if (paidOutcome.paid.length) {
+            await postList();
+          }
         }
+        return { command: 'out', senderName, argText, noEntry: true, ...paidOutcome };
       }
-      return { command: 'out', senderName, argText, noEntry: true, ...paidOutcome };
-    }
-    if (own.length > 1) {
+    } else if (own.length > 1) {
       const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
@@ -798,8 +815,9 @@ async function handleOut(ctx) {
         }
       }
       return { command: 'out', senderName, argText, ambiguous: own.map((e) => e.name), ...paidOutcome };
+    } else {
+      names = [own[0].name];
     }
-    names = [own[0].name];
   } else {
     names = parseNames(rest, senderName);
     // One snapshot, taken before any name in this batch is actually
