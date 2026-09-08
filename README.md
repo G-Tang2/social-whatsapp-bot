@@ -72,17 +72,21 @@ name that's actually on the list - you (or whoever added you) may have
 typed a nickname, or your WhatsApp name may have changed since you joined.
 So instead of matching your current push name against the list text, the
 bot looks up which entry is actually YOU and uses that - checking both the
-attendance list and the waitlist. If you don't have an entry, or you have
-more than one (e.g. you added yourself under a couple of different names
-over time), it'll ask you to say the name explicitly instead of guessing.
-This only applies to an entry you signed up bare (a plain `!in`/`!in paid`
-with no name typed) - if someone else (say, an admin) added an entry for
-you, bare `!out`/`!paid` won't find it; use the explicit `!out <name>` /
-`!paid <name>` form for that. The same goes in reverse: entries YOU add for
-someone else by explicitly typing their name (e.g. `!in Alice, Bob,
-Carla`) are attributed to you for removal purposes (see below), but aren't
-mistaken for you - a later bare `!in`/`!out`/`!paid` from you still resolves
-to your own entry, not to Alice, Bob, or Carla.
+attendance list and the waitlist, in this order: first, an entry you
+yourself signed up bare (a plain `!in`/`!in paid` with no name typed);
+failing that, an entry - even one someone else (say, an admin) typed in
+for you - whose name exactly matches your current WhatsApp display name;
+and failing that too, an entry whose name is an unambiguous partial match
+for your display name (e.g. a stored "Alex" against your full "Alex
+Chen," or vice versa) - but only when there's exactly one plausible
+candidate; if two different stored names could both plausibly be you, it
+won't guess. If none of that finds anything, or your own bare entries are
+split across more than one differently-spelled name, it'll ask you to say
+the name explicitly instead of guessing. The same goes in reverse: entries
+YOU add for someone else by explicitly typing their name (e.g. `!in
+Alice, Bob, Carla`) are attributed to you for removal purposes (see
+below), but aren't mistaken for you - a later bare `!in`/`!out`/`!paid`
+from you still resolves to your own entry, not to Alice, Bob, or Carla.
 
 **Who can remove an entry:** anyone can remove any entry with `!out`, no
 restriction at all - it doesn't matter who added it or whether they're an

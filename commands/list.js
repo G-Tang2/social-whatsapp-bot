@@ -34,6 +34,48 @@ const {
   buildQuotePreviewMsg,
 } = require('../lib/helpers');
 
+// Real bug report: someone's own name can be stored on a list in an
+// ABBREVIATED form - e.g. whoever added them (often someone else, not
+// them) typed just "Chhay" rather than their full WhatsApp display name
+// "Chhay Lim" - which an EXACT name match (every bare-self lookup in this
+// file's first fallback, after the WhatsApp-ID match) can never bridge,
+// even though it's obviously the same person. This is the LAST-resort
+// fallback, shared by every bare-self lookup below, tried only once both
+// the ID match AND the exact-name match have already failed.
+//
+// Deliberately conservative: matches ONLY when one name's words are a
+// strict, in-order, whole-word prefix of the other's (e.g. "Chhay"/"Chhay
+// Lim", or "Chhay Lim"/"Chhay Lim Wong" - never a mid-word substring like
+// "Cha" matching "Chhay", which risks a false positive), AND that match is
+// UNAMBIGUOUS - exactly one DISTINCT name among `entries` satisfies it. If
+// the sender's push name is just "Chhay" and the list has BOTH a "Chhay
+// Lim" and a "Chhay Wong" (two different real people, each a plausible
+// full name for that "Chhay"), this deliberately matches NOTHING rather
+// than guessing - a wrong guess here would act on the WRONG person's
+// entry, which is worse than asking the sender to just type the name
+// explicitly. Two entries whose names are the same LENGTH (e.g. "Chhay
+// Wong" vs. the sender's "Chhay Lim") never compete for the same match in
+// the first place - a same-length name is only ever resolved by the exact
+// match above, never by this prefix fallback.
+// Returns the matching entry, or null.
+function findUnambiguousFuzzyNameMatch(entries, senderName) {
+  if (!senderName) return null;
+  const senderWords = normalizeName(senderName).split(' ').filter(Boolean);
+  if (!senderWords.length) return null;
+
+  const isWordPrefix = (shorter, longer) => shorter.length > 0 && shorter.every((word, i) => longer[i] === word);
+
+  const candidates = entries.filter((e) => {
+    const entryWords = normalizeName(e.name).split(' ').filter(Boolean);
+    if (!entryWords.length) return false;
+    const [shorter, longer] = entryWords.length <= senderWords.length ? [entryWords, senderWords] : [senderWords, entryWords];
+    return shorter.length !== longer.length && isWordPrefix(shorter, longer);
+  });
+
+  const uniqueNames = [...new Set(candidates.map((e) => normalizeName(e.name)))];
+  return uniqueNames.length === 1 ? candidates[0] : null;
+}
+
 // Bare-self resolution against the payment-due list, shared by handleIn/
 // handleOut below when a leading "paid" keyword is present but no
 // explicit name was given (e.g. "!in paid", not "!in paid Grace"). Matches
@@ -81,6 +123,8 @@ function resolveOwnDue(groupId, senderId, senderName) {
   if (senderName) {
     const byName = due.filter((e) => normalizeName(e.name) === normalizeName(senderName));
     if (byName.length > 0) return { names: [byName[0].name] };
+    const fuzzy = findUnambiguousFuzzyNameMatch(due, senderName);
+    if (fuzzy) return { names: [fuzzy.name] };
   }
   return { noEntry: true };
 }
@@ -632,43 +676,57 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
       // achieves what "social only" actually asked for, whether that's
       // satisfied by removing an existing tournament entry or by adding a
       // fresh non-tournament one.
-      const modResult = checkEntry(senderName);
-      let addResult = { ok: false };
-      if (modResult.ok) {
-        const senderIsAdmin = await isGroupAdmin(sock, groupId, senderId);
-        addResult = addEntry(groupId, senderName, senderId, senderIsAdmin, true, false);
-        if (addResult.ok) {
-          const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
-          if (!isCatchUp) {
-            await reply(
-              addResult.waitlisted
-                ? `Weren't even on the tournament to begin with, so I've added you to the list instead (social only) - you're on the waitlist for now, promoted the moment a spot frees up.`
-                : `Weren't even on the tournament to begin with, so I've added you to the list instead - social only, as asked.`
-            );
-            await replyPaidOutcome(reply, paidOutcome);
-            await postList();
-          }
-          return { command: 'out', senderName, argText, addedSocialOnly: [senderName], waitlisted: addResult.waitlisted, ...paidOutcome };
-        }
-      }
-
-      if (addResult.reason === 'duplicate') {
-        // A name exactly matching the sender's own push name is ALREADY on
-        // the list - almost always genuinely the sender's own entry, just
-        // never flagged `self` (e.g. added via !update, a bulk "!newlist
-        // ... with ..." list, or someone typing their name explicitly
-        // instead of a bare !in - see addEntry's own doc comment on `self`
-        // for why that doesn't cover every real self-add). Real bug
-        // report: this used to fall straight through to the generic "not
-        // even on the list" rejection below, even with the sender's exact
-        // name sitting right there on the list under "🏆 Tournament" -
-        // resolve it the same way the explicit "!out tournament <name>"
-        // form already would, rather than assuming it must be a different
-        // real person of the same name (that assumption is no more/less
-        // risky than what the explicit named form already accepts).
-        names = [senderName];
+      // Checked BEFORE attempting to add fresh below - a name exactly (or
+      // unambiguously, per findUnambiguousFuzzyNameMatch's own doc
+      // comment - e.g. a stored "Chhay" against the sender's full "Chhay
+      // Lim") matching the sender's own push name is almost always
+      // genuinely their own entry, just never flagged `self` (e.g. added
+      // via !update, a bulk "!newlist ... with ..." list, or someone
+      // typing the name explicitly instead of a bare !in - see addEntry's
+      // own doc comment on `self` for why that doesn't cover every real
+      // self-add). Real bug report: this used to only be caught AFTER
+      // addEntry() itself rejected an EXACT-duplicate add attempt below -
+      // which a fuzzy (not byte-for-byte exact) match would sail right
+      // past, creating an unwanted SECOND entry for the same real person
+      // instead of resolving to their existing one. Checking first avoids
+      // that entirely, and resolves the ambiguity the same way the
+      // explicit "!out tournament <name>" form already would - ending up
+      // social-only either way achieves what "social only" actually asked
+      // for, whether that's satisfied by removing an existing tournament
+      // entry or by adding a fresh non-tournament one.
+      const existingMatch = event.entries.find((e) => normalizeName(e.name) === normalizeName(senderName))
+        || findUnambiguousFuzzyNameMatch(event.entries, senderName);
+      if (existingMatch) {
+        names = [existingMatch.name];
         resolvedByExistingDuplicate = true; // skip the ambiguity/empty checks below - a name is already resolved
       } else {
+        const modResult = checkEntry(senderName);
+        let addResult = { ok: false };
+        if (modResult.ok) {
+          const senderIsAdmin = await isGroupAdmin(sock, groupId, senderId);
+          addResult = addEntry(groupId, senderName, senderId, senderIsAdmin, true, false);
+          if (addResult.ok) {
+            const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
+            if (!isCatchUp) {
+              await reply(
+                addResult.waitlisted
+                  ? `Weren't even on the tournament to begin with, so I've added you to the list instead (social only) - you're on the waitlist for now, promoted the moment a spot frees up.`
+                  : `Weren't even on the tournament to begin with, so I've added you to the list instead - social only, as asked.`
+              );
+              await replyPaidOutcome(reply, paidOutcome);
+              await postList();
+            }
+            return { command: 'out', senderName, argText, addedSocialOnly: [senderName], waitlisted: addResult.waitlisted, ...paidOutcome };
+          }
+        }
+
+        // addResult.ok === false here (and it wasn't caught by
+        // existingMatch above) means a same-named entry exists under a
+        // DIFFERENT WhatsApp ID that ISN'T a plausible match for the
+        // sender at all (addEntry's own "duplicate" reason, for a name
+        // findUnambiguousFuzzyNameMatch also couldn't resolve) - falls
+        // through to the plain rejection below, same as checkEntry
+        // rejecting the push name would.
         const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
         if (!isCatchUp) {
           await reply(
@@ -803,11 +861,15 @@ async function handleOut(ctx) {
       // handleLeaveTournament's own duplicate-name fallback above, and no
       // riskier than what the explicit "!out <name>" form already accepts.
       const normalizedSenderName = normalizeName(senderName);
-      const exactNameMatch = [...event.entries, ...(event.waitlist || [])].find(
-        (e) => normalizeName(e.name) === normalizedSenderName
-      );
-      if (exactNameMatch) {
-        names = [exactNameMatch.name];
+      const allOwnCandidates = [...event.entries, ...(event.waitlist || [])];
+      const exactNameMatch = allOwnCandidates.find((e) => normalizeName(e.name) === normalizedSenderName);
+      // Last resort before giving up - see findUnambiguousFuzzyNameMatch's
+      // own doc comment: bridges a stored, ABBREVIATED name (e.g. someone
+      // else typed just "Chhay" instead of the sender's full "Chhay Lim")
+      // that an exact match can never reach.
+      const fuzzyNameMatch = exactNameMatch ? null : findUnambiguousFuzzyNameMatch(allOwnCandidates, senderName);
+      if (exactNameMatch || fuzzyNameMatch) {
+        names = [(exactNameMatch || fuzzyNameMatch).name];
       } else {
         const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
         if (!isCatchUp) {

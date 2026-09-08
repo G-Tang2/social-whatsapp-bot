@@ -313,6 +313,45 @@ test('handleOut: bare "!out"/"remove me" resolves to the sender\'s own entry eve
   assert.doesNotMatch(replies.join('\n'), /not even on the list/i);
 });
 
+// Real bug report: the sender's own entry was stored under an ABBREVIATED
+// name (e.g. whoever added them typed just "Chhay", not their full
+// WhatsApp push name "Chhay Lim") - an EXACT name match can never bridge
+// that gap. findUnambiguousFuzzyNameMatch (commands/list.js) now does, as
+// a last resort, but only when exactly one entry's name is a strict,
+// in-order, whole-word prefix/extension of the sender's push name.
+test('handleOut: bare "!out"/"remove me" resolves to the sender\'s own entry via fuzzy name matching when it was stored under an abbreviated name', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  // Added by someone else, under an abbreviated name - self stays false,
+  // and "Chhay" never exactly matches the sender's full push name below.
+  store.addEntry(groupId, 'Chhay', 'admin@s.whatsapp.net', true, false);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'chhay@s.whatsapp.net', senderName: 'Chhay Lim', argText: '' });
+  await listCommands.handleOut(ctx);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.entries.length, 0, 'expected the fuzzy-matched "Chhay" entry to be removed');
+  assert.doesNotMatch(replies.join('\n'), /not even on the list/i);
+});
+
+// Negative case: TWO plausible fuzzy candidates ("Chhay Lim" and "Chhay
+// Wong") both prefix-extend the sender's short push name "Chhay" -
+// deliberately matches NOTHING rather than guessing which real person the
+// sender is (see findUnambiguousFuzzyNameMatch's own doc comment).
+test('handleOut: bare "!out"/"remove me" does NOT fuzzy-match when the sender\'s name is ambiguous between two stored entries', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.addEntry(groupId, 'Chhay Lim', 'admin@s.whatsapp.net', true, false);
+  store.addEntry(groupId, 'Chhay Wong', 'admin@s.whatsapp.net', true, false);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'chhay@s.whatsapp.net', senderName: 'Chhay', argText: '' });
+  await listCommands.handleOut(ctx);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.entries.length, 2, 'expected neither ambiguous entry to be touched');
+  assert.match(replies[0], /not even on/i);
+});
+
 test('handleOut: "!out +2" removes only the sender\'s 2 guest entries, not the sender', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
@@ -612,6 +651,46 @@ test('handleOut: bare "!out tournament" resolves to the sender\'s own entry even
   assert.equal(event.entries[0].name, 'Garvin');
   assert.equal(event.entries[0].tournament, false, 'expected Garvin to be moved to social only');
   assert.doesNotMatch(replies.join('\n'), /not even on the list/i);
+});
+
+// Same fuzzy-name-matching gap as the plain bare "!out" fix above, but for
+// the tournament path: this one is riskier if unhandled, since the
+// fresh-add fallback (see the "adds them fresh, social only" test above)
+// would otherwise create a SECOND, duplicate entry for the same real
+// person rather than just failing to match.
+test('handleOut: bare "!out tournament" resolves to the sender\'s own entry via fuzzy name matching, without creating a duplicate', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, true);
+  store.addEntry(groupId, 'Chhay', 'admin@s.whatsapp.net', true, false, true);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'chhay@s.whatsapp.net', senderName: 'Chhay Lim', argText: 'tournament' });
+  await listCommands.handleOut(ctx);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.entries.length, 1, 'expected the EXISTING fuzzy-matched entry to be reused, not a duplicate added');
+  assert.equal(event.entries[0].name, 'Chhay');
+  assert.equal(event.entries[0].tournament, false);
+  assert.doesNotMatch(replies.join('\n'), /not even on the list/i);
+});
+
+// Negative case: an ambiguous fuzzy match falls through to the ordinary
+// fresh-add fallback (same as no match at all) rather than guessing which
+// existing entry is the sender's own.
+test('handleOut: bare "!out tournament" does NOT fuzzy-match when ambiguous - falls back to adding the sender fresh instead', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, true);
+  store.addEntry(groupId, 'Chhay Lim', 'admin@s.whatsapp.net', true, false, true);
+  store.addEntry(groupId, 'Chhay Wong', 'admin@s.whatsapp.net', true, false, true);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'chhay@s.whatsapp.net', senderName: 'Chhay', argText: 'tournament' });
+  await listCommands.handleOut(ctx);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.entries.length, 3, 'expected a fresh entry to be added rather than resolving an ambiguous match');
+  assert.ok(event.entries.some((e) => e.name === 'Chhay' && e.tournament === false));
+  assert.match(replies[0], /added you to the list instead - social only/);
 });
 
 test('handleOut: bare "!out tournament" from someone with no entry, when the list is full, adds them to the waitlist instead', async () => {
@@ -1510,6 +1589,40 @@ test('handlePaid: an explicitly named "!paid <name>" for a genuinely unknown nam
   await listCommands.handlePaid(ctx);
 
   assert.match(replies[0], /Nobody is not on the payment list, perhaps they signed up under a different name/);
+});
+
+// Real bug report: a due-payment entry stored under an ABBREVIATED name
+// (e.g. "Chhay", added by someone else) doesn't exactly match the sender's
+// full WhatsApp push name ("Chhay Lim") - resolveOwnDue's bare-self lookup
+// now falls back to the same unambiguous fuzzy matching as the !out paths
+// above (findUnambiguousFuzzyNameMatch, commands/list.js) as a last resort.
+test('handlePaid: bare "!paid" resolves the sender\'s own due entry via fuzzy name matching when it was stored under an abbreviated name', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.addEntry(groupId, 'Chhay', 'admin@s.whatsapp.net', true, false);
+  store.newList(groupId, '2026-08-20', {}); // archives into duePayments
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'chhay@s.whatsapp.net', senderName: 'Chhay Lim', argText: '' });
+  await listCommands.handlePaid(ctx);
+
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0, 'expected the fuzzy-matched "Chhay" due entry to be cleared');
+  assert.ok(!replies.some((r) => /not on the payment list/i.test(r)));
+});
+
+// Negative case: two plausible fuzzy candidates - deliberately matches
+// nothing rather than guessing, same as the !out paths above.
+test('handlePaid: bare "!paid" does NOT fuzzy-match a due entry when the sender\'s name is ambiguous between two stored entries', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.addEntry(groupId, 'Chhay Lim', 'admin@s.whatsapp.net', true, false);
+  store.addEntry(groupId, 'Chhay Wong', 'other@s.whatsapp.net', true, false);
+  store.newList(groupId, '2026-08-20', {});
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'chhay@s.whatsapp.net', senderName: 'Chhay', argText: '' });
+  await listCommands.handlePaid(ctx);
+
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 2, 'expected neither ambiguous entry to be touched');
+  assert.match(replies[0], /good news - you're not on the payment list/i);
 });
 
 // --- Tournament sub-feature: !settournament, !tournament, !tournamentlimit,
