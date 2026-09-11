@@ -22,6 +22,7 @@ const { isGroupAdmin } = require('../lib/adminCheck');
 const { COMMAND_PREFIX, MAX_NAMES_PER_COMMAND } = require('../lib/config');
 const {
   parseNames,
+  splitCommaList,
   PLUS_N_TOKEN,
   ME_TOKEN,
   expandRegularPlayersToken,
@@ -148,17 +149,15 @@ function isOnCurrentAttendance(event, senderId, name) {
   return false;
 }
 
-// Matches "me, +N" or "+N, me" (ME_TOKEN/PLUS_N_TOKEN, both from
-// lib/helpers.js) as the ENTIRE `rest` of an !in command - the sender
-// explicitly asking to be added alongside N unnamed guests, in either
-// order. Returns the guest count N, or null if `rest` isn't exactly this
-// two-token combo (e.g. "me, Henry, +2" falls through to the generic
-// parseNames path instead, same as any other multi-name list).
+// Matches "me, +N"/"+N, me", or the "and"-separated equivalent "me and +N"/
+// "+N and me" (splitCommaList, lib/helpers.js, normalizes "and" into a
+// comma first - see its own doc comment) as the ENTIRE `rest` of an !in
+// command - the sender explicitly asking to be added alongside N unnamed
+// guests, in either order. Returns the guest count N, or null if `rest`
+// isn't exactly this two-token combo (e.g. "me, Henry, +2" falls through to
+// the generic parseNames path instead, same as any other multi-name list).
 function matchMeAndPlusN(rest) {
-  const tokens = rest
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean);
+  const tokens = splitCommaList(rest);
   if (tokens.length !== 2) return null;
   const [a, b] = tokens;
   if (ME_TOKEN.test(a) && PLUS_N_TOKEN.test(b)) return Number(b.match(PLUS_N_TOKEN)[1]);

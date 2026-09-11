@@ -71,6 +71,28 @@ test('handleIn: bare !in adds the sender by their own push name', async () => {
   assert.equal(event.entries[0].name, 'Grace');
 });
 
+// Real request: "!in luke and peter" should add both, same as the comma
+// form "!in luke, peter" - see splitCommaList's own doc comment
+// (lib/helpers.js) for the "and" normalization shared by every name-list
+// command, including this one via parseNames.
+test('handleIn: "!in luke and peter" adds both, same as the comma-separated form', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Alex', argText: 'luke and peter' });
+  await listCommands.handleIn(ctx);
+  const event = store.getCurrentEvent(groupId);
+  assert.deepEqual(event.entries.map((e) => e.name), ['luke', 'peter']);
+});
+
+test('handleIn: "!in me and +2" combines "me" with "+N" the same way the comma form "me, +2" does', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Preston', argText: 'me and +2' });
+  await listCommands.handleIn(ctx);
+  const event = store.getCurrentEvent(groupId);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Preston', 'Preston+1', 'Preston+2']);
+});
+
 test('handleIn: already-on-the-list bare !in replies instead of duplicating', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
@@ -1188,6 +1210,18 @@ test('handleNewlist: a trailing "with <names>" clause pre-populates the brand ne
   assert.ok(event.entries.every((e) => e.addedBy === 'admin@s.whatsapp.net' && e.self === false));
 });
 
+test('handleNewlist: a trailing "with <names>" clause also accepts "and" as a separator, e.g. "with Alice, Bob and Carla"', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setLimit(groupId, null);
+
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 with Alice, Bob and Carla' });
+  await adminCommands.handleNewlist(ctx.ctx);
+
+  const event = store.getCurrentEvent(groupId);
+  assert.deepEqual(event.entries.map((e) => e.name), ['Alice', 'Bob', 'Carla']);
+});
+
 test('handleNewlist: "with <names>" works with no location/courts/time mentioned at all', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
@@ -1362,6 +1396,16 @@ test('handleRegulars: a plain name list REPLACES the whole roster', async () => 
   assert.deepEqual(store.getRegularPlayers(groupId), ['Alice', 'Bob', 'Carla']);
 });
 
+test('handleRegulars: a plain name list also accepts "and" as a separator, e.g. "Alice, Bob and Carla"', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Alice, Bob and Carla' });
+  await adminCommands.handleRegulars(ctx.ctx);
+
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Alice', 'Bob', 'Carla']);
+});
+
 test('handleRegulars: "add <names>" appends to the existing roster without duplicating an already-present name', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
@@ -1429,6 +1473,16 @@ test('handleExempt: a plain name list REPLACES the whole roster', async () => {
   store.setPaymentExempt(groupId, ['Old Name']);
 
   const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Alice, Bob, Carla' });
+  await adminCommands.handleExempt(ctx.ctx);
+
+  assert.deepEqual(store.getPaymentExempt(groupId), ['Alice', 'Bob', 'Carla']);
+});
+
+test('handleExempt: a plain name list also accepts "and" as a separator, e.g. "Alice, Bob and Carla"', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Alice, Bob and Carla' });
   await adminCommands.handleExempt(ctx.ctx);
 
   assert.deepEqual(store.getPaymentExempt(groupId), ['Alice', 'Bob', 'Carla']);
@@ -1829,6 +1883,18 @@ test('handleTournamentWinners: view, admin-gated to change, requires exactly two
 
   const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Noah, Ellen' });
   await adminCommands.handleTournamentWinners(set.ctx);
+  assert.deepEqual(store.getTournamentWinners(groupId), ['Noah', 'Ellen']);
+});
+
+// Real request: "and" works as a separator here too, e.g. the natural
+// "Noah and Ellen" phrasing this command's own view text already echoes
+// back ("Current tournament winners: X and Y").
+test('handleTournamentWinners: "Noah and Ellen" (no comma) sets the same two names as "Noah, Ellen"', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'Noah and Ellen' });
+  await adminCommands.handleTournamentWinners(ctx.ctx);
   assert.deepEqual(store.getTournamentWinners(groupId), ['Noah', 'Ellen']);
 });
 

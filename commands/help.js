@@ -66,7 +66,7 @@ const TIPS_TEXT = [
   `_• Ask me something off-topic and I'll give it a quick answer, then remind you (and your friends) that I'm here running the signup list - no need to leave the group to chat with me_`,
   '',
   '*Joining and leaving*',
-  `_• ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid accept comma-separated names, e.g. ${COMMAND_PREFIX}in Grace, Henry, Henry+1 - up to ${MAX_NAMES_PER_COMMAND} at once (no limit for admins)_`,
+  `_• ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid accept comma-separated names (or "and" - e.g. Grace and Henry), e.g. ${COMMAND_PREFIX}in Grace, Henry, Henry+1 - up to ${MAX_NAMES_PER_COMMAND} at once (no limit for admins)_`,
   '',
   `_• Bringing unnamed friends? ${COMMAND_PREFIX}in +2 adds 2 guests (you+1, you+2) WITHOUT you - add "me, " in front, e.g. ${COMMAND_PREFIX}in me, +2, to add yourself too - same for ${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid_`,
   '',

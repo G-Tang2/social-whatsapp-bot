@@ -14,6 +14,7 @@ process.env.DATA_DIR = tmpDir;
 
 const {
   parseNames,
+  splitCommaList,
   maxNamesReply,
   stripLeadingPaidKeyword,
   stripLeadingInKeywords,
@@ -75,6 +76,29 @@ test('parseNames only expands a token that is ENTIRELY "+N"/"me" - an explicit "
   assert.deepEqual(parseNames('Henry+1', 'fallback'), ['Henry+1']);
   assert.deepEqual(parseNames('Amelia', 'fallback'), ['Amelia']); // contains "me" as a substring, not the whole token
   assert.deepEqual(parseNames('Alice, +2', 'Preston'), ['Alice', 'Preston+1', 'Preston+2']); // "+2" still excludes the sender when mixed with a named other
+});
+
+// Real request: "!in luke and peter" should add both, same as the comma
+// form - see splitCommaList's own doc comment (lib/helpers.js) for the
+// normalization every name-list command below shares.
+test('splitCommaList accepts the plain-English "and" as a separator, alongside (and mixed with) commas', () => {
+  assert.deepEqual(splitCommaList('luke and peter'), ['luke', 'peter']);
+  assert.deepEqual(splitCommaList('Grace, Henry and Iris'), ['Grace', 'Henry', 'Iris']);
+  assert.deepEqual(splitCommaList('Grace, Henry, and Iris'), ['Grace', 'Henry', 'Iris']); // Oxford comma
+  assert.deepEqual(splitCommaList('Alice and Bob and Carla'), ['Alice', 'Bob', 'Carla']); // more than one "and"
+  assert.deepEqual(splitCommaList('AND'), ['AND']); // a lone "and" with nothing on either side isn't a separator at all
+  assert.deepEqual(splitCommaList(''), []);
+  assert.deepEqual(splitCommaList(null), []);
+});
+
+test('splitCommaList does NOT split a real name that merely contains "and" as a substring, not its own word', () => {
+  assert.deepEqual(splitCommaList('Andy, Sandra'), ['Andy', 'Sandra']);
+  assert.deepEqual(splitCommaList('Andrew and Sandra'), ['Andrew', 'Sandra']);
+});
+
+test('parseNames accepts "and" the same way splitCommaList does, including alongside "me"/"+N"', () => {
+  assert.deepEqual(parseNames('luke and peter', 'fallback'), ['luke', 'peter']);
+  assert.deepEqual(parseNames('me and +2', 'Preston'), ['Preston', 'Preston+1', 'Preston+2']);
 });
 
 test('stripLeadingPaidKeyword detects a bare leading "paid" and strips it', () => {

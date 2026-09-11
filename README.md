@@ -101,7 +101,9 @@ accept a comma-separated list, e.g. `!in Grace, Henry, Henry+1` adds all three
 as separate entries in one go (up to 8 names per command for regular
 members - group admins have no cap, since they're more likely to be
 bulk-adding a whole team or session's worth of names at once; the same
-exemption applies to `!paid` too). Each name is checked independently, so
+exemption applies to `!paid` too). The word `and` works as a separator too,
+alone or mixed with commas - `!in Grace and Henry` and `!in Grace, Henry
+and Iris` both work exactly like their comma-only equivalents. Each name is checked independently, so
 if one is a duplicate or blocked, the rest still go through - you'll get a
 reply listing anything that didn't make it, and the group's updated list
 is posted once at the end.

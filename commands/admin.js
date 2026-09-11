@@ -69,6 +69,7 @@ const {
   MAX_LIMIT,
 } = require('../lib/config');
 const {
+  splitCommaList,
   parseNewListDetails,
   stripTrailingWithNames,
   stripLeadingCourtsAddKeyword,
@@ -292,7 +293,7 @@ async function handleNewlist(ctx) {
   // here, every time - not just when "with regular players" is typed - via
   // the shared addRegularsToCurrentList helper above (see its own doc
   // comment for the tournament opt-in and dedupe behavior).
-  const names = namesText ? namesText.split(',').map((n) => n.trim()).filter(Boolean) : [];
+  const names = splitCommaList(namesText);
   const { rejected } = addRegularsToCurrentList(groupId, senderId, true, names);
   if (rejected.length) {
     await reply(`New list started! Though a few slipped through my paws - couldn't add:\n${rejected.join('\n')}`);
@@ -645,7 +646,7 @@ async function handleRegulars(ctx) {
   const mode = addMatch ? 'add' : removeMatch ? 'remove' : 'set';
   const namesPart = addMatch ? addMatch[1] : removeMatch ? removeMatch[1] : trimmed;
 
-  const requestedNames = namesPart.split(',').map((n) => n.trim()).filter(Boolean);
+  const requestedNames = splitCommaList(namesPart);
   if (!requestedNames.length) {
     await reply(`Usage: ${COMMAND_PREFIX}regulars Name1, Name2, ... | ${COMMAND_PREFIX}regulars add <names> | ${COMMAND_PREFIX}regulars remove <names> | ${COMMAND_PREFIX}regulars clear`);
     return;
@@ -750,7 +751,7 @@ async function handleExempt(ctx) {
   const mode = addMatch ? 'add' : removeMatch ? 'remove' : 'set';
   const namesPart = addMatch ? addMatch[1] : removeMatch ? removeMatch[1] : trimmed;
 
-  const requestedNames = namesPart.split(',').map((n) => n.trim()).filter(Boolean);
+  const requestedNames = splitCommaList(namesPart);
   if (!requestedNames.length) {
     await reply(`Usage: ${COMMAND_PREFIX}exempt Name1, Name2, ... | ${COMMAND_PREFIX}exempt add <names> | ${COMMAND_PREFIX}exempt remove <names> | ${COMMAND_PREFIX}exempt clear`);
     return;
@@ -1010,7 +1011,7 @@ async function handleTournamentWinners(ctx) {
     return;
   }
 
-  const names = argText.split(',').map((n) => n.trim()).filter(Boolean);
+  const names = splitCommaList(argText);
   if (names.length !== 2) {
     await reply(`Usage: ${COMMAND_PREFIX}tournamentwinners Name1, Name2\n(Exactly two names - that's the "Congrats to X and Y..." banner shown above the list.)`);
     return;
