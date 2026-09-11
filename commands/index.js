@@ -60,6 +60,7 @@ const rawCommands = {
 
   [`${COMMAND_PREFIX}clear`]: adminCommands.handleClear,
   [`${COMMAND_PREFIX}clearpayments`]: adminCommands.handleClearpayments,
+  [`${COMMAND_PREFIX}cancelsocial`]: adminCommands.handleCancelSocial,
   [`${COMMAND_PREFIX}newlist`]: adminCommands.handleNewlist,
   [`${COMMAND_PREFIX}date`]: adminCommands.handleDate,
   [`${COMMAND_PREFIX}location`]: adminCommands.handleLocation,

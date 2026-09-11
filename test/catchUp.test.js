@@ -72,11 +72,13 @@ test('buildCatchUpSummary covers the no-op branches (already on list, no entry, 
     { command: 'out', senderName: 'b', noEntry: true },
     { command: 'paid', senderName: 'c', ambiguous: ['C1', 'C2'] },
     { command: 'in', senderName: 'd', tooMany: true },
+    { command: 'in', senderName: 'e', cancelled: true },
   ]);
   assert.match(summary.text, /• \*!in\* \(a\): already on the list as "A" - nothing to do/);
   assert.match(summary.text, /• \*!out\* \(b\): no entry found for them - skipped/);
   assert.match(summary.text, /• \*!paid\* \(c\): had more than one entry on the payment-due list, ambiguous - skipped/);
   assert.match(summary.text, /• \*!in\* \(d\): too many names in one command - skipped/);
+  assert.match(summary.text, /• \*!in\* \(e\): social's been cancelled - skipped/);
 });
 
 test('buildCatchUpSummary reflects a trailing "paid" keyword caught up on !in/!out (see commands/list.js runPaidIfFlagged)', () => {

@@ -221,6 +221,39 @@ test('clearList wipes entries and waitlist but keeps duePayments and header fiel
   assert.equal(after.duePayments.length, 1); // preserved - clearList doesn't touch payments
 });
 
+test('cancelSocial wipes entries and waitlist, keeps duePayments/header fields, and marks the cycle cancelled', () => {
+  const groupId = freshGroupId();
+  store.setLocation(groupId, 'EBC');
+  store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // archives Grace into duePayments
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 1);
+
+  store.addEntry(groupId, 'Henry', 'b@s.whatsapp.net', false);
+  store.setLimit(groupId, 1); // force the next add onto the waitlist
+  store.addEntry(groupId, 'Iris', 'c@s.whatsapp.net', false);
+  assert.equal(store.getCurrentEvent(groupId).waitlist.length, 1);
+
+  const cancelled = store.cancelSocial(groupId);
+  assert.deepEqual(cancelled.entries.map((e) => e.name), ['Henry']);
+  assert.deepEqual(cancelled.waitlist.map((e) => e.name), ['Iris']);
+
+  const after = store.getCurrentEvent(groupId);
+  assert.equal(after.entries.length, 0);
+  assert.equal(after.waitlist.length, 0);
+  assert.equal(after.location, 'EBC'); // preserved
+  assert.equal(after.duePayments.length, 1); // preserved - cancelSocial doesn't touch payments
+  assert.equal(after.cancelled, true);
+});
+
+test('newList() resets `cancelled` back to false, even when the outgoing cycle was cancelled', () => {
+  const groupId = freshGroupId();
+  store.cancelSocial(groupId);
+  assert.equal(store.getCurrentEvent(groupId).cancelled, true);
+
+  store.newList(groupId, '2026-08-20', {});
+  assert.equal(store.getCurrentEvent(groupId).cancelled, false);
+});
+
 test('markPaid removes someone from duePayments', () => {
   const groupId = freshGroupId();
   store.addEntry(groupId, 'Grace', 'a@s.whatsapp.net', false);

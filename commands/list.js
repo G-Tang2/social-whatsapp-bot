@@ -413,6 +413,21 @@ async function applyTournamentUpgradeIfFlagged(groupId, names, tournamentFlag) {
 async function handleIn(ctx) {
   const { sock, msg, groupId, senderId, senderName, argText, upsertType, reply, postList } = ctx;
   const isCatchUp = upsertType === 'append';
+
+  // An admin cancelled this cycle outright via !cancelsocial (store.js's
+  // cancelSocial()) - refuse every !in against it, named or bare, admin or
+  // not, until !newlist starts an entirely fresh cycle (see newList()'s
+  // own `cancelled: false` reset). Checked before anything else below -
+  // there's nothing left worth resolving (name matching, tournament flags,
+  // "+N", ...) against a list that isn't accepting signups at all right
+  // now.
+  if (getCurrentEvent(groupId).cancelled) {
+    if (!isCatchUp) {
+      await reply(`This social's been cancelled - hang tight for the next ${COMMAND_PREFIX}newlist before signing up again.`);
+    }
+    return { command: 'in', senderName, argText, cancelled: true };
+  }
+
   // Leading "paid" and/or "tournament" keywords (either order, e.g. "!in
   // paid", "!in tournament paid", "!in tournament Grace, Henry") let someone
   // join, confirm payment, and/or opt into the tournament all in one

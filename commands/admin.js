@@ -1,8 +1,8 @@
 // commands/admin.js
-// Admin-gated list-management commands: !clear, !clearpayments, !newlist,
-// !location, !courts, !time, !limit, !allow, !paymentlabel, !regulars,
-// !exempt, !settournament, !tournamentlimit, !tournamentwinners, !undo,
-// !update.
+// Admin-gated list-management commands: !clear, !clearpayments,
+// !cancelsocial, !newlist, !location, !courts, !time, !limit, !allow,
+// !paymentlabel, !regulars, !exempt, !settournament, !tournamentlimit,
+// !tournamentwinners, !undo, !update.
 // (!tournament and !leaderboard themselves - both view-only - live here
 // too, but are NOT admin-gated; see their own doc comments below for why
 // they're in this file anyway.)
@@ -29,6 +29,7 @@ const {
   setLimit,
   allowFromWaitlist,
   clearList,
+  cancelSocial,
   clearDuePayments,
   applyListUpdate,
   newList,
@@ -74,6 +75,7 @@ const {
   expandRegularPlayersToken,
   formatPromotedMessage,
   formatTournamentPromotedMessage,
+  formatCancelledSocialMessage,
   formatTournamentRoster,
   getMentionedJids,
   normalizeJid,
@@ -108,6 +110,39 @@ async function handleClearpayments(ctx) {
     return;
   }
   clearDuePayments(groupId);
+  await postList();
+}
+
+// Calls off the CURRENT social outright (store.js's cancelSocial()) -
+// distinct from !clear above, which empties the list but leaves it open
+// under the same date/location/time for people to re-sign-up. This
+// instead marks it cancelled, so a bare !in (commands/list.js) refuses new
+// signups against it until an admin starts an entirely fresh cycle with
+// !newlist. Same as !clear, deliberately leaves duePayments untouched -
+// nobody currently on the list needs to pay for a social that never
+// happened, but anyone who already owed from an earlier cycle still owes
+// it. Announces the cancellation, @-mentioning everyone who was on the
+// attendance list or waitlist right before it got wiped (see
+// formatCancelledSocialMessage in lib/helpers.js), so nobody has to find
+// out the hard way by trying to !in and getting refused.
+async function handleCancelSocial(ctx) {
+  const { sock, msg, groupId, senderId, reply, postList } = ctx;
+  const admin = await isGroupAdmin(sock, groupId, senderId);
+  if (!admin) {
+    await reply('Only a group admin can cancel the social - nice try, though!');
+    return;
+  }
+  if (getCurrentEvent(groupId).cancelled) {
+    await reply(`This social's already cancelled - run ${COMMAND_PREFIX}newlist to start a fresh one.`);
+    return;
+  }
+  const { entries, waitlist } = cancelSocial(groupId);
+  const cancelMsg = formatCancelledSocialMessage([...entries, ...waitlist]);
+  if (cancelMsg) {
+    await sock.sendMessage(groupId, { text: cancelMsg.text, mentions: cancelMsg.mentions }, { quoted: buildQuotePreviewMsg(msg) });
+  } else {
+    await reply("This social's been cancelled - nobody was even signed up yet.");
+  }
   await postList();
 }
 
@@ -1429,6 +1464,7 @@ async function handleUpdate(ctx) {
 module.exports = {
   handleClear,
   handleClearpayments,
+  handleCancelSocial,
   handleNewlist,
   handleDate,
   handleLocation,

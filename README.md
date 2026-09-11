@@ -14,6 +14,7 @@ every change.
 | `!list` | anyone | Posts the current list |
 | `!clear` | group admins only | Wipes the current list's entries, keeping its date/location/courts/time |
 | `!clearpayments` | group admins only | Wipes who currently owes payment, without touching the list's entries/waitlist or anything else - the mirror of `!clear` |
+| `!cancelsocial` | group admins only | Calls off the *current* social entirely - see "Cancelling a social" below. Unlike `!clear`, blocks new `!in` signups until `!newlist` starts a fresh cycle, and @-mentions everyone who was on the list to let them know nobody needs to pay for it |
 | `!newlist DD/MM\|same [location] \| [courts] \| [time] [with name1, name2, ...]` | group admins only | Archives the current list and starts a fresh, empty one dated `DD/MM` (no year - see below) - everyone from the old list is carried over as owing payment. Type `same` instead of a date to reuse whatever day of the week the current list is already on (see "Reusing the same day of the week" below). An optional trailing `with ...` clause immediately signs up everyone named, in order, on the brand new list (see "Starting a new dated list" below) |
 | `!date [DD/MM]` | viewing: anyone; changing: group admins only | Corrects the *current* list's date without archiving it or starting a new one - unlike `!newlist`, entries/waitlist/payments/location/courts/time/limit are all left untouched. Same `DD/MM` format and year inference as `!newlist`. With no text, shows the current date without changing it |
 | `!paid [name]` | anyone, up to 8 names per command (no limit for group admins) | Marks yourself (or `[name]`) as paid - clears EVERY entry for that name at once, so if they owe for more than one missed event (see "Tracking who owes payment" below), one `!paid` settles all of it in one go. No ownership check - anyone can clear anyone |
@@ -427,6 +428,25 @@ a new season, or clearing out bad data), a group admin can run
 `!clearpayments` - it's immediate, same as `!clear`, and leaves the
 entries/waitlist/date/location/courts/time untouched. Changed your mind?
 `!undo` (see "Undoing the last change" below) reverses it, same as it would
+any other command.
+
+**Cancelling a social:** sometimes the whole thing falls through - rain, no
+courts, not enough people - and it's not just one person leaving, the
+event itself is off. `!cancelsocial` (admin only) is for exactly that:
+distinct from `!clear` above, which just empties the list while leaving it
+open under the same date/location/time for people to re-sign-up, this
+instead blocks new `!in` signups against THIS cycle entirely, until the
+next `!newlist` starts a genuinely fresh one. It leaves the payment-due
+list completely untouched - nobody who was on the cancelled list gets
+added to it (that only ever happens via `!newlist`, which this
+deliberately isn't), but anyone who already owed from an earlier,
+unrelated cycle still owes it. Running it sends an announcement
+@-mentioning everyone who was on the attendance list or waitlist right
+before it got wiped, so nobody has to find out by trying to `!in` and
+getting refused, and the reposted list itself shows a "This social has
+been cancelled" banner above `*Attendance*` until the next `!newlist`.
+Same as `!clear`/`!clearpayments`, it's immediate with no confirmation
+prompt, but `!undo` (see "Undoing the last change" below) reverses it like
 any other command.
 
 Some people never need to pay at all - the organizer themselves, a

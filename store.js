@@ -282,6 +282,14 @@ function emptyGroupState() {
       waitlist: [],
       duePayments: [],
       duePaymentsLabel: DEFAULT_PAYMENT_LABEL,
+      // Whether an admin has called off THIS cycle outright via
+      // !cancelsocial (see cancelSocial() below) - distinct from simply
+      // being empty (a brand new list, or one !clear just wiped, is still
+      // open for signups). While true, handleIn (commands/list.js) refuses
+      // new !in signups and formatList() (lib/helpers.js) shows a
+      // cancelled banner, until the next !newlist resets it back to false
+      // (see newList() below) by starting an entirely fresh cycle.
+      cancelled: false,
       // Tournament sub-feature - see !settournament/!tournament/
       // !tournamentlimit/!tournamentwinners in commands/admin.js. OFF by
       // default per group, same "each group opts in individually" pattern
@@ -504,6 +512,10 @@ function migrateIfNeeded(data) {
       }
       if (data[groupId].current.autoNewlistCreated === undefined) {
         data[groupId].current.autoNewlistCreated = false;
+        migrated = true;
+      }
+      if (data[groupId].current.cancelled === undefined) {
+        data[groupId].current.cancelled = false;
         migrated = true;
       }
     }
@@ -1855,6 +1867,31 @@ function clearList(groupId) {
   return all[groupId].current.entries;
 }
 
+// Calls off the CURRENT social outright - distinct from clearList() above,
+// which just empties the list while leaving it open under the same date/
+// location/time for people to re-sign-up. This instead marks it
+// `cancelled: true`, so handleIn (commands/list.js) refuses new !in
+// signups against it until the next !newlist starts an entirely fresh
+// cycle (see newList()'s own `cancelled: false` reset). Same as
+// clearList(), deliberately does NOT touch duePayments - nobody currently
+// on the list needs to pay for a social that never happened, but anyone
+// who already owed from an earlier cycle still owes it.
+// Returns the entries/waitlist that existed right before cancelling (not
+// the now-emptied ones), so the caller (commands/admin.js's
+// !cancelsocial) can announce who's off the hook.
+function cancelSocial(groupId) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  const current = all[groupId].current;
+  const cancelledEntries = current.entries;
+  const cancelledWaitlist = current.waitlist || [];
+  current.entries = [];
+  current.waitlist = [];
+  current.cancelled = true;
+  writeAll(all);
+  return { entries: cancelledEntries, waitlist: cancelledWaitlist };
+}
+
 // Wipes the current duePayments list in place - forgives everyone still
 // owing money, without touching entries/waitlist or any other list state.
 // The inverse of clearList()'s guarantee: that one deliberately leaves
@@ -2055,6 +2092,10 @@ function newList(groupId, date, details = {}) {
     // A fresh cycle hasn't had its own auto-newlist fire yet - see
     // markAutoNewlistCreated above.
     autoNewlistCreated: false,
+    // A brand new cycle is never cancelled just because the PREVIOUS one
+    // was - !newlist starting a fresh list is exactly how an admin
+    // re-opens signups after a !cancelsocial (see cancelSocial() below).
+    cancelled: false,
   };
 
   writeAll(all);
@@ -2107,6 +2148,7 @@ module.exports = {
   removeEntry,
   applyListUpdate,
   clearList,
+  cancelSocial,
   clearDuePayments,
   markPaid,
   newList,

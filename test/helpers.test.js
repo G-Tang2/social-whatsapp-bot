@@ -30,6 +30,7 @@ const {
   formatCount,
   formatElapsed,
   formatPromotedMessage,
+  formatCancelledSocialMessage,
   formatList,
   resolveDuePaymentNumber,
   resolveAttendanceOrWaitlistNumber,
@@ -634,6 +635,26 @@ test('formatPromotedMessage builds a tagged notice and returns null for an empty
   assert.match(result.text, /Off the waitlist/);
   assert.match(result.text, /@sam — Henry/);
   assert.deepEqual(result.mentions, ['sam@s.whatsapp.net']);
+});
+
+test('formatCancelledSocialMessage builds a tagged notice and returns null for an empty list', () => {
+  assert.equal(formatCancelledSocialMessage([]), null);
+  assert.equal(formatCancelledSocialMessage(null), null);
+  const result = formatCancelledSocialMessage([{ name: 'Henry', addedBy: 'sam@s.whatsapp.net' }]);
+  assert.match(result.text, /cancelled/i);
+  assert.match(result.text, /@sam — Henry/);
+  assert.deepEqual(result.mentions, ['sam@s.whatsapp.net']);
+});
+
+test('formatList: shows a cancelled banner above everything else once cancelSocial() is run, gone again after a fresh !newlist', () => {
+  const groupId = freshRegularPlayersGroupId();
+  assert.doesNotMatch(formatList(groupId), /cancelled/i);
+
+  store.cancelSocial(groupId);
+  assert.match(formatList(groupId), /❌ \*This social has been cancelled\*/);
+
+  store.newList(groupId, '2026-08-20', {});
+  assert.doesNotMatch(formatList(groupId), /cancelled/i);
 });
 
 test('adminCheck: isGroupAdmin reflects groupMetadata and caches the result', async () => {

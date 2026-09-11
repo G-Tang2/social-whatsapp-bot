@@ -885,6 +885,87 @@ test('handleClearpayments: rejects non-admins, wipes duePayments (not entries) f
   assert.match(alreadyEmpty.replies[0], /Nobody currently owes payment/);
 });
 
+test('handleCancelSocial: rejects non-admins, wipes the list for admins, keeps duePayments, and marks it cancelled', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // archives Grace into duePayments
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
+
+  const nonAdmin = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net' });
+  await adminCommands.handleCancelSocial(nonAdmin.ctx);
+  assert.match(nonAdmin.replies[0], /Only a group admin/);
+  assert.equal(store.getCurrentEvent(groupId).entries.length, 1);
+
+  const admin = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net' });
+  await adminCommands.handleCancelSocial(admin.ctx);
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.entries.length, 0);
+  assert.equal(event.cancelled, true);
+  assert.equal(event.duePayments.length, 1); // preserved - cancelling doesn't touch payments
+});
+
+test('handleCancelSocial: announces the cancellation, @-mentioning everyone who was on the attendance list or waitlist', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
+  store.setLimit(groupId, 1);
+  store.addEntry(groupId, 'Iris', 'ivy@s.whatsapp.net', false); // waitlisted
+
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net' });
+  await adminCommands.handleCancelSocial(ctx);
+
+  const announcement = sock.sentMessages.find((m) => /cancelled/i.test(m.content.text || ''));
+  assert.ok(announcement, 'expected a cancellation announcement to have been sent');
+  assert.deepEqual(announcement.content.mentions.sort(), ['ivy@s.whatsapp.net', 'sam@s.whatsapp.net'].sort());
+  assert.match(announcement.content.text, /Henry/);
+  assert.match(announcement.content.text, /Iris/);
+});
+
+test('handleCancelSocial: a plain text reply (no mentions) when nobody was on the list at all', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net' });
+  await adminCommands.handleCancelSocial(ctx);
+
+  assert.match(replies[0], /nobody was even signed up/i);
+});
+
+test('handleCancelSocial: running it again on an already-cancelled social is a no-op with its own reply', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.cancelSocial(groupId);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net' });
+  await adminCommands.handleCancelSocial(ctx);
+
+  assert.match(replies[0], /already cancelled/i);
+});
+
+// Real request: an admin should be able to cancel a social outright -
+// distinct from !clear (list.js's own tests cover the ordinary case).
+// This confirms the two commands actually diverge: !clear leaves the
+// list open for people to re-sign-up under the same date, !cancelsocial
+// blocks that until !newlist.
+test('handleIn: refuses a bare !in against a cancelled social, but a fresh !newlist re-opens signups', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.cancelSocial(groupId);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Grace', argText: '' });
+  await listCommands.handleIn(ctx);
+  assert.equal(store.getCurrentEvent(groupId).entries.length, 0);
+  assert.match(replies[0], /cancelled/i);
+
+  const admin = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08' });
+  await adminCommands.handleNewlist(admin.ctx);
+
+  const after = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Grace', argText: '' });
+  await listCommands.handleIn(after.ctx);
+  assert.equal(store.getCurrentEvent(groupId).entries.length, 1);
+});
+
 test('handleLimit: raising the limit promotes people off the waitlist with a tagged mention', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
