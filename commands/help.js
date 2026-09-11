@@ -107,7 +107,7 @@ const ADMIN_HELP_TEXT = [
   `• *${COMMAND_PREFIX}limit [number]* - max people, auto-set from courts (admins to override; ${COMMAND_PREFIX}limit off removes it)`,
   `• *${COMMAND_PREFIX}allow <count>* - let that many extra people in from the waitlist, over the limit if needed - the limit itself doesn't change (admins only)`,
   `• *${COMMAND_PREFIX}clear* - wipe the current list's entries`,
-  `• *${COMMAND_PREFIX}cancelsocial* - call off the current social entirely (unlike ${COMMAND_PREFIX}clear, blocks new signups until the next ${COMMAND_PREFIX}newlist; nobody currently on the list needs to pay for it)`,
+  `• *${COMMAND_PREFIX}cancelsocial* - call off the current social entirely (unlike ${COMMAND_PREFIX}clear, blocks new signups until the next ${COMMAND_PREFIX}newlist)`,
   '',
   '*Payments*',
   `• *${COMMAND_PREFIX}paymentlabel [text]* - payment-due header, e.g. "${PAYMENT_LABEL}" (admins to change)`,
