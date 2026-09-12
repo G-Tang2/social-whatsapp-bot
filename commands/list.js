@@ -562,6 +562,7 @@ async function handleIn(ctx) {
   const waitlisted = [];
   const rejected = [];
   const tournamentJoined = []; // names already on the list, upgraded into the tournament below
+  const tournamentWaitlisted = []; // names already on the list, queued (🏆 WL) because the tournament's full
   if (regularPlayersExpansion.usedEmptyRegularPlayers) {
     rejected.push(`regular players - none saved yet (see ${COMMAND_PREFIX}regulars to set them)`);
   }
@@ -596,16 +597,27 @@ async function handleIn(ctx) {
         const upgrade = await applyTournamentUpgradeIfFlagged(groupId, [name], true);
         if (upgrade.joined.length) {
           tournamentJoined.push(name.trim());
+        } else if (upgrade.full) {
+          // Real bug report: this used to fall all the way through with
+          // NEITHER a reply NOR a repost - upgrade.full IS a real change
+          // (joinTournament() - store.js - already sets
+          // entry.tournamentWaitlisted on their EXISTING entry, tagging
+          // them (🏆 WL) under Social only), just not one that belongs in
+          // `tournamentJoined` (they didn't actually get IN). Tracked here
+          // so the postList() check below still fires - same fix the
+          // bare-self path above already got (see its own
+          // `tournamentChanged` comment) - the reposted list itself is
+          // still the only feedback (no separate text reply), same
+          // reasoning as a full tournament for a brand-new entry.
+          tournamentWaitlisted.push(name.trim());
         } else if (upgrade.notFound.length) {
           // On the waitlist, not `entries` - joinTournament() can't reach
           // them yet (see its doc comment); this genuinely IS a rejection.
           rejected.push(`${name.trim()} - already on the waitlist, not eligible for the tournament until promoted (see ${COMMAND_PREFIX}allow)`);
         }
         // upgrade.disabled is already reflected in tournamentRequestedButDisabled above.
-        // upgrade.full and "already in the tournament, no-op" both need no
-        // rejection line - a full tournament tags them (🏆 WL) right on
-        // their existing entry (visible in the reposted list below), and
-        // "already in" isn't an error, just nothing new to do.
+        // "already in the tournament, no-op" needs no rejection line -
+        // nothing changed, so there's nothing new to show.
       } else {
         rejected.push(`${name.trim()} - already on the list`);
       }
@@ -642,12 +654,12 @@ async function handleIn(ctx) {
     // its Waitlist section, under 🏆 Tournament, or tagged
     // "(🏆 WL)" under "Social only") is proof enough, same as any other
     // successful, authorized change.
-    if (added.length || waitlisted.length || tournamentJoined.length || paidOutcome.paid.length) {
+    if (added.length || waitlisted.length || tournamentJoined.length || tournamentWaitlisted.length || paidOutcome.paid.length) {
       await postList();
     }
   }
 
-  return { command: 'in', senderName, argText, added, waitlisted, rejected, tournamentJoined, ...paidOutcome };
+  return { command: 'in', senderName, argText, added, waitlisted, rejected, tournamentJoined, tournamentWaitlisted, ...paidOutcome };
 }
 
 // Handles a leading "tournament" keyword on !out (see stripLeadingInKeywords

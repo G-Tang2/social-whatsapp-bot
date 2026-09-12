@@ -2104,7 +2104,43 @@ test('handleIn: upgrading multiple already-on-the-list names respects tournament
   assert.equal(entries.find((e) => e.name === 'Henry').tournament, false);
   assert.equal(entries.find((e) => e.name === 'Henry').tournamentWaitlisted, true);
   assert.deepEqual(outcome.tournamentJoined, ['Grace']);
+  assert.deepEqual(outcome.tournamentWaitlisted, ['Henry']);
   assert.equal(upgrade.replies.length, 0); // still quiet - the (🏆 WL) tag on the reposted list is proof enough
+});
+
+// Real bug report: "!in tournament <name>" for an EXISTING entry, sent
+// when the tournament is completely full, silently set
+// entry.tournamentWaitlisted (a real change - the (🏆 WL) tag) WITHOUT
+// either a text reply or reposting the list - the sender got a success
+// reaction with zero visible trace anything happened. The "one gets in,
+// one waitlisted" test above never actually caught this: Grace joining
+// outright already triggered postList() regardless of whether Henry's
+// waitlisting alone would have - isolated here with a SINGLE name so
+// nothing else can mask it.
+test('handleIn: "!in tournament <name>" upgrading a SOLE already-on-the-list name into a FULL tournament still reposts the list, even with nothing else changing', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, true);
+  store.setTournamentLimit(groupId, 1);
+  store.addEntry(groupId, 'Derek', 'keith@s.whatsapp.net', false, true, true); // takes the sole tournament spot
+
+  const joinSocial = makeCtx({ sock, groupId, senderId: 'gary@s.whatsapp.net', senderName: 'Adrian', argText: 'Henry' });
+  await listCommands.handleIn(joinSocial.ctx);
+  const before = sock.sentMessages.length;
+
+  const upgrade = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Henry' });
+  const outcome = await listCommands.handleIn(upgrade.ctx);
+
+  const henry = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Henry');
+  assert.equal(henry.tournament, false);
+  assert.equal(henry.tournamentWaitlisted, true);
+  assert.deepEqual(outcome.tournamentWaitlisted, ['Henry']);
+  assert.equal(upgrade.replies.length, 0); // still quiet - the (🏆 WL) tag on the reposted list is proof enough
+  assert.equal(
+    sock.sentMessages.length,
+    before + 1,
+    'expected the list to be reposted even though nobody actually joined the tournament outright'
+  );
 });
 
 test('handleIn: upgrading a name that\'s only on the main WAITLIST (not confirmed attendance) is rejected with a clear reason', async () => {
