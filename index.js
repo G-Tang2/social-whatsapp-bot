@@ -766,8 +766,11 @@ const AI_NOT_UNDERSTOOD_REPLY = `Ooh, that one's got me stumped! I'm not capable
 // second) is real, actionable advice here in a way it isn't for the other
 // cases. Also points to typed commands (!help) as a fallback, since those
 // never touch Gemini at all - a real way around it timing out again, not
-// just "hope it's faster this time".
-const AI_TIMEOUT_REPLY = `Whoops, daydreamed a bit too long on that one - took too long to process. Try again, or use ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) to see the exact typed commands.`;
+// just "hope it's faster this time". Also links out to Gemini's own
+// Downdetector page - a slow/timed-out call is often (not always) a sign
+// Gemini itself is having a bad moment, and this lets whoever's asking
+// check that themselves instead of just taking the bot's word for it.
+const AI_TIMEOUT_REPLY = `Whoops, daydreamed a bit too long on that one - took too long to process. Try again, or use ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) to see the exact typed commands.\n\nIf this keeps happening, Gemini itself might be having issues - check https://downdetector.com.au/status/googlegemini/`;
 
 // Shown when a command handler (typed or AI-dispatched) throws instead of
 // completing normally - a bug, a transient network failure talking to

@@ -2031,6 +2031,7 @@ test('e2e: a Gemini call that times out gets a "took too long, try again" reply 
   assert.match(replyText, /try again/i);
   assert.match(replyText, new RegExp(`${COMMAND_PREFIX}help`));
   assert.doesNotMatch(replyText, /not capable of doing that/i);
+  assert.match(replyText, /https:\/\/downdetector\.com\.au\/status\/googlegemini\//);
 });
 
 // Regression coverage for the "last seen" About/status heartbeat
