@@ -934,7 +934,12 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   // alone), came back with an unexpected shape, or something else - rather
   // than reasoning about it blind after the fact.
   if (DEBUG && ALLOWED_GROUPS.includes(groupId)) {
-    console.log('[debug] AI interpretation', { text: cleanedText, interpretation });
+    // console.log's default object-inspection depth is 2 - interpretation.
+    // actions[N] (the actual command/argText/confidence/question this is
+    // FOR) sits one level deeper than that, so passing the object directly
+    // here printed it as a useless "[Object]"/"[Array]" the first time this
+    // logging was added. JSON.stringify has no such depth limit.
+    console.log('[debug] AI interpretation', JSON.stringify({ text: cleanedText, interpretation }, null, 2));
   }
 
   const actions = interpretation && interpretation.actions;
