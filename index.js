@@ -922,6 +922,21 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   const { cleanedText, listText, todayLabel, regularPlayersText, priorBotMessage } = buildAiMentionPromptContext({ sock, msg, groupId, text });
   const interpretation = await interpretMessage(cleanedText, { listText, todayLabel, regularPlayersText, priorBotMessage });
 
+  // Real bug report: a live @-mention finished with no visible trace at
+  // all in the group - no dispatched change, no reply text, no error -
+  // even though every code path below is supposed to guarantee SOME
+  // visible output (a dispatched command, a reply, or the generic
+  // fallback). Logging the raw interpretation here (gated by the same
+  // DEBUG flag as index.js's own "[debug] incoming message" log) makes it
+  // possible to see exactly what Gemini actually returned for a given
+  // message - e.g. confirming whether it was mapped to the WRONG command
+  // (a plausible misread this bot can't fully rule out from behavior
+  // alone), came back with an unexpected shape, or something else - rather
+  // than reasoning about it blind after the fact.
+  if (DEBUG && ALLOWED_GROUPS.includes(groupId)) {
+    console.log('[debug] AI interpretation', { text: cleanedText, interpretation });
+  }
+
   const actions = interpretation && interpretation.actions;
   const dispatchable = (actions || []).filter((a) => a.command !== 'none' && a.confidence === 'high');
   // Low-confidence guesses that came with a real (non-'none') command AND
