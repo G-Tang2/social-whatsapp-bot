@@ -512,3 +512,28 @@ evalTest('a nickname matching TWO different entries ("Nick" against both "Nichol
   assert.match(uncertain.question, /nicholas/i, 'expected the question to name "Nicholas" as one of the real candidates');
   assert.match(uncertain.question, /nicholas l/i, 'expected the question to name "Nicholas L" as the other real candidate');
 });
+
+// --- "clearpayments" (everyone's paid up) must fire for a short, terse
+// affirmative statement, not just a fuller sentence, but never for the
+// REVERSE (someone hasn't paid) just because it also mentions "paid" -
+// that's harmless chat, not a request to forgive real debt. ---
+
+evalTest('a terse "everyone paid" (real bug report - used to be misread as off-topic chat) maps to a high-confidence "clearpayments"', async () => {
+  const listText = '*Payment*\n$16 to payID: 0413455423\n\n1. Alice\n2. Bob';
+  const result = await interpretMessage('everyone paid', { listText });
+  assert.ok(result, 'expected a parsed result, not null');
+  const action = findAction(result, 'clearpayments');
+  assert.ok(action, `expected a "clearpayments" action, got: ${JSON.stringify(result.actions)}`);
+  assert.equal(action.confidence, 'high', `expected high confidence, got: ${JSON.stringify(action)}`);
+});
+
+evalTest('the REVERSE ("nobody has paid yet") must NOT map to "clearpayments" - it would wipe real debt for the opposite statement', async () => {
+  const listText = '*Payment*\n$16 to payID: 0413455423\n\n1. Alice\n2. Bob';
+  const result = await interpretMessage('nobody has paid yet', { listText });
+  assert.ok(result, 'expected a parsed result, not null');
+  const wrongAction = result.actions.find((a) => a.command === 'clearpayments' && a.confidence === 'high');
+  assert.ok(
+    !wrongAction,
+    `must never map to a high-confidence "clearpayments" - that would wipe everyone's real debt for the opposite statement. Got: ${JSON.stringify(result.actions)}`
+  );
+});
