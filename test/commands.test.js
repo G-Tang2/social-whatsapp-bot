@@ -468,6 +468,38 @@ test('handlePaid: "!paid 1-3" expands the range itself and marks positions 1 thr
   assert.deepEqual(remaining.sort(), ['Nolan', 'Omar'].sort());
 });
 
+// Real bug report: "@Snoopy 3 and 6 paid" against a payment list split
+// into two dated groups, where "3." is printed in BOTH groups (two real,
+// different people) - the bot rejected it with "3 is not on the payment
+// list," wrongly implying nobody's there at all, instead of naming the
+// two real candidates and asking which one. "6." (only in one group) is
+// unambiguous and should still succeed normally, independent of "3"'s
+// rejection.
+test('handlePaid: "!paid 3,6" - an ambiguous number across two dated groups is rejected by NAME, naming both real candidates, while an unambiguous number in the same command still succeeds', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setDate(groupId, '2026-08-13');
+  ['Grace', 'Henry', 'Iris'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
+  store.newList(groupId, '2026-08-20', {}); // archives 3, owed since 8/13, printed 1-3 in their own group
+
+  ['Dan', 'Eve', 'Finn', 'Gus', 'Hana', 'Ivy'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
+  store.newList(groupId, '2026-08-27', {}); // archives 6 more, owed since 8/20, printed 1-6 in their own (more recent) group
+
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 9);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: '3, 6' });
+  await listCommands.handlePaid(ctx);
+
+  assert.match(replies[0], /3 matches more than one entry/i);
+  assert.match(replies[0], /Iris/); // the "13th Aug" group's own #3
+  assert.match(replies[0], /Finn/); // the "20th Aug" (more recent) group's own #3
+  assert.doesNotMatch(replies[0], /is not on the payment list/i); // NOT the generic "nobody's there" rejection
+
+  const remaining = store.getCurrentEvent(groupId).duePayments.map((e) => e.name);
+  assert.ok(!remaining.includes('Ivy'), 'expected #6 (Ivy, unambiguous - only the "20th Aug" group even has 6 entries) to be successfully marked paid despite #3 being rejected');
+  assert.ok(remaining.includes('Iris') && remaining.includes('Finn'), 'expected the ambiguous "3" to be left untouched in BOTH groups, not guessed');
+});
+
 test('handlePaid: a range that expands past MAX_NAMES_PER_COMMAND is rejected as "too many" for a non-admin, same as any other bulk request', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });

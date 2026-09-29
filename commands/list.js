@@ -249,13 +249,24 @@ function expandRangeToken(token) {
 // resolveDuePaymentNumber in lib/helpers.js) instead of being looked up
 // as a literal name - so referring to whoever the posted list currently
 // shows as "7." works the same as typing their name. A non-numeric
-// token, or a number resolveDuePaymentNumber can't resolve to exactly
-// one entry (out of range, or the same number appearing in more than one
-// payment-date group), is returned completely unchanged - it just flows
-// into the ordinary literal-name lookup below and fails with the same
-// "not on the payment list" rejection a nonsense name already gets,
-// rather than a separate, more confusing error for what looks to the
-// sender like the same kind of mistake either way.
+// token, or a number genuinely out of range everywhere, is returned
+// completely unchanged - it just flows into the ordinary literal-name
+// lookup below and fails with the same "not on the payment list"
+// rejection a nonsense name already gets, rather than a separate, more
+// confusing error for what looks to the sender like the same kind of
+// mistake either way.
+//
+// Real bug report: a number appearing in MORE than one payment-date group
+// (the printed list itself has two different lines both starting "N.")
+// used to ALSO just fall through to that same generic rejection - wrongly
+// implying nobody's at that number at all, when actually there's a real
+// person at "N." in each group and no way to tell which was meant without
+// asking. Returned instead as a `{ rejectedMessage }` object (never a
+// plain string - see resolveDuePaymentNumber's own `{ ambiguous }` shape)
+// naming the real candidates by name AND date, same "ask, don't guess"
+// treatment as every other genuine ambiguity in this file - the caller
+// (handlePaid below) recognizes this shape and reports it directly,
+// rather than letting it reach markPaid() and fail as a nonsense name.
 //
 // Takes `due` as a pre-fetched snapshot rather than fetching it itself -
 // callers resolve every token in a batch against the SAME snapshot,
@@ -266,13 +277,20 @@ function expandRangeToken(token) {
 // mismatch for exactly the multi-name case ("!paid 7,8") this exists to
 // support.
 //
-// Returns an ARRAY - almost always one item, but a raw "N-M" range token
-// (see expandRangeToken above) expands into several.
+// Returns an ARRAY of plain name strings and/or `{ rejectedMessage }`
+// objects (see above) - almost always one item, but a raw "N-M" range
+// token (see expandRangeToken above) expands into several.
 function resolvePaidTokens(due, token) {
   return expandRangeToken(token).map((piece) => {
-    if (!/^\d+$/.test(piece.trim())) return piece;
-    const match = resolveDuePaymentNumber(due, Number(piece.trim()));
-    return match ? match.name : piece;
+    const trimmed = piece.trim();
+    if (!/^\d+$/.test(trimmed)) return piece;
+    const resolved = resolveDuePaymentNumber(due, Number(trimmed));
+    if (!resolved) return piece;
+    if (resolved.ambiguous) {
+      const candidates = resolved.ambiguous.map((m) => `${m.entry.name} (${m.heading})`).join(', ');
+      return { rejectedMessage: `${trimmed} matches more than one entry - the payment list has more than one "${trimmed}.": ${candidates}. Use the name instead.` };
+    }
+    return resolved.entry.name;
   });
 }
 
@@ -1079,6 +1097,15 @@ async function handlePaid(ctx) {
   const rejected = [];
 
   for (const name of names) {
+    // A `{ rejectedMessage }` object (see resolvePaidTokens' own doc
+    // comment) - an ambiguous printed number, already fully worded -
+    // reported directly, never passed to markPaid() (which only accepts
+    // real name strings and would just fail it a second, more confusing
+    // way).
+    if (name && typeof name === 'object' && name.rejectedMessage) {
+      rejected.push(name.rejectedMessage);
+      continue;
+    }
     const result = markPaid(groupId, name);
     if (!result.ok) {
       // Same "trying to pay early" distinction as the bare-self branch

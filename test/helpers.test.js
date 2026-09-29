@@ -558,8 +558,8 @@ test('resolveDuePaymentNumber matches an entry by its printed position within a 
   store.newList(groupId, '2026-08-20', {});
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  assert.equal(resolveDuePaymentNumber(due, 1).name, 'Oscar');
-  assert.equal(resolveDuePaymentNumber(due, 3).name, 'Miles');
+  assert.equal(resolveDuePaymentNumber(due, 1).entry.name, 'Oscar');
+  assert.equal(resolveDuePaymentNumber(due, 3).entry.name, 'Miles');
 });
 
 test('resolveDuePaymentNumber returns null for a number outside the printed range', () => {
@@ -573,7 +573,13 @@ test('resolveDuePaymentNumber returns null for a number outside the printed rang
   assert.equal(resolveDuePaymentNumber(due, 0), null);
 });
 
-test('resolveDuePaymentNumber returns null when the SAME number appears in more than one payment-date group - the printed list itself has two different lines both starting "N.", so guessing would be wrong', () => {
+// Real bug report: "3 is not on the payment list" for a number that
+// genuinely DID match someone (twice, once per date group) wrongly implied
+// nobody was there at all - see resolveDuePaymentNumber's own doc comment
+// for the { ambiguous } shape this now returns instead of a bare null, so
+// a caller can name the real candidates rather than guessing OR pretending
+// nothing matched.
+test('resolveDuePaymentNumber returns { ambiguous: [...] }, naming both real candidates, when the SAME number appears in more than one payment-date group', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setDate(groupId, '2026-08-13');
   store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
@@ -583,7 +589,10 @@ test('resolveDuePaymentNumber returns null when the SAME number appears in more 
   store.newList(groupId, '2026-08-27', {}); // Preston -> owes since 8/20, ALSO printed as "1. Preston"
 
   const due = store.getCurrentEvent(groupId).duePayments;
-  assert.equal(resolveDuePaymentNumber(due, 1), null);
+  const result = resolveDuePaymentNumber(due, 1);
+  assert.ok(result.ambiguous, `expected an { ambiguous } result, got: ${JSON.stringify(result)}`);
+  assert.deepEqual(result.ambiguous.map((m) => m.entry.name).sort(), ['Grace', 'Preston']);
+  assert.ok(result.ambiguous.every((m) => m.heading), 'expected every candidate to carry its own group heading');
 });
 
 // --- resolveAttendanceOrWaitlistNumber: "!out 7" resolves against the
