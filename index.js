@@ -773,7 +773,7 @@ const AI_NOT_UNDERSTOOD_REPLY = `Ooh, that one's got me stumped! I'm not capable
 // slow/timed-out call is often (not always) a sign Gemini itself is
 // having a bad moment, and this lets whoever's asking check that
 // themselves instead of just taking the bot's word for it.
-const AI_TIMEOUT_REPLY = `Whoops, daydreamed a bit too long on that one - took too long to process. Try again in a bit, or use these typed commands - they never touch Gemini at all:\n${COMMAND_PREFIX}in <name> - e.g. ${COMMAND_PREFIX}in John\n${COMMAND_PREFIX}out <name> - e.g. ${COMMAND_PREFIX}out John\n${COMMAND_PREFIX}paid - marks yourself paid (or ${COMMAND_PREFIX}paid John for someone else)\n\nSee ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) for the full list. If this keeps happening, Gemini itself might be having issues - check https://downdetector.com.au/status/googlegemini/`;
+const AI_TIMEOUT_REPLY = `Whoops, daydreamed a bit too long on that one - took too long to process. Try again in a bit, or use these typed commands:\n${COMMAND_PREFIX}in <name> - e.g. ${COMMAND_PREFIX}in John\n${COMMAND_PREFIX}out <name> - e.g. ${COMMAND_PREFIX}out John\n${COMMAND_PREFIX}paid - marks yourself paid (or ${COMMAND_PREFIX}paid John for someone else)\n\nSee ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) for the full list. If this keeps happening, Gemini itself might be having issues - check https://downdetector.com.au/status/googlegemini/`;
 
 // Shown when a command handler (typed or AI-dispatched) throws instead of
 // completing normally - a bug, a transient network failure talking to
