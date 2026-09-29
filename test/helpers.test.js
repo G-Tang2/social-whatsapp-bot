@@ -604,8 +604,8 @@ test('resolveAttendanceOrWaitlistNumber matches a plain (non-tournament) Attenda
   ['Oscar', 'Patrick', 'Miles'].forEach((name) => store.addEntry(groupId, name, `${name}@s.whatsapp.net`, false));
 
   const event = store.getCurrentEvent(groupId);
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 1).name, 'Oscar');
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 3).name, 'Miles');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 1).entry.name, 'Oscar');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 3).entry.name, 'Miles');
 });
 
 test('resolveAttendanceOrWaitlistNumber matches against the SAME reordered numbering formatList() prints once tournament is on (tournament opt-ins first, Social only continuing the count)', () => {
@@ -619,9 +619,9 @@ test('resolveAttendanceOrWaitlistNumber matches against the SAME reordered numbe
   // Displayed as "1. Derek, 2. Frank" (tournament block) then "3. Sienna"
   // (Social only) - NOT join order, which would put Sienna first.
   const event = store.getCurrentEvent(groupId);
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 1).name, 'Derek');
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 2).name, 'Frank');
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 3).name, 'Sienna');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 1).entry.name, 'Derek');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 2).entry.name, 'Frank');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 3).entry.name, 'Sienna');
 });
 
 test('resolveAttendanceOrWaitlistNumber matches a Waitlist entry by its OWN printed position (numbered independently from Attendance)', () => {
@@ -632,17 +632,26 @@ test('resolveAttendanceOrWaitlistNumber matches a Waitlist entry by its OWN prin
   store.addEntry(groupId, 'Brooke', 'jamie@s.whatsapp.net', false); // also waitlisted - Waitlist "2.", no Attendance "2." to collide with
 
   const event = store.getCurrentEvent(groupId);
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 2).name, 'Brooke');
+  assert.equal(resolveAttendanceOrWaitlistNumber(event, 2).entry.name, 'Brooke');
 });
 
-test('resolveAttendanceOrWaitlistNumber returns null when the SAME number is printed in BOTH Attendance and Waitlist - independently numbered sections, so guessing which one was meant would be wrong', () => {
+// Real bug report (same class as resolveDuePaymentNumber's own fix): a
+// number matching BOTH Attendance and Waitlist used to just return null,
+// indistinguishable from "matches nobody at all" - see its own doc
+// comment for the { ambiguous } shape this now returns instead, so a
+// caller can name the two real candidates rather than guessing OR
+// pretending nothing matched.
+test('resolveAttendanceOrWaitlistNumber returns { ambiguous: [...] }, naming both real candidates, when the SAME number is printed in BOTH Attendance and Waitlist', () => {
   const groupId = freshRegularPlayersGroupId();
   store.setLimit(groupId, 1);
   store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false); // Attendance "1."
   store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false); // over the limit - Waitlist "1."
 
   const event = store.getCurrentEvent(groupId);
-  assert.equal(resolveAttendanceOrWaitlistNumber(event, 1), null);
+  const result = resolveAttendanceOrWaitlistNumber(event, 1);
+  assert.ok(result.ambiguous, `expected an { ambiguous } result, got: ${JSON.stringify(result)}`);
+  assert.deepEqual(result.ambiguous.map((m) => m.entry.name).sort(), ['Grace', 'Henry']);
+  assert.deepEqual(result.ambiguous.map((m) => m.heading).sort(), ['Attendance', 'Waitlist']);
 });
 
 test('resolveAttendanceOrWaitlistNumber returns null for a number outside both lists\' ranges', () => {

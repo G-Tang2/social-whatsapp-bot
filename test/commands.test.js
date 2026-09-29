@@ -575,6 +575,46 @@ test('handleOut: "!out 1-3" expands the range itself and removes positions 1 thr
   assert.deepEqual(remaining, ['Nolan', 'Omar']);
 });
 
+// Same real-bug-class fix as !paid's ambiguous-number test above: a
+// number matching BOTH Attendance and Waitlist (a real, different person
+// in each, independently numbered) used to be rejected the same
+// misleading way a nonexistent number is - naming neither candidate.
+test('handleOut: "!out 1" - a number matching BOTH Attendance and Waitlist is rejected by NAME, naming both real candidates', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setLimit(groupId, 1);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false); // Attendance "1."
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false); // over the limit - Waitlist "1."
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: '1' });
+  await listCommands.handleOut(ctx);
+
+  assert.match(replies[0], /1 matches more than one entry/i);
+  assert.match(replies[0], /Grace/);
+  assert.match(replies[0], /Henry/);
+  assert.doesNotMatch(replies[0], /- not on the list/i); // NOT the generic "nobody's there" rejection
+  assert.deepEqual(store.getCurrentEvent(groupId).entries.map((e) => e.name), ['Grace']); // untouched, not guessed
+  assert.deepEqual(store.getCurrentEvent(groupId).waitlist.map((e) => e.name), ['Henry']); // untouched, not guessed
+});
+
+// The SAME ambiguous number, but combined with a leading "paid" keyword -
+// exercises runPaidIfFlagged's own handling of the same `{ rejectedMessage }`
+// shape (a real crash risk: markPaid()/`.trim()` would throw on a plain
+// object rather than a name string if this weren't handled there too).
+test('handleOut: "!out paid 1" with an ambiguous number reports the SAME ambiguity for the "paid" half too, without crashing', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setLimit(groupId, 1);
+  store.addEntry(groupId, 'Grace', 'alex@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'sam@s.whatsapp.net', false);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', senderName: 'Admin', argText: 'paid 1' });
+  const outcome = await listCommands.handleOut(ctx);
+
+  assert.match(replies.join('\n'), /1 matches more than one entry/i);
+  assert.equal(outcome.paid.length, 0);
+});
+
 test('handleOut: a bare number that is out of range still gets the ordinary "not on the list" rejection, not a different error', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});

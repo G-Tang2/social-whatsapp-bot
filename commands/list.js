@@ -297,12 +297,17 @@ function resolvePaidTokens(due, token) {
 // Same idea as resolvePaidTokens above, but for !out - a purely-numeric
 // token (e.g. "!out 7,8") is resolved against the Attendance/Waitlist
 // section's OWN printed numbering (resolveAttendanceOrWaitlistNumber in
-// lib/helpers.js) instead of being looked up as a literal name. Same
-// "leave anything that doesn't resolve to exactly one entry alone"
-// fallback - out of range, or ambiguous between Attendance and Waitlist
-// both having an entry at that position, just flows into the ordinary
+// lib/helpers.js) instead of being looked up as a literal name. A
+// non-numeric token, or a number genuinely out of range in BOTH sections,
+// is returned completely unchanged - it just flows into the ordinary
 // literal-name lookup and fails with the existing "not on the list"
 // rejection.
+//
+// Same real-bug-class fix as resolvePaidTokens above: a number matching
+// BOTH Attendance and Waitlist (two real, different people, independently
+// numbered) is returned as a `{ rejectedMessage }` object naming both
+// real candidates by name and section - never silently treated the same
+// as a number matching nobody at all.
 //
 // Takes `event` as a pre-fetched snapshot for the same reason
 // resolvePaidTokens takes `due` pre-fetched - callers resolve every token
@@ -310,12 +315,19 @@ function resolvePaidTokens(due, token) {
 // removed, so removing "7" can't shift "8" into a different person
 // before it's looked up.
 //
-// Returns an ARRAY - see resolvePaidTokens above for why.
+// Returns an ARRAY of plain name strings and/or `{ rejectedMessage }`
+// objects - see resolvePaidTokens above for why.
 function resolveOutTokens(event, token) {
   return expandRangeToken(token).map((piece) => {
-    if (!/^\d+$/.test(piece.trim())) return piece;
-    const match = resolveAttendanceOrWaitlistNumber(event, Number(piece.trim()));
-    return match ? match.name : piece;
+    const trimmed = piece.trim();
+    if (!/^\d+$/.test(trimmed)) return piece;
+    const resolved = resolveAttendanceOrWaitlistNumber(event, Number(trimmed));
+    if (!resolved) return piece;
+    if (resolved.ambiguous) {
+      const candidates = resolved.ambiguous.map((m) => `${m.entry.name} (${m.heading})`).join(', ');
+      return { rejectedMessage: `${trimmed} matches more than one entry - both the Attendance and Waitlist lists have a "${trimmed}.": ${candidates}. Use the name instead.` };
+    }
+    return resolved.entry.name;
   });
 }
 
@@ -355,6 +367,16 @@ async function runPaidIfFlagged(groupId, senderId, senderName, paidFlag, explici
   const paid = [];
   const paidRejected = [];
   for (const name of names) {
+    // A `{ rejectedMessage }` object (see resolveOutTokens/resolvePaidTokens'
+    // own doc comments) - an ambiguous printed number reached here via
+    // `explicitNames`, e.g. "!out paid 7,8" where "7" matches both
+    // Attendance and Waitlist - reported directly, never passed to
+    // markPaid() (which only accepts real name strings; `name.trim()`
+    // just below would throw on this object shape).
+    if (name && typeof name === 'object' && name.rejectedMessage) {
+      paidRejected.push(name.rejectedMessage);
+      continue;
+    }
     const result = markPaid(groupId, name);
     if (result.ok) {
       paid.push(name.trim());
@@ -968,6 +990,15 @@ async function handleOut(ctx) {
   const tournamentPromoted = [];
 
   for (const name of names) {
+    // A `{ rejectedMessage }` object (see resolveOutTokens' own doc
+    // comment) - an ambiguous printed number, already fully worded -
+    // reported directly, never passed to removeEntry() (which only
+    // accepts real name strings and would just fail it a second, more
+    // confusing way).
+    if (name && typeof name === 'object' && name.rejectedMessage) {
+      rejected.push(name.rejectedMessage);
+      continue;
+    }
     const result = removeEntry(groupId, name);
     if (!result.ok) {
       if (result.reason === 'not_found') {
