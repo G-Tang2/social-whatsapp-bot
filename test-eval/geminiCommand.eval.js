@@ -537,3 +537,65 @@ evalTest('the REVERSE ("nobody has paid yet") must NOT map to "clearpayments" - 
     `must never map to a high-confidence "clearpayments" - that would wipe everyone's real debt for the opposite statement. Got: ${JSON.stringify(result.actions)}`
   );
 });
+
+// Real bug report: a bare "paid" (no name - meaning the sender) against a
+// payment-due section split into multiple dated sub-groups, where the
+// sender's own name sits only in an OLDER sub-group rather than the
+// newest one, made the model hesitate into a "low"-confidence clarifying
+// question roughly half the time - even though there's nothing genuinely
+// ambiguous about it (the bot's own lookup resolves the sender by
+// identity, across every sub-group, regardless of argText). Confirmed
+// against the real list content that triggered it.
+evalTest('a bare "paid" against a payment-due section with multiple dated sub-groups still maps to a high-confidence, empty-argText "paid" for the sender', async () => {
+  const listText = `4th Oct Sun
+Noble Park
+Courts 1,2, 11-14 (6)
+7pm-9pm
+
+──────────
+*Attendance* (3/36)
+
+🏆 *Tournament* (3/18)
+Ask @Snoopy for details
+
+1. Keith
+2. Tu
+3. Bao
+
+Social only
+
+(none yet)
+
+──────────
+*Payment*
+$16 to payID: 0413455423
+
+*27th Sep Sun*
+1. Eric
+2. Stella
+3. Amy
+4. Isabel
+5. Kyle Okamoto
+6. Adrian
+7. Lahiru
+8. Saeed
+9. Michael B
+10. Ron
+11. JZ
+12. Charlie
+13. Amos Nguyen
+14. Ollie
+15. Weellie
+
+*20th Sep Sun*
+1. Ollie
+2. Emmy
+3. andrew
+4. Chris`;
+  const result = await interpretMessage('paid', { listText });
+  assert.ok(result, 'expected a parsed result, not null');
+  const action = findAction(result, 'paid');
+  assert.ok(action, `expected a "paid" action, got: ${JSON.stringify(result.actions)}`);
+  assert.equal(action.confidence, 'high', `expected high confidence (bare verb = the sender, unambiguous), got: ${JSON.stringify(action)}`);
+  assert.equal(action.argText, '', `expected empty argText (the sender), got: "${action.argText}"`);
+});
