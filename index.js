@@ -764,13 +764,16 @@ const AI_NOT_UNDERSTOOD_REPLY = `Ooh, that one's got me stumped! I'm not capable
 // understandable request, it just didn't get answered fast enough, and
 // simply trying again (the request itself, not necessarily right this
 // second) is real, actionable advice here in a way it isn't for the other
-// cases. Also points to typed commands (!help) as a fallback, since those
-// never touch Gemini at all - a real way around it timing out again, not
-// just "hope it's faster this time". Also links out to Gemini's own
-// Downdetector page - a slow/timed-out call is often (not always) a sign
-// Gemini itself is having a bad moment, and this lets whoever's asking
-// check that themselves instead of just taking the bot's word for it.
-const AI_TIMEOUT_REPLY = `Whoops, daydreamed a bit too long on that one - took too long to process. Try again, or use ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) to see the exact typed commands.\n\nIf this keeps happening, Gemini itself might be having issues - check https://downdetector.com.au/status/googlegemini/`;
+// cases. Spells out !in/!out/!paid with real examples directly here
+// (rather than just pointing to !help) since those never touch Gemini at
+// all - a real, immediately usable way around it timing out again, not
+// just "hope it's faster this time," and worth showing rather than making
+// someone run a second command just to go look it up while they're
+// already stuck. Also links out to Gemini's own Downdetector page - a
+// slow/timed-out call is often (not always) a sign Gemini itself is
+// having a bad moment, and this lets whoever's asking check that
+// themselves instead of just taking the bot's word for it.
+const AI_TIMEOUT_REPLY = `Whoops, daydreamed a bit too long on that one - took too long to process. Try again in a bit, or use these typed commands - they never touch Gemini at all:\n${COMMAND_PREFIX}in <name> - e.g. ${COMMAND_PREFIX}in John\n${COMMAND_PREFIX}out <name> - e.g. ${COMMAND_PREFIX}out John\n${COMMAND_PREFIX}paid - marks yourself paid (or ${COMMAND_PREFIX}paid John for someone else)\n\nSee ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) for the full list. If this keeps happening, Gemini itself might be having issues - check https://downdetector.com.au/status/googlegemini/`;
 
 // Shown when a command handler (typed or AI-dispatched) throws instead of
 // completing normally - a bug, a transient network failure talking to

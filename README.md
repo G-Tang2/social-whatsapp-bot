@@ -1191,16 +1191,19 @@ current state. Every group starts off - each one opts in individually.
   Gemini API call itself failing/returning something unparseable, gets a
   plain "I'm not capable of doing that" reply, but a call that
   specifically took too long to respond gets its own, more accurate
-  "took too long to process - try again, or use `!help`/`!admin` to see
-  the exact typed commands" reply instead, with a link to Gemini's own
-  Downdetector page (`https://downdetector.com.au/status/googlegemini/`)
-  in case Gemini itself is having a bad moment - the request may well have
-  been perfectly understandable, it just didn't get answered in time, so
-  "I'm not capable of doing that" would be misleading there, and a typed
-  command sidesteps Gemini entirely if it's having a slow moment. A
-  failure is still logged to the console for the operator either way, but
-  the sender in the group always hears back rather than being left
-  wondering whether the bot even saw their message.
+  "took too long to process - try again" reply instead, spelling out
+  `!in`/`!out`/`!paid` with real examples right there (rather than just
+  pointing to `!help`) since those never touch Gemini at all - a real,
+  immediately usable way around it timing out again - plus a link to
+  Gemini's own Downdetector page
+  (`https://downdetector.com.au/status/googlegemini/`) in case Gemini
+  itself is having a bad moment. The request may well have been perfectly
+  understandable, it just didn't get answered in time, so "I'm not
+  capable of doing that" would be misleading there, and a typed command
+  sidesteps Gemini entirely if it's having a slow moment. A failure is
+  still logged to the console for the operator either way, but the sender
+  in the group always hears back rather than being left wondering whether
+  the bot even saw their message.
 
 See `lib/geminiCommand.js` for the actual prompt/schema if you want to
 tune its behavior, and `GEMINI_MODEL` in `.env.example` if you want to use

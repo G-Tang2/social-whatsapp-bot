@@ -2032,6 +2032,12 @@ test('e2e: a Gemini call that times out gets a "took too long, try again" reply 
   assert.match(replyText, new RegExp(`${COMMAND_PREFIX}help`));
   assert.doesNotMatch(replyText, /not capable of doing that/i);
   assert.match(replyText, /https:\/\/downdetector\.com\.au\/status\/googlegemini\//);
+  // Real request: spell out !in/!out/!paid with actual examples here,
+  // rather than just pointing to !help and making someone run a second
+  // command to look them up while they're already stuck.
+  assert.match(replyText, new RegExp(`${COMMAND_PREFIX}in <name> - e\\.g\\. ${COMMAND_PREFIX}in John`));
+  assert.match(replyText, new RegExp(`${COMMAND_PREFIX}out <name> - e\\.g\\. ${COMMAND_PREFIX}out John`));
+  assert.match(replyText, new RegExp(`${COMMAND_PREFIX}paid - marks yourself paid`));
 });
 
 // Regression coverage for the "last seen" About/status heartbeat
