@@ -27,7 +27,7 @@
 // Baileys sock.user.id always has) specifically so tests exercise the
 // normalizeJid() stripping that comparison depends on, rather than
 // accidentally passing via a same-shape coincidence.
-function createFakeSock({ admins = [], participantIds = [], botJid = 'bot:7@s.whatsapp.net' } = {}) {
+function createFakeSock({ admins = [], participantIds = [], participantNames = {}, botJid = 'bot:7@s.whatsapp.net' } = {}) {
   const sentMessages = [];
   const deleted = [];
   const reactions = [];
@@ -60,9 +60,14 @@ function createFakeSock({ admins = [], participantIds = [], botJid = 'bot:7@s.wh
     groupMetadata: async (jid) => ({
       id: jid,
       subject: 'Fake Group',
+      // `notify` (only included when the caller actually set one via
+      // `participantNames`) mirrors Baileys' real Contact shape - "name of
+      // the contact, the contact has set on their own on WA" - exercised by
+      // lib/adminCheck.js's getParticipantName().
       participants: allParticipantIds.map((id) => ({
         id,
         admin: admins.includes(id) ? 'admin' : null,
+        ...(participantNames[id] ? { notify: participantNames[id] } : {}),
       })),
     }),
     // Lets a test add a participant (e.g. simulating someone joining)

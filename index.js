@@ -261,10 +261,10 @@ const P = require('pino');
 const qrcode = require('qrcode-terminal');
 
 const config = require('./lib/config');
-const { getMessageText, formatList, getMentionedJids, getQuotedParticipant, getQuotedMessageText, stripMentionTokens, buildQuotePreviewMsg, normalizeJid, LITERAL_BOT_MENTION_REGEX } = require('./lib/helpers');
+const { getMessageText, formatList, getMentionedJids, getNonBotMentions, getQuotedParticipant, getQuotedMessageText, stripMentionTokens, substituteMentionNames, buildQuotePreviewMsg, normalizeJid, LITERAL_BOT_MENTION_REGEX } = require('./lib/helpers');
 const { parseListSections } = require('./lib/listParser');
 const { getRegularPlayers, getUndoableState, saveUndoSnapshot, getUndoSnapshot, restoreUndoableState } = require('./store');
-const { isGroupAdmin } = require('./lib/adminCheck');
+const { isGroupAdmin, getParticipantName } = require('./lib/adminCheck');
 const { recordBotLid, getKnownBotLid } = require('./lib/botIdentity');
 const catchUpQueue = require('./lib/catchUpQueue');
 const { updateLastSeenStatus } = require('./lib/lastSeenStatus');
@@ -923,9 +923,51 @@ function formatOffTopicReply(offTopicReply) {
 // handleAiMentionCatchUp (the offline-backlog path, further below), so
 // the two stay in lockstep on exactly what context the model sees rather
 // than risking them silently drifting apart.
-function buildAiMentionPromptContext({ sock, msg, groupId, text }) {
+//
+// Async (unlike before) specifically to resolve non-bot mentions' own
+// WhatsApp names below - see the tagging comment just under `mentioned`.
+async function buildAiMentionPromptContext({ sock, msg, groupId, text }) {
   const mentioned = getMentionedJids(msg);
-  const cleanedText = stripMentionTokens(text, mentioned);
+  // If `msg` is a WhatsApp reply to one of the BOT'S OWN messages
+  // specifically (not just any reply), pass that message's text through as
+  // context - see lib/geminiCommand.js's buildPrompt() `priorBotMessage`
+  // doc comment. Computed up here (moved up from further below) since the
+  // tagging substitution just below needs `botJids` too.
+  const botJids = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
+  const quotedParticipant = getQuotedParticipant(msg);
+  const priorBotMessage = quotedParticipant && botJids.includes(normalizeJid(quotedParticipant))
+    ? getQuotedMessageText(msg) || undefined
+    : undefined;
+
+  // Real request: "@Snoopy add @Grace" needs to reach the model as a
+  // real, nameable request, not silence - stripMentionTokens below
+  // removes EVERY mention (it has to, for the bot's OWN mention, which
+  // the sender necessarily included to trigger this at all), so a
+  // non-bot mention has to be substituted with an actual name FIRST, or
+  // the model would see nothing but a bare "add" with no indication
+  // anyone was even named. Resolved the same way commands/list.js's
+  // handleIn resolves a bare-mentioned add (lib/adminCheck.js's
+  // getParticipantName - their real "notify" name, or their raw phone
+  // number as a last resort) - once substituted, the model just sees an
+  // ordinary name ("add Grace") and needs no awareness of tagging at
+  // all. The REAL mention is still there, untouched, on `msg` itself -
+  // handleAiMention dispatches through the exact same rawCommands
+  // handlers (commands/list.js's handleIn included) a typed command
+  // would, reading `ctx.msg`'s own mentions directly for its own "one
+  // name + one mention" tagging check, same as a typed "!in" would -
+  // this substitution only concerns what the MODEL sees, never what
+  // actually gets dispatched.
+  const nonBotMentions = getNonBotMentions(mentioned, sock);
+  const jidToName = {};
+  for (const jid of nonBotMentions) {
+    jidToName[jid] = await getParticipantName(sock, groupId, jid);
+  }
+  const textWithNamesSubstituted = substituteMentionNames(text, jidToName);
+  // The bot's OWN mention(s) - never substituted above (it's not in
+  // `nonBotMentions`) - still need stripping out entirely, same as
+  // before this change: the model has no use for its own "@<number>".
+  const botMentionTokens = mentioned.filter((jid) => botJids.includes(normalizeJid(jid)));
+  const cleanedText = stripMentionTokens(textWithNamesSubstituted, botMentionTokens);
   // Same numbered Attendance/Waitlist/payment-due text the group is
   // actually looking at - lets the model resolve "remove 1-3"-style
   // position references against real current numbering, rather than
@@ -944,21 +986,11 @@ function buildAiMentionPromptContext({ sock, msg, groupId, text }) {
   // SYSTEM_PROMPT's REGULAR PLAYERS paragraph, and commands/admin.js's
   // !regulars for how the roster itself is stored/managed.
   const regularPlayersText = formatRegularPlayersForPrompt(getRegularPlayers(groupId));
-  // If `msg` is a WhatsApp reply to one of the BOT'S OWN messages
-  // specifically (not just any reply), pass that message's text through as
-  // context - see lib/geminiCommand.js's buildPrompt() `priorBotMessage`
-  // doc comment. Same bot-JID comparison messageMentionsBot() above uses
-  // against sock.user.id/sock.user.lid.
-  const botJids = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
-  const quotedParticipant = getQuotedParticipant(msg);
-  const priorBotMessage = quotedParticipant && botJids.includes(normalizeJid(quotedParticipant))
-    ? getQuotedMessageText(msg) || undefined
-    : undefined;
   return { cleanedText, listText, todayLabel, regularPlayersText, priorBotMessage };
 }
 
 async function handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList }) {
-  const { cleanedText, listText, todayLabel, regularPlayersText, priorBotMessage } = buildAiMentionPromptContext({ sock, msg, groupId, text });
+  const { cleanedText, listText, todayLabel, regularPlayersText, priorBotMessage } = await buildAiMentionPromptContext({ sock, msg, groupId, text });
   const interpretation = await interpretMessage(cleanedText, { listText, todayLabel, regularPlayersText, priorBotMessage });
 
   // Real bug report: a live @-mention finished with no visible trace at
@@ -1144,7 +1176,7 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
 // either one whenever upsertType is 'append' (see commands/list.js's
 // isCatchUp handling) - there's nothing for them to do here regardless.
 async function handleAiMentionCatchUp({ sock, msg, groupId, senderId, senderName, text }) {
-  const { cleanedText, listText, todayLabel, regularPlayersText, priorBotMessage } = buildAiMentionPromptContext({ sock, msg, groupId, text });
+  const { cleanedText, listText, todayLabel, regularPlayersText, priorBotMessage } = await buildAiMentionPromptContext({ sock, msg, groupId, text });
   let interpretation;
   try {
     interpretation = await interpretMessage(cleanedText, { listText, todayLabel, regularPlayersText, priorBotMessage });

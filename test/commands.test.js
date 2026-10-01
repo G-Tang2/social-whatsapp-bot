@@ -105,6 +105,218 @@ test('handleIn: already-on-the-list bare !in replies instead of duplicating', as
   assert.equal(store.getCurrentEvent(groupId).entries.length, 1);
 });
 
+// --- Real request: tagging who's actually being added ("!in Grace
+// @Grace", or a bare "!in @Grace") links the entry to THAT person's own
+// WhatsApp account - addedBy/self set as if they'd signed up themselves -
+// so a later waitlist/tournament promotion tags THEM, not whoever ran the
+// command. Deliberately "one name + one mention" only (see
+// commands/list.js's own doc comment on taggedJid); anything more
+// ambiguous falls back to today's plain behavior. ---
+
+test('handleIn: "!in Grace @Grace" (one name + one mention) links the entry to the TAGGED person\'s own JID, not the sender', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net'] });
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: 'Grace @grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+
+  await listCommands.handleIn(ctx);
+
+  const entry = store.getCurrentEvent(groupId).entries[0];
+  assert.equal(entry.name, 'Grace');
+  assert.equal(entry.addedBy, 'grace@s.whatsapp.net');
+  assert.equal(entry.self, true);
+});
+
+test('handleIn: a bare "!in @Grace" (mention, no name typed at all) uses the tagged person\'s OWN WhatsApp name and links the entry to them', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({
+    participantIds: ['grace@s.whatsapp.net'],
+    participantNames: { 'grace@s.whatsapp.net': 'Grace' },
+  });
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: '@grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+
+  await listCommands.handleIn(ctx);
+
+  const entry = store.getCurrentEvent(groupId).entries[0];
+  assert.equal(entry.name, 'Grace'); // their own resolved WhatsApp name, not a phone number
+  assert.equal(entry.addedBy, 'grace@s.whatsapp.net');
+  assert.equal(entry.self, true);
+});
+
+test('handleIn: a bare mention with no saved "notify" name falls back to their raw phone number as the list name', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['61412345678@s.whatsapp.net'] }); // no participantNames set
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: '@61412345678',
+    mentions: ['61412345678@s.whatsapp.net'],
+  });
+
+  await listCommands.handleIn(ctx);
+
+  const entry = store.getCurrentEvent(groupId).entries[0];
+  assert.equal(entry.name, '61412345678');
+  assert.equal(entry.addedBy, '61412345678@s.whatsapp.net');
+});
+
+test('handleIn: tagging combines with the leading "tournament" keyword - the tagged person\'s entry joins the tournament too', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net'] });
+  store.setTournamentEnabled(groupId, true);
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: 'tournament Grace @grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+
+  await listCommands.handleIn(ctx);
+
+  const entry = store.getCurrentEvent(groupId).entries[0];
+  assert.equal(entry.name, 'Grace');
+  assert.equal(entry.tournament, true);
+  assert.equal(entry.addedBy, 'grace@s.whatsapp.net');
+});
+
+test('handleIn: tagging does NOT apply with more than one name, even with exactly one mention - falls back to today\'s plain behavior', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net'] });
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: 'Grace, Henry @grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+
+  await listCommands.handleIn(ctx);
+
+  const entries = store.getCurrentEvent(groupId).entries;
+  assert.deepEqual(entries.map((e) => e.name).sort(), ['Grace', 'Henry']);
+  assert.ok(entries.every((e) => e.addedBy === 'other@s.whatsapp.net' && e.self === false));
+});
+
+test('handleIn: tagging does NOT apply with more than one mention, even with exactly one name - falls back to today\'s plain behavior', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net', 'henry@s.whatsapp.net'] });
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: 'Grace @grace @henry',
+    mentions: ['grace@s.whatsapp.net', 'henry@s.whatsapp.net'],
+  });
+
+  await listCommands.handleIn(ctx);
+
+  const entry = store.getCurrentEvent(groupId).entries[0];
+  assert.equal(entry.name, 'Grace');
+  assert.equal(entry.addedBy, 'other@s.whatsapp.net');
+  assert.equal(entry.self, false);
+});
+
+test('handleIn: the BOT\'s own mention is excluded from tagging consideration - "!in Grace @bot" behaves as if nobody were tagged', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ botJid: 'bot:7@s.whatsapp.net' });
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: 'Grace @bot',
+    mentions: ['bot:7@s.whatsapp.net'],
+  });
+
+  await listCommands.handleIn(ctx);
+
+  const entry = store.getCurrentEvent(groupId).entries[0];
+  assert.equal(entry.name, 'Grace');
+  assert.equal(entry.addedBy, 'other@s.whatsapp.net');
+  assert.equal(entry.self, false);
+});
+
+test('handleIn: a tagged entry that gets waitlisted later promotes with a mention tagging the ACTUAL tagged person, not whoever ran the add', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net'] });
+  store.setLimit(groupId, 1);
+  store.addEntry(groupId, 'Alice', 'alice@s.whatsapp.net', false, true); // takes the sole spot
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: 'Grace @grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+  await listCommands.handleIn(ctx);
+  assert.deepEqual(store.getCurrentEvent(groupId).waitlist.map((e) => e.name), ['Grace']);
+
+  // Alice leaves, freeing the spot Grace is waitlisted for.
+  const outCtx = makeCtx({ sock, groupId, senderId: 'alice@s.whatsapp.net', senderName: 'Alice', argText: '' });
+  await listCommands.handleOut(outCtx.ctx);
+
+  const promoMsg = sock.sentMessages.find((m) => /Off the waitlist/.test(m.content.text || ''));
+  assert.ok(promoMsg, 'expected a promotion message to have been sent');
+  assert.deepEqual(promoMsg.content.mentions, ['grace@s.whatsapp.net']); // Grace herself, NOT "other" who ran the !in
+});
+
+test('handleIn: the tagged person can later find their own entry via a bare "!out" themselves, exactly as if they\'d added themselves', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net'] });
+
+  const addCtx = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: 'Grace @grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+  await listCommands.handleIn(addCtx.ctx);
+
+  // Grace herself, bare "!out" - no name needed, same as if she'd added
+  // herself in the first place. Deliberately a MISMATCHED push name here
+  // ("Zara", not "Grace") - the point is to isolate the addedBy/self-based
+  // ID match this test is actually about from the UNRELATED
+  // findUnambiguousFuzzyNameMatch fallback (also in this file), which
+  // would otherwise ALSO resolve a real "Grace" push name against the
+  // stored "Grace" entry by name alone, passing this test for the wrong
+  // reason even without tagging. Only the real senderId (still Grace's
+  // own, matching the tagged addedBy) should make this resolve.
+  const outCtx = makeCtx({ sock, groupId, senderId: 'grace@s.whatsapp.net', senderName: 'Zara', argText: '' });
+  await listCommands.handleOut(outCtx.ctx);
+
+  assert.equal(store.getCurrentEvent(groupId).entries.length, 0);
+});
+
 // Real bug report: "@Snoopy add me to tournament" from someone already on
 // the list (social only) successfully upgraded them into the tournament -
 // visible in the reposted list, moved from "Social only" into "🏆

@@ -72,6 +72,8 @@ const TIPS_TEXT = [
   '',
   '_• No [name] means yourself - matched by your WhatsApp account, not your display name_',
   '',
+  `_• Adding someone else? @-mention them too, e.g. ${COMMAND_PREFIX}in Grace @Grace (or a bare ${COMMAND_PREFIX}in @Grace, which uses their own WhatsApp name) - links the entry to THEM, so a waitlist/tournament promotion pings them, not you, and they can later ${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid themselves with no name needed, same as if they'd signed up themselves_`,
+  '',
   `_• Past the limit, ${COMMAND_PREFIX}in waitlists instead - auto-promoted (and tagged) when a spot opens_`,
   '',
   '*Payments*',

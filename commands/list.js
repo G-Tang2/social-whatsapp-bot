@@ -18,7 +18,7 @@
 
 const { getCurrentEvent, addEntry, removeEntry, markPaid, joinTournament, leaveTournament, normalizeName } = require('../store');
 const { checkEntry } = require('../moderation');
-const { isGroupAdmin } = require('../lib/adminCheck');
+const { isGroupAdmin, getParticipantName } = require('../lib/adminCheck');
 const { COMMAND_PREFIX, MAX_NAMES_PER_COMMAND } = require('../lib/config');
 const {
   parseNames,
@@ -33,6 +33,9 @@ const {
   resolveDuePaymentNumber,
   resolveAttendanceOrWaitlistNumber,
   buildQuotePreviewMsg,
+  getMentionedJids,
+  getNonBotMentions,
+  stripMentionTokens,
 } = require('../lib/helpers');
 
 // Real bug report: someone's own name can be stored on a list in an
@@ -467,18 +470,55 @@ async function handleIn(ctx) {
     return { command: 'in', senderName, argText, cancelled: true };
   }
 
+  // Real request: let the sender @-mention who they're actually adding
+  // ("!in Grace @Grace", or a bare "!in @Grace" with no name typed at
+  // all), so the resulting entry is linked to THAT person's own WhatsApp
+  // account instead of whoever typed the command - see `taggedJid` below
+  // (right before the add loop) for what this actually changes, and
+  // bareMentionName just below for the bare-mention case specifically.
+  // Deliberately conservative, same "ask/require explicitness rather than
+  // guess" philosophy as every other ambiguity-prone feature in this
+  // file: only ONE name and ONE (non-bot) mention together - more than
+  // one of either, with no reliable way to tell which mention belongs to
+  // which name, falls back to today's plain behavior entirely (addedBy =
+  // whoever ran the command, same as always).
+  //
+  // WhatsApp's own mention protocol is always a raw "@<phone number>"
+  // token, never a name (see stripMentionTokens' own doc comment), so
+  // every mention is stripped out of the text FIRST, before any of the
+  // usual keyword/name parsing below ever sees it - "tournament Grace
+  // @61412345678" needs to resolve to rest "Grace" with the tournament
+  // flag still recognized, not a mangled token stuck onto the end of a
+  // name.
+  const mentionedJids = getMentionedJids(msg);
+  const nonBotMentions = getNonBotMentions(mentionedJids, sock);
+  const textForParsing = stripMentionTokens(argText, mentionedJids);
+
   // Leading "paid" and/or "tournament" keywords (either order, e.g. "!in
   // paid", "!in tournament paid", "!in tournament Grace, Henry") let someone
   // join, confirm payment, and/or opt into the tournament all in one
   // message - see stripLeadingInKeywords' doc comment. `rest` (the
   // argText with both keywords stripped off) is used everywhere below in
   // place of the raw argText for name resolution.
-  const { rest, paid: paidFlag, tournament: tournamentFlag } = stripLeadingInKeywords(argText);
+  const { rest, paid: paidFlag, tournament: tournamentFlag } = stripLeadingInKeywords(textForParsing);
 
   // "me" (ME_TOKEN, lib/helpers.js) said on its own is the explicit way to
   // add yourself - treated exactly like no argText at all. Distinct from
   // "me, +N" below, which ALSO adds N unnamed guests alongside yourself.
-  const isBareSelfAdd = !rest || ME_TOKEN.test(rest.trim());
+  const isBareRest = !rest || ME_TOKEN.test(rest.trim());
+
+  // A bare mention with NOTHING else said ("!in @Grace") clearly means
+  // "add THEM," never "add me" - resolved to the tagged person's own
+  // current WhatsApp name (lib/adminCheck.js's getParticipantName - their
+  // real "notify" name, or their raw phone number as a last resort) since
+  // there's nothing else to call them on the list otherwise. Checked
+  // BEFORE the ordinary bare-self-add branch just below, which would
+  // otherwise treat this exact same empty `rest` as the SENDER adding
+  // themselves.
+  const bareMentionName = isBareRest && nonBotMentions.length === 1
+    ? await getParticipantName(sock, groupId, nonBotMentions[0])
+    : null;
+  const isBareSelfAdd = isBareRest && !bareMentionName;
 
   if (isBareSelfAdd) {
     // Bare !in (optionally "!in paid"/"!in tournament", or "!in me") - add
@@ -569,15 +609,17 @@ async function handleIn(ctx) {
   // "add N more friends" continues the numbering instead of colliding
   // with (and being rejected as duplicates of) guests already added by an
   // earlier "+N".
-  let names = isAdditiveGuestAdd
-    ? resolveAdditiveGuestNames(
-        groupId,
-        senderId,
-        senderName,
-        bareGuestMatch ? Number(bareGuestMatch[1]) : meAndGuestCount,
-        additiveIncludesSelf
-      )
-    : parseNames(rest, senderName);
+  let names = bareMentionName
+    ? [bareMentionName]
+    : isAdditiveGuestAdd
+      ? resolveAdditiveGuestNames(
+          groupId,
+          senderId,
+          senderName,
+          bareGuestMatch ? Number(bareGuestMatch[1]) : meAndGuestCount,
+          additiveIncludesSelf
+        )
+      : parseNames(rest, senderName);
 
   // "regular players" (see REGULAR_PLAYERS_TOKEN/expandRegularPlayersToken in
   // lib/helpers.js, and commands/admin.js's !regulars for how the roster
@@ -597,6 +639,23 @@ async function handleIn(ctx) {
     }
     return { command: 'in', senderName, argText, tooMany: true };
   }
+
+  // Links the resulting entry to the ACTUAL tagged person (both addedBy
+  // AND self set as if THEY had signed themselves up - see store.js's
+  // addEntry's own addedBy/self doc comment) rather than whoever ran the
+  // command, so a later waitlist/tournament promotion message (see
+  // formatPromotedMessage/formatTournamentPromotedMessage below) tags
+  // THEM, not the sender - and so they can find this entry via their OWN
+  // bare !out/!paid lookup later too, exactly as if they'd added
+  // themselves. Deliberately based on COUNTS alone (exactly one resolved
+  // name AND exactly one non-bot mention in the message), never on
+  // matching the mention's own name against the typed name - so this
+  // applies identically whether the one name came from "Grace @Grace", a
+  // bare "@Grace" (bareMentionName above), or even "Grace Chen @Grace"
+  // where the mention's own WhatsApp name doesn't match the fuller name
+  // typed (the typed name still wins for what's shown ON the list - only
+  // WHO the entry is attributed to changes).
+  const taggedJid = names.length === 1 && nonBotMentions.length === 1 ? nonBotMentions[0] : null;
 
   const added = [];
   const waitlisted = [];
@@ -621,9 +680,9 @@ async function handleIn(ctx) {
       rejected.push(`${name} - ${modResult.reason}`);
       continue;
     }
-    const isSelfEntry = isBareSelfAdd || (additiveIncludesSelf && name === senderName);
+    const isSelfEntry = taggedJid ? true : isBareSelfAdd || (additiveIncludesSelf && name === senderName);
     if (tournamentFlag && !tournamentEnabled) tournamentRequestedButDisabled = true;
-    const result = addEntry(groupId, name, senderId, senderIsAdmin, isSelfEntry, tournamentFlag);
+    const result = addEntry(groupId, name, taggedJid || senderId, senderIsAdmin, isSelfEntry, tournamentFlag);
     if (!result.ok) {
       // A "duplicate" here just means this name is already on the list (or
       // waitlist) - normally that's simply rejected. But with a leading

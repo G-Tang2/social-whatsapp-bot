@@ -79,7 +79,7 @@ const {
   formatCancelledSocialMessage,
   formatTournamentRoster,
   getMentionedJids,
-  normalizeJid,
+  getNonBotMentions,
   buildQuotePreviewMsg,
 } = require('../lib/helpers');
 
@@ -1117,13 +1117,15 @@ async function handleCourtCanceller(ctx) {
   // Excludes the BOT's own JID(s) from candidates - reachable via a
   // natural-language @-mention too (see lib/geminiCommand.js's
   // MAPPABLE_COMMANDS), where the sender necessarily @-mentions the bot
-  // itself to trigger AI interpretation at all, so `mentioned` would
-  // otherwise carry the bot's own JID (usually first, e.g. "@Snoopy make
-  // @Grace the court canceller") right alongside the actual target -
+  // itself to trigger AI interpretation at all, so a raw mention list
+  // would otherwise carry the bot's own JID (usually first, e.g. "@Snoopy
+  // make @Grace the court canceller") right alongside the actual target -
   // without this filter, mentioned[0] could silently set the bot itself
-  // as its own court-canceller instead of refusing/picking the real target.
-  const botJids = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
-  const mentioned = getMentionedJids(msg).filter((jid) => !botJids.includes(normalizeJid(jid)));
+  // as its own court-canceller instead of refusing/picking the real
+  // target. getNonBotMentions (lib/helpers.js) is the shared helper for
+  // this exact exclusion - also used by commands/list.js's handleIn for
+  // tagging who's being added.
+  const mentioned = getNonBotMentions(getMentionedJids(msg), sock);
   if (!mentioned.length) {
     await reply(`@-mention the person directly, e.g. ${COMMAND_PREFIX}courtcanceller @Grace - a typed name alone can't be reliably tagged.`);
     return;

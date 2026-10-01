@@ -108,6 +108,22 @@ if one is a duplicate or blocked, the rest still go through - you'll get a
 reply listing anything that didn't make it, and the group's updated list
 is posted once at the end.
 
+**Tagging who you're actually adding:** `!in` also accepts a real WhatsApp
+@-mention of the person you're signing up, e.g. `!in Grace @Grace`, or
+even a bare `!in @Grace` with no name typed at all (which uses their own
+current WhatsApp name automatically). This links the entry to **their**
+WhatsApp account rather than whoever typed the command - so if they're
+later promoted off the waitlist (or a tournament queue), the tagged
+message pings *them*, not you, and they can later remove/pay for their
+own entry with a bare `!out`/`!paid`, exactly as if they'd signed
+themselves up. Only works for exactly one name tagged with exactly one
+mention in the same message - tagging more than one person (or mixing a
+tag into a longer multi-name list) falls back to the ordinary behavior
+(the entry is attributed to whoever ran the command, same as typing the
+name alone always has been), rather than guessing which mention belongs
+to which name. Works the same way through a natural-language @-mention
+too (e.g. `@Snoopy add @Grace`), not just the typed `!in` form.
+
 **Sending several different commands at once:** if every non-blank line of
 a message independently starts with a real command word - e.g.
 

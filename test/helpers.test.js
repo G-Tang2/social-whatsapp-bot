@@ -725,6 +725,42 @@ test('adminCheck: isGroupAdmin fails closed (returns false) if groupMetadata thr
   assert.equal(await adminCheck.isGroupAdmin(sock, groupId, 'anyone@s.whatsapp.net'), false);
 });
 
+// Real request: a bare @-mention with no name typed (e.g. "!in @Grace")
+// needs SOMETHING to call them on the list - getParticipantName resolves
+// their own WhatsApp "notify" name (Baileys' Contact type: the name they
+// set for themselves), shared with isGroupAdmin's own cached
+// groupMetadata() fetch.
+test('adminCheck: getParticipantName resolves a participant\'s own "notify" name, and caches the fetch (shared with isGroupAdmin)', async () => {
+  const groupId = 'admincheck-test-3@g.us';
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net'], participantNames: { 'grace@s.whatsapp.net': 'Grace' } });
+  let fetchCount = 0;
+  const originalGroupMetadata = sock.groupMetadata;
+  sock.groupMetadata = async (...args) => {
+    fetchCount += 1;
+    return originalGroupMetadata(...args);
+  };
+
+  assert.equal(await adminCheck.getParticipantName(sock, groupId, 'grace@s.whatsapp.net'), 'Grace');
+  // A subsequent isGroupAdmin() check in the SAME group should hit the
+  // same cached fetch, not trigger a second one.
+  await adminCheck.isGroupAdmin(sock, groupId, 'grace@s.whatsapp.net');
+  assert.equal(fetchCount, 1);
+});
+
+test('adminCheck: getParticipantName falls back to the raw phone number when no "notify" name is set, or the participant isn\'t found at all', async () => {
+  const groupId = 'admincheck-test-4@g.us';
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net'] }); // no participantNames set
+
+  assert.equal(await adminCheck.getParticipantName(sock, groupId, 'grace@s.whatsapp.net'), 'grace');
+  assert.equal(await adminCheck.getParticipantName(sock, groupId, 'stranger@s.whatsapp.net'), 'stranger');
+});
+
+test('adminCheck: getParticipantName fails closed to the raw phone number (not a throw) if groupMetadata throws', async () => {
+  const groupId = 'admincheck-test-5@g.us';
+  const sock = { groupMetadata: async () => { throw new Error('network down'); } };
+  assert.equal(await adminCheck.getParticipantName(sock, groupId, 'grace@s.whatsapp.net'), 'grace');
+});
+
 test('botIdentity: recordBotLid/getKnownBotLid round-trip, per group, undefined until recorded', () => {
   const groupId = 'botidentity-test-1@g.us';
   const otherGroupId = 'botidentity-test-2@g.us';

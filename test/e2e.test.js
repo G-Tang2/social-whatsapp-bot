@@ -68,6 +68,10 @@ function buildFakeSock() {
   // which need groupMetadata() to expose the bot's own lid independently
   // of sock.user, the same way real WhatsApp's own participant list does.
   const participants = new Set(['admin@s.whatsapp.net', 'alex@s.whatsapp.net', 'sam@s.whatsapp.net', BOT_JID]);
+  // jid -> their own "notify" name (Baileys' Contact type) - populated via
+  // sock._setParticipantName() below, for the tagging e2e tests (see
+  // lib/adminCheck.js's getParticipantName()).
+  const participantNames = new Map();
 
   const sock = {
     sentMessages,
@@ -104,6 +108,7 @@ function buildFakeSock() {
         id,
         lid: id === BOT_JID ? BOT_LID : undefined,
         admin: admins.has(id) ? 'admin' : null,
+        ...(participantNames.has(id) ? { notify: participantNames.get(id) } : {}),
       })),
     }),
     updateProfileStatus: async (status) => {
@@ -111,6 +116,12 @@ function buildFakeSock() {
     },
     sendPresenceUpdate: async (type, jid) => {
       presenceUpdates.push({ type, jid });
+    },
+    // Test-only convenience - adds (or updates) a participant with their
+    // own "notify" name, for the tagging e2e tests below.
+    _setParticipantName(id, name) {
+      participants.add(id);
+      participantNames.set(id, name);
     },
   };
   return sock;
@@ -207,6 +218,7 @@ require('../index'); // runs start() -> captures the 'messages.upsert' handler
 const ai = require('../ai'); // same DATA_DIR as index.js, so toggling here is visible to it
 const welcome = require('../welcome'); // same DATA_DIR as index.js, so toggling here is visible to it
 const store = require('../store'); // same DATA_DIR as index.js, so seeding regularPlayers here is visible to it
+const adminCheck = require('../lib/adminCheck'); // invalidate() - see the tagging tests below, which need a fresh groupMetadata() fetch to see a just-registered participant name
 // Same module-cache instance index.js itself dispatches through - mutating
 // a handler on these objects (see the "unexpected error" tests below) is
 // visible to index.js's real handleMessage()/handleAiMention(), since both
@@ -721,6 +733,79 @@ test('e2e: a literal "@Snoopy" is stripped out of the text sent to Gemini, same 
   const messageSection = promptText.match(/Message: "([^]*)"$/)[1];
   assert.ok(!/snoopy/i.test(messageSection), 'expected the literal "@Snoopy" text to be stripped out of the message section before reaching Gemini');
   assert.ok(messageSection.includes('put me down for Saturday'), 'expected the rest of the message to reach Gemini untouched');
+});
+
+// --- Real request: tagging who's actually being added works over the
+// natural-language path too, not just a typed "!in" - "@Snoopy add @Grace"
+// needs the model to actually see a nameable request (not silence, once
+// its own mention AND Grace's are both normally stripped), and the
+// dispatched "in" action needs to pick up Grace's REAL mention from the
+// message directly, the same way a typed command would. ---
+
+test('e2e: "@Snoopy add @Grace" substitutes Grace\'s own resolved name into what Gemini actually sees, instead of stripping her mention into silence', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  // Real WhatsApp mentions are ALWAYS "@<phone number>" on the wire, never
+  // "@Grace" - WhatsApp's own client renders the friendly name, but what
+  // this bot actually receives (and what stripMentionTokens/
+  // substituteMentionNames match against) is the raw number. Using a
+  // human-readable "@Grace" in the raw text here (as an earlier, buggy
+  // version of this test did) would make the assertion below pass
+  // trivially regardless of whether substitution ever ran at all, since
+  // "Grace" is already a literal substring of "@Grace" - this uses a
+  // distinct numeric local part instead, matching how the real protocol
+  // (and getNonBotMentions/substituteMentionNames's own number-based
+  // matching) actually works.
+  const GRACE_JID = '61499912345@s.whatsapp.net';
+  fakeSockInstance._setParticipantName(GRACE_JID, 'Grace');
+  // lib/adminCheck.js caches groupMetadata() for 60s, keyed by groupId -
+  // this file's shared GROUP_ID means an EARLIER test could easily have
+  // already populated that cache before Grace existed as a participant
+  // at all, so without invalidating first, getParticipantName() below
+  // would silently serve a stale snapshot that's never heard of her.
+  adminCheck.invalidate(GROUP_ID);
+  // 'low' confidence deliberately - this test only cares about what TEXT
+  // reached Gemini (built before any dispatch decision), not about
+  // actually adding anyone, so there's no need for a real "in" dispatch
+  // (and its side effect on this file's shared GROUP_ID) just to check it.
+  setNextGeminiResponse({ command: 'in', argText: '', confidence: 'low', question: 'Add Grace?' });
+
+  await deliver(`add @${GRACE_JID.split('@')[0]}`, {
+    from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID, GRACE_JID],
+  });
+
+  const promptText = getLastGeminiPromptText();
+  const messageSection = promptText.match(/Message: "([^]*)"$/)[1];
+  assert.ok(messageSection.includes('Grace'), `expected Grace's own resolved name in the text sent to Gemini, got: "${messageSection}"`);
+  assert.ok(!messageSection.includes(GRACE_JID.split('@')[0]), `expected the raw phone number to be GONE, replaced by her name, got: "${messageSection}"`);
+});
+
+test('e2e: "@Snoopy add @Grace" links the resulting entry to Grace\'s OWN JID, not whoever sent the message - same tagging handleIn gives a typed command', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  // Same real-protocol-shaped mention as the test above - see its own
+  // comment for why a human-readable "@Grace" in the raw text would be
+  // meaningless here (it's never what the bot actually receives).
+  const GRACE_JID = '61499912346@s.whatsapp.net';
+  fakeSockInstance._setParticipantName(GRACE_JID, 'Grace Tagged');
+  // Simulates what the model WOULD produce once it actually sees "Grace
+  // Tagged" substituted into the text (see the test just above) - this
+  // test is about what happens AFTER dispatch, not the substitution
+  // itself.
+  setNextGeminiResponse({ command: 'in', argText: 'Grace Tagged', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver(`add @${GRACE_JID.split('@')[0]}`, { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID, GRACE_JID] });
+
+  // Checks both entries AND the waitlist - this file's shared GROUP_ID
+  // accumulates state across every test that's run before this one, so
+  // by now a fresh add could easily land on either depending on how
+  // close to the (shared, accumulated) limit things are - irrelevant to
+  // what this test is actually checking (who the entry is attributed
+  // to), so it shouldn't matter which list it ends up on.
+  const event = store.getCurrentEvent(GROUP_ID);
+  const entry = [...event.entries, ...(event.waitlist || [])].find((e) => e.name === 'Grace Tagged');
+  assert.ok(entry, 'expected a "Grace Tagged" entry to have been added');
+  assert.equal(entry.addedBy, GRACE_JID, 'expected the entry to be linked to Grace\'s own JID, not jordan (who sent the message)');
+  assert.equal(entry.self, true);
 });
 
 test('e2e: a bare "@Snoopy" with nothing else signs the sender up, same as a bare real @-mention, without calling Gemini', async () => {
