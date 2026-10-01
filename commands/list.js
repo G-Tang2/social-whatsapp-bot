@@ -19,6 +19,7 @@
 const { getCurrentEvent, addEntry, removeEntry, markPaid, joinTournament, leaveTournament, normalizeName } = require('../store');
 const { checkEntry } = require('../moderation');
 const { isGroupAdmin, getParticipantName } = require('../lib/adminCheck');
+const ai = require('../ai');
 const { COMMAND_PREFIX, MAX_NAMES_PER_COMMAND } = require('../lib/config');
 const {
   parseNames,
@@ -36,6 +37,7 @@ const {
   getMentionedJids,
   getNonBotMentions,
   stripMentionTokens,
+  formatClarifyingQuestion,
 } = require('../lib/helpers');
 
 // Real bug report: someone's own name can be stored on a list in an
@@ -78,6 +80,20 @@ function findUnambiguousFuzzyNameMatch(entries, senderName) {
 
   const uniqueNames = [...new Set(candidates.map((e) => normalizeName(e.name)))];
   return uniqueNames.length === 1 ? candidates[0] : null;
+}
+
+// Wraps a "which one, though?" disambiguation question with
+// formatClarifyingQuestion's (lib/helpers.js) "go on, reply to this
+// message" nudge - but ONLY when a plain reply would actually do
+// anything: that nudge is dispatched through the same natural-language
+// @-mention path as any other reply (see index.js's messageMentionsBot/
+// handleAiMention), which requires !ai to be on for the group. With !ai
+// off, a reply to this exact message is silently dropped (see index.js's
+// own "mentionsBot && !ai.isEnabled" branch) - telling the sender to do
+// something that quietly does nothing would be worse than not mentioning
+// it at all, so this leaves the question plain in that case.
+function withReplyNudgeIfAiOn(groupId, question) {
+  return ai.isEnabled(groupId) ? formatClarifyingQuestion(question) : question;
 }
 
 // Resolves ONE @-mentioned jid to an EXISTING entry in `candidates` (an
@@ -437,10 +453,10 @@ async function runPaidIfFlagged(groupId, senderId, senderName, paidFlag, explici
 // same as standalone !paid, the reposted list (with the payment-due
 // section shrunk) is proof enough; callers are still responsible for
 // triggering that postList() themselves.
-async function replyPaidOutcome(reply, paidOutcome) {
+async function replyPaidOutcome(reply, paidOutcome, groupId) {
   if (paidOutcome.paidAmbiguous) {
     await reply(
-      `Which one, though? You have more than one entry on the Payment list - say which one: ${COMMAND_PREFIX}paid <name>\nYours: ${paidOutcome.paidAmbiguous.join(', ')}`
+      withReplyNudgeIfAiOn(groupId, `Which one, though? You have more than one entry on the Payment list - say which one: ${COMMAND_PREFIX}paid <name>\nYours: ${paidOutcome.paidAmbiguous.join(', ')}`)
     );
   }
   if (paidOutcome.paidRejected.length) {
@@ -595,7 +611,7 @@ async function handleIn(ctx) {
         if (!tournamentChanged) {
           await reply(`Ha, nice try - you're already on the list as "${own.map((e) => e.name).join('", "')}".`);
         }
-        await replyPaidOutcome(reply, paidOutcome);
+        await replyPaidOutcome(reply, paidOutcome, groupId);
         if (tournamentOutcome.disabled) {
           await reply(`Tournament isn't enabled for this group (see ${COMMAND_PREFIX}tournament).`);
         }
@@ -771,7 +787,7 @@ async function handleIn(ctx) {
     if (rejected.length) {
       await reply(`Couldn't add:\n${rejected.join('\n')}`);
     }
-    await replyPaidOutcome(reply, paidOutcome);
+    await replyPaidOutcome(reply, paidOutcome, groupId);
     // Unlike a full tournament (capacity reached) - which is quietly
     // visible from the reposted list itself, tagged "(🏆 WL)" under
     // "Social only" (see store.js's addEntry()/entry.tournamentWaitlisted
@@ -871,7 +887,7 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
                   ? `Weren't even on the tournament to begin with, so I've added you to the list instead (social only) - you're on the waitlist for now, promoted the moment a spot frees up.`
                   : `Weren't even on the tournament to begin with, so I've added you to the list instead - social only, as asked.`
               );
-              await replyPaidOutcome(reply, paidOutcome);
+              await replyPaidOutcome(reply, paidOutcome, groupId);
               await postList();
             }
             return { command: 'out', senderName, argText, addedSocialOnly: [senderName], waitlisted: addResult.waitlisted, ...paidOutcome };
@@ -890,7 +906,7 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
           await reply(
             `Can't take you out of the tournament if you're not even on the list! If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out tournament <name>.`
           );
-          await replyPaidOutcome(reply, paidOutcome);
+          await replyPaidOutcome(reply, paidOutcome, groupId);
           if (paidOutcome.paid.length) {
             await postList();
           }
@@ -902,9 +918,9 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
       const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
-          `Which one, though? You have more than one entry - say which one: ${COMMAND_PREFIX}out tournament <name>\nYours: ${own.map((e) => e.name).join(', ')}`
+          withReplyNudgeIfAiOn(groupId, `Which one, though? You have more than one entry - say which one: ${COMMAND_PREFIX}out tournament <name>\nYours: ${own.map((e) => e.name).join(', ')}`)
         );
-        await replyPaidOutcome(reply, paidOutcome);
+        await replyPaidOutcome(reply, paidOutcome, groupId);
         if (paidOutcome.paid.length) {
           await postList();
         }
@@ -953,7 +969,7 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
     if (rejected.length) {
       await reply(`Couldn't move to social only, alas:\n${rejected.join('\n')}`);
     }
-    await replyPaidOutcome(reply, paidOutcome);
+    await replyPaidOutcome(reply, paidOutcome, groupId);
     if (tournamentPromoted.length) {
       // A tournament spot just freed up, auto-promoting the front of the
       // (🏆 WL) queue - see leaveTournament()'s doc comment. Sent directly
@@ -1044,7 +1060,7 @@ async function handleOut(ctx) {
           await reply(
             `Can't remove you from a list you're not even on! If your WhatsApp name doesn't match what's on the list, use ${COMMAND_PREFIX}out <name>.`
           );
-          await replyPaidOutcome(reply, paidOutcome);
+          await replyPaidOutcome(reply, paidOutcome, groupId);
           if (paidOutcome.paid.length) {
             await postList();
           }
@@ -1055,9 +1071,9 @@ async function handleOut(ctx) {
       const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, null);
       if (!isCatchUp) {
         await reply(
-          `Which one, though? You have more than one entry - say which one: ${COMMAND_PREFIX}out <name>\nYours: ${own.map((e) => e.name).join(', ')}`
+          withReplyNudgeIfAiOn(groupId, `Which one, though? You have more than one entry - say which one: ${COMMAND_PREFIX}out <name>\nYours: ${own.map((e) => e.name).join(', ')}`)
         );
-        await replyPaidOutcome(reply, paidOutcome);
+        await replyPaidOutcome(reply, paidOutcome, groupId);
         if (paidOutcome.paid.length) {
           await postList();
         }
@@ -1156,7 +1172,7 @@ async function handleOut(ctx) {
     if (rejected.length) {
       await reply(`Couldn't remove, my apologies:\n${rejected.join('\n')}`);
     }
-    await replyPaidOutcome(reply, paidOutcome);
+    await replyPaidOutcome(reply, paidOutcome, groupId);
     if (promoted.length) {
       // A spot freed up, so someone was auto-promoted off the waitlist -
       // worth calling out (and tagging) since it's a status change for a
@@ -1245,7 +1261,7 @@ async function handlePaid(ctx) {
     if (resolved.ambiguous) {
       if (!isCatchUp) {
         await reply(
-          `Which one, though? You have more than one entry on the Payment list - say which one: ${COMMAND_PREFIX}paid <name>\nYours: ${resolved.ambiguous.join(', ')}`
+          withReplyNudgeIfAiOn(groupId, `Which one, though? You have more than one entry on the Payment list - say which one: ${COMMAND_PREFIX}paid <name>\nYours: ${resolved.ambiguous.join(', ')}`)
         );
       }
       return { command: 'paid', senderName, argText, ambiguous: resolved.ambiguous };

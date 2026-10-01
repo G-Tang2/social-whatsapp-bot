@@ -261,7 +261,7 @@ const P = require('pino');
 const qrcode = require('qrcode-terminal');
 
 const config = require('./lib/config');
-const { getMessageText, formatList, getMentionedJids, getNonBotMentions, getQuotedParticipant, getQuotedMessageText, stripMentionTokens, substituteMentionNames, buildQuotePreviewMsg, normalizeJid, LITERAL_BOT_MENTION_REGEX } = require('./lib/helpers');
+const { getMessageText, formatList, getMentionedJids, getNonBotMentions, getQuotedParticipant, getQuotedMessageText, formatClarifyingQuestion, stripMentionTokens, substituteMentionNames, buildQuotePreviewMsg, normalizeJid, LITERAL_BOT_MENTION_REGEX } = require('./lib/helpers');
 const { parseListSections } = require('./lib/listParser');
 const { getRegularPlayers, getUndoableState, saveUndoSnapshot, getUndoSnapshot, restoreUndoableState } = require('./store');
 const { isGroupAdmin, getParticipantName } = require('./lib/adminCheck');
@@ -895,18 +895,8 @@ const UNEXPECTED_ERROR_REPLY = "Uh oh, tripped over my own paws there - somethin
 //    Only if EVERY action in the array is undispatchable does the whole
 //    mention fall back to AI_NOT_UNDERSTOOD_REPLY/a clarifying
 //    question/an offTopicReply per the bullet above.
-// Appended to a low-confidence action's model-authored `question` (see
-// RESPONSE_SCHEMA's doc comment in lib/geminiCommand.js) before it's sent
-// back to the sender - `reply()` already quotes the triggering message, so
-// a plain WhatsApp "Reply" to THIS message is all that's needed to
-// continue; messageMentionsBot() below already treats a reply to any of
-// the bot's own messages the same as a fresh @-mention, and
-// handleAiMention passes the quoted text back through as `priorBotMessage`
-// so the follow-up is read as continuing this exact exchange, not a cold
-// new request.
-function formatClarifyingQuestion(question) {
-  return `${question}\n\nGo on, reply to this message to let me know - I'm all ears (well, floppy ones).`;
-}
+// formatClarifyingQuestion moved to lib/helpers.js so commands/list.js can
+// share it too, for its own "which one, though?" disambiguation prompts.
 
 // Fixed reminder appended after a model-authored `offTopicReply` (see
 // RESPONSE_SCHEMA's doc comment in lib/geminiCommand.js) - kept OUT of the

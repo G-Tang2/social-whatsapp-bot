@@ -1190,6 +1190,15 @@ current state. Every group starts off - each one opts in individually.
   question to ask (or the whole message just isn't list-related), it falls
   back to the plain "not capable" reply below instead of asking something
   generic like "can you clarify?".
+- **The same reply-to-continue trick also works for the plain, non-AI
+  "which one, though?" questions** that bare `!in`/`!out`/`!paid` ask when
+  you have more than one entry under different names - e.g. reply "Grace
+  T" to answer it, instead of retyping the full `!out Grace T`. Mentioning
+  Snoopy with the answer works too, same as any other natural-language
+  request. Only shown when `!ai` is actually on for the group - with it
+  off, those questions still work exactly as before (retype the full
+  command), just without the reply shortcut, since a plain reply is only
+  ever picked up through this natural-language path.
 - **Briefly addresses an off-topic message, then reminds people Snoopy's
   busy running the list.** For a message that isn't list-related at all
   (small talk, an unrelated question - "how do I make a sandwich"), the

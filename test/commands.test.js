@@ -586,6 +586,44 @@ test('handleOut: bare "!out"/"remove me" does NOT fuzzy-match when the sender\'s
   assert.match(replies[0], /not even on/i);
 });
 
+test('handleOut: bare "!out" with the sender\'s own entries under TWO DIFFERENT names asks "which one", with a nudge that a reply resolves it', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.addEntry(groupId, 'Grace T', 'grace@s.whatsapp.net', false, true); // self: true
+  store.addEntry(groupId, 'Grace W', 'grace@s.whatsapp.net', false, true); // self: true, different name
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'grace@s.whatsapp.net', senderName: 'Grace', argText: '' });
+  await listCommands.handleOut(ctx);
+
+  assert.equal(store.getCurrentEvent(groupId).entries.length, 2); // nothing removed
+  assert.match(replies[0], /more than one entry/i);
+  // See lib/helpers.js's formatClarifyingQuestion - this is what tells the
+  // sender a plain WhatsApp reply (not just retyping the full command) can
+  // answer this.
+  assert.match(replies[0], /reply to this message/i);
+});
+
+// Real risk this session introduced: a plain reply is only EVER picked up
+// through the natural-language @-mention path (see index.js's
+// messageMentionsBot/handleAiMention), which requires !ai to be on for the
+// group - with it off, a reply to this exact message is silently dropped.
+// Telling the sender to do something that quietly does nothing would be
+// worse than not mentioning it, so the nudge must disappear when !ai is
+// off for the group - see commands/list.js's withReplyNudgeIfAiOn.
+test('handleOut: the SAME "which one, though?" question has NO reply nudge when !ai is off for the group - replying there would silently do nothing', async () => {
+  const groupId = freshGroupId();
+  ai.setEnabled(groupId, false);
+  const sock = createFakeSock({});
+  store.addEntry(groupId, 'Grace T', 'grace@s.whatsapp.net', false, true); // self: true
+  store.addEntry(groupId, 'Grace W', 'grace@s.whatsapp.net', false, true); // self: true, different name
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'grace@s.whatsapp.net', senderName: 'Grace', argText: '' });
+  await listCommands.handleOut(ctx);
+
+  assert.match(replies[0], /more than one entry/i);
+  assert.doesNotMatch(replies[0], /reply to this message/i);
+});
+
 test('handleOut: "!out +2" removes only the sender\'s 2 guest entries, not the sender', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
@@ -836,6 +874,22 @@ test('handleOut: a bare number that is out of range still gets the ordinary "not
   await listCommands.handleOut(ctx);
 
   assert.match(replies[0], /99 - not on the list/);
+});
+
+test('handleOut: bare "!out paid" from someone with no current entry but TWO due entries under different names asks "which one" for the paid half too, with a reply nudge', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.addEntry(groupId, 'Grace T', 'grace@s.whatsapp.net', false, true); // self: true
+  store.newList(groupId, '2026-08-20', {}); // Grace T now owes, and is off the new list
+  store.addEntry(groupId, 'Grace W', 'grace@s.whatsapp.net', false, true); // self: true, different name this cycle
+  store.newList(groupId, '2026-08-27', {}); // Grace W now owes too - two different names due at once
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'grace@s.whatsapp.net', senderName: 'Grace', argText: 'paid' });
+  await listCommands.handleOut(ctx);
+
+  assert.match(replies[1], /more than one entry/i);
+  // See lib/helpers.js's formatClarifyingQuestion.
+  assert.match(replies[1], /reply to this message/i);
 });
 
 // --- Real request: extend tagging to !out/!paid - a mention stands in
@@ -1179,6 +1233,23 @@ test('handleOut: bare "!out tournament" does NOT fuzzy-match when ambiguous - fa
   assert.equal(event.entries.length, 3, 'expected a fresh entry to be added rather than resolving an ambiguous match');
   assert.ok(event.entries.some((e) => e.name === 'Chhay' && e.tournament === false));
   assert.match(replies[0], /added you to the list instead - social only/);
+});
+
+test('handleOut: bare "!out tournament" with the sender\'s own entries under TWO DIFFERENT names asks "which one", with a nudge that a reply resolves it', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, true);
+  store.addEntry(groupId, 'Grace T', 'grace@s.whatsapp.net', false, true); // self: true
+  store.addEntry(groupId, 'Grace W', 'grace@s.whatsapp.net', false, true); // self: true, different name
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'grace@s.whatsapp.net', senderName: 'Grace', argText: 'tournament' });
+  await listCommands.handleOut(ctx);
+
+  assert.match(replies[0], /more than one entry/i);
+  // See lib/helpers.js's formatClarifyingQuestion - this is what tells the
+  // sender a plain WhatsApp reply (not just retyping the full command) can
+  // answer this.
+  assert.match(replies[0], /reply to this message/i);
 });
 
 test('handleOut: bare "!out tournament" from someone with no entry, when the list is full, adds them to the waitlist instead', async () => {
@@ -2128,6 +2199,11 @@ test('handlePaid: a bare "!paid" (no name) with entries under TWO DIFFERENT name
 
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 2); // nothing cleared
   assert.match(replies[0], /more than one entry/i);
+  // Real request: a reply to THIS message should be able to answer it (see
+  // lib/helpers.js's formatClarifyingQuestion, and index.js's
+  // messageMentionsBot/handleAiMention for how a reply is actually picked
+  // up) - the nudge is what tells the sender that's even possible.
+  assert.match(replies[0], /reply to this message/i);
 });
 
 // --- "Trying to pay early": a bare or named "!paid" that comes up empty

@@ -1078,6 +1078,47 @@ test('e2e: replying to the bot\'s own clarifying question includes it as REPLY C
   assert.match(promptText, /Did you mean to remove Megan from the payment list/, 'expected the bot\'s own prior question to be quoted back into the prompt');
 });
 
+// Real request: the SAME reply-to-continue mechanism above is generic -
+// messageMentionsBot()/getQuotedMessageText() (index.js) don't care
+// whether the bot's prior message came from an AI-authored low-confidence
+// question or one of commands/list.js's own hardcoded disambiguation
+// questions (e.g. "!out"/"!paid" with more than one matching own entry).
+// Confirms that's actually true end-to-end, not just in theory - a plain
+// WhatsApp reply to a TYPED command's own ambiguity question still gets
+// picked up as REPLY CONTEXT and correctly dispatches the real action.
+test('e2e: replying to a typed command\'s own "which one, though?" disambiguation question resolves it via AI, same as an AI-authored question', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  store.addEntry(GROUP_ID, 'Grace T', 'alex@s.whatsapp.net', false, true); // self: true
+  store.addEntry(GROUP_ID, 'Grace W', 'alex@s.whatsapp.net', false, true); // self: true
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('!out', { from: 'alex@s.whatsapp.net', type: 'notify' });
+
+  assert.equal(fakeSockInstance.sentMessages.length, 1);
+  const clarifyingText = fakeSockInstance.sentMessages[0].content.text;
+  assert.match(clarifyingText, /Which one, though\?/);
+
+  setNextGeminiResponse({ command: 'out', argText: 'Grace T', confidence: 'high' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('Grace T', {
+    from: 'alex@s.whatsapp.net',
+    type: 'notify',
+    quotedParticipant: BOT_JID,
+    quotedMessageText: clarifyingText,
+  });
+
+  const promptText = getLastGeminiPromptText();
+  assert.match(promptText, /^REPLY CONTEXT:/m, 'expected an injected REPLY CONTEXT section on the follow-up prompt');
+  assert.match(promptText, /Which one, though\?/, 'expected the bot\'s own prior disambiguation question to be quoted back into the prompt');
+
+  // GROUP_ID accumulates state across this whole file's tests, so check
+  // only what THIS test actually cares about rather than the full list.
+  const remaining = store.getCurrentEvent(GROUP_ID).entries.map((e) => e.name);
+  assert.ok(!remaining.includes('Grace T'), 'expected Grace T to have been removed'); // dispatched from the AI-resolved reply
+  assert.ok(remaining.includes('Grace W'), 'expected Grace W to be untouched');
+});
+
 // --- Admin commands via AI mention (lib/geminiCommand.js's MAPPABLE_COMMANDS
 // now includes !clear/!limit/etc, not just the everyday commands) ---
 
