@@ -326,6 +326,16 @@ let reconnectAttempts = 0;
 let reconnectTimer = null;
 const MAX_RECONNECT_DELAY_MS = 30000;
 
+// Whether this file is actually the process entry point (`node index.js`,
+// including under pm2) rather than require()'d by a test file - every
+// e2e test requires index.js as a module to drive it against a FAKE
+// Baileys socket with no real underlying OS handle (see
+// test/e2e.test.js's own comment on why it injects a fake
+// @whiskeysockets/baileys before requiring index.js). Used below to
+// decide whether the reconnect timer is allowed to keep the process
+// alive on its own.
+const isMainModule = require.main === module;
+
 // Schedules a reconnect after an exponential-backoff delay (1s, 2s, 4s, ...
 // capped at MAX_RECONNECT_DELAY_MS), instead of retrying instantly. This
 // matters most right after the host machine wakes from sleep: the network
@@ -352,9 +362,35 @@ function scheduleReconnect() {
       scheduleReconnect();
     });
   }, delay);
-  // unref() so a pending reconnect timer alone doesn't keep the process
-  // alive in contexts where nothing else is (e.g. tests) - has no effect
-  // on the deployed bot, where the goal IS to keep retrying indefinitely.
+  // Real bug report: a FRESH process (just launched to scan a new QR
+  // code) that hits an immediate close - e.g. the normal "515 restart
+  // required" WhatsApp sends right after a successful first-time pairing
+  // scan - used to silently die right here instead of actually
+  // reconnecting a second later. The comment this replaces claimed
+  // unref()'ing "has no effect on the deployed bot" - wrong: in real
+  // production, the ONLY thing keeping the process alive at all is the
+  // live WebSocket connection itself (a real OS-level handle); every
+  // OTHER timer in this file (see e.g. the last-seen-status interval
+  // below) is unref'd too, on the same assumption. The instant the
+  // socket closes, NOTHING is left ref'd except this timer - so
+  // unref'ing it too left a dead silence: Node sees an empty event loop
+  // and exits immediately, without ever waiting the 1s for this to fire,
+  // dropping the operator straight back to their shell prompt with no
+  // further log output and no actual reconnect. This was never a problem
+  // once a connection had been open at least once and other work was
+  // still in flight at the moment of a later disconnect (which is why it
+  // went unnoticed in ongoing operation) - but a dead certainty on a
+  // fresh start with nothing else happening yet.
+  //
+  // Only unref'd when require()'d by a test (isMainModule false - see its
+  // own doc comment above) - every e2e test drives this against a FAKE
+  // socket with no real underlying OS handle at all, so unref'ing here is
+  // what lets `node --test` exit cleanly once its tests finish, exactly
+  // the original comment's "tests" case. The real, directly-run process
+  // needs the opposite: this timer MUST be able to keep the event loop
+  // alive on its own through a gap with no live socket, which is the
+  // whole point of a reconnect timer in the first place.
+  if (isMainModule) return;
   if (typeof reconnectTimer.unref === 'function') reconnectTimer.unref();
 }
 
