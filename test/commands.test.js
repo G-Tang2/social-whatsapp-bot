@@ -838,6 +838,188 @@ test('handleOut: a bare number that is out of range still gets the ordinary "not
   assert.match(replies[0], /99 - not on the list/);
 });
 
+// --- Real request: extend tagging to !out/!paid - a mention stands in
+// for typing someone's name (e.g. "!out @Grace", "!paid Henry @Grace").
+// Unlike !in's tagging (one name <-> one mention, since it creates a
+// brand-new entry whose identity must be unambiguous), these resolve
+// EXISTING entries, so each mention resolves completely independently,
+// with no name/mention count restriction - see resolveMentionedName's
+// own doc comment (commands/list.js). ---
+
+test('handleOut: a bare "!out @Grace" removes the TAGGED person, matched by WhatsApp ID, not the sender', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net'] });
+  store.addEntry(groupId, 'Grace', 'grace@s.whatsapp.net', false, true); // self: true
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: '@grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+  await listCommands.handleOut(ctx);
+
+  assert.deepEqual(store.getCurrentEvent(groupId).entries, []);
+});
+
+test('handleOut: a bare "!out @Grace" falls back to the tagged person\'s current WhatsApp name when their entry was recorded under a different identity', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({
+    participantIds: ['grace@s.whatsapp.net'],
+    participantNames: { 'grace@s.whatsapp.net': 'Grace' },
+  });
+  store.addEntry(groupId, 'Grace', 'someoneelse@s.whatsapp.net', false); // not Grace's own JID, self: false
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: '@grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+  await listCommands.handleOut(ctx);
+
+  assert.deepEqual(store.getCurrentEvent(groupId).entries, []);
+});
+
+test('handleOut: "!out Henry @Grace" removes BOTH the typed name and the tagged person, independently', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net'] });
+  store.addEntry(groupId, 'Henry', 'henry@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'grace@s.whatsapp.net', false, true);
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: 'Henry @grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+  await listCommands.handleOut(ctx);
+
+  assert.deepEqual(store.getCurrentEvent(groupId).entries, []);
+});
+
+test('handleOut: a mentioned person who isn\'t on the list at all is rejected by their own resolved name, not a bare phone number', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({
+    participantIds: ['grace@s.whatsapp.net'],
+    participantNames: { 'grace@s.whatsapp.net': 'Grace' },
+  });
+
+  const { ctx, replies } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: '@grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+  await listCommands.handleOut(ctx);
+
+  assert.match(replies[0], /Grace - not on the list/);
+});
+
+test('handleOut: "!out paid @Grace" removes and marks the TAGGED person paid, not the sender, even though nothing was typed besides the tag', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net'] });
+  store.addEntry(groupId, 'Grace', 'grace@s.whatsapp.net', false, true);
+  store.newList(groupId, '2026-08-20', {}); // Grace owes for the new cycle, and is NOT on the new list
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: 'paid @grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+  await listCommands.handleOut(ctx);
+
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
+});
+
+test('handlePaid: a bare "!paid @Grace" marks the TAGGED person\'s due entry paid, matched by WhatsApp ID, not the sender\'s', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net'] });
+  store.addEntry(groupId, 'Grace', 'grace@s.whatsapp.net', false, true);
+  store.newList(groupId, '2026-08-20', {});
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: '@grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+  await listCommands.handlePaid(ctx);
+
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
+});
+
+test('handlePaid: "!paid Henry @Grace" marks BOTH the typed name and the tagged person paid, independently', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['grace@s.whatsapp.net'] });
+  store.addEntry(groupId, 'Henry', 'henry@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Grace', 'grace@s.whatsapp.net', false, true);
+  store.newList(groupId, '2026-08-20', {});
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: 'Henry @grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+  await listCommands.handlePaid(ctx);
+
+  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
+});
+
+test('handlePaid: a mentioned person who isn\'t on the payment list at all is rejected by their own resolved name, not a bare phone number', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({
+    participantIds: ['grace@s.whatsapp.net'],
+    participantNames: { 'grace@s.whatsapp.net': 'Grace' },
+  });
+
+  const { ctx, replies } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: '@grace',
+    mentions: ['grace@s.whatsapp.net'],
+  });
+  await listCommands.handlePaid(ctx);
+
+  assert.match(replies[0], /Grace - not on the payment list/);
+});
+
+test('handleOut: the BOT\'s own mention is excluded from tagging consideration for !out too - "!out @bot" with nothing else is treated as removing the sender', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ botJid: 'bot:7@s.whatsapp.net' });
+  store.addEntry(groupId, 'Other', 'other@s.whatsapp.net', false, true);
+
+  const { ctx } = makeCtx({
+    sock,
+    groupId,
+    senderId: 'other@s.whatsapp.net',
+    senderName: 'Other',
+    argText: '@bot',
+    mentions: ['bot:7@s.whatsapp.net'],
+  });
+  await listCommands.handleOut(ctx);
+
+  assert.deepEqual(store.getCurrentEvent(groupId).entries, []);
+});
+
 test('handleOut: promotion off the waitlist sends a tagged mention message', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});

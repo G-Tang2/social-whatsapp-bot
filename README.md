@@ -124,6 +124,12 @@ name alone always has been), rather than guessing which mention belongs
 to which name. Works the same way through a natural-language @-mention
 too (e.g. `@Snoopy add @Grace`), not just the typed `!in` form.
 
+`!out` and `!paid` accept tagging too, e.g. `!out @Grace` or `!paid Henry
+@Grace` - but since those commands act on someone ALREADY on a list rather
+than creating a new entry, there's no one-name-per-tag limit: tag as many
+people as you like, mixed with as many typed names as you like, and each
+tag resolves to its own person independently.
+
 **Sending several different commands at once:** if every non-blank line of
 a message independently starts with a real command word - e.g.
 

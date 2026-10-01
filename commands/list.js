@@ -80,6 +80,39 @@ function findUnambiguousFuzzyNameMatch(entries, senderName) {
   return uniqueNames.length === 1 ? candidates[0] : null;
 }
 
+// Resolves ONE @-mentioned jid to an EXISTING entry in `candidates` (an
+// entries/waitlist/duePayments array - whatever the caller is matching
+// against) - used by handleOut/handlePaid to let a tag stand in for typing
+// someone's name, e.g. "!out @Grace" or "!paid @Grace, Henry". Unlike
+// handleIn's tagging (which creates a brand-new entry and so needs exactly
+// one name <-> one tag), this is resolving something that's already on a
+// list, so each mention is independent - there's no name it needs to line
+// up against, and no limit on how many can appear in one command.
+//
+// Same two-step fallback as every bare-self lookup above: an exact
+// WhatsApp-ID match first (covers a nickname that doesn't match their
+// current push name at all), then their current push name against the
+// list (exact, then the same conservative fuzzy-prefix match as
+// findUnambiguousFuzzyNameMatch above) - never a blind "whoever's tagged
+// must be this row" guess.
+//
+// Returns `{ name }` on a match, or `{ resolvedName }` (their current push
+// name, for a clear rejection message) when nothing on the list matches.
+async function resolveMentionedName(sock, groupId, jid, candidates) {
+  const idMatch = candidates.find((e) => e.addedBy === jid && e.self !== false);
+  if (idMatch) return { name: idMatch.name };
+
+  const resolvedName = await getParticipantName(sock, groupId, jid);
+  const normalizedResolvedName = normalizeName(resolvedName);
+  const exactMatch = candidates.find((e) => normalizeName(e.name) === normalizedResolvedName);
+  if (exactMatch) return { name: exactMatch.name };
+
+  const fuzzyMatch = findUnambiguousFuzzyNameMatch(candidates, resolvedName);
+  if (fuzzyMatch) return { name: fuzzyMatch.name };
+
+  return { resolvedName };
+}
+
 // Bare-self resolution against the payment-due list, shared by handleIn/
 // handleOut below when a leading "paid" keyword is present but no
 // explicit name was given (e.g. "!in paid", not "!in paid Grace"). Matches
@@ -951,7 +984,15 @@ async function handleOut(ctx) {
   // to handleLeaveTournament above - taking someone OUT of the tournament
   // only, NOT off the list - since that's a fundamentally different
   // operation from the removeEntry() loop below.
-  const { rest, paid: paidFlag, tournament: tournamentFlag } = stripLeadingInKeywords(argText);
+  // A tagged mention (e.g. "!out @Grace") stands in for typing Grace's
+  // name - stripped out of argText BEFORE the rest of parsing even sees
+  // it, same as handleIn does, so it never ends up treated as a stray
+  // name token. See resolveMentionedName's own doc comment for why each
+  // mention here resolves independently, unlike handleIn's tagging.
+  const mentionedJids = getMentionedJids(msg);
+  const nonBotMentions = getNonBotMentions(mentionedJids, sock);
+  const textForParsing = stripMentionTokens(argText, mentionedJids);
+  const { rest, paid: paidFlag, tournament: tournamentFlag } = stripLeadingInKeywords(textForParsing);
   if (tournamentFlag) {
     return handleLeaveTournament(ctx, rest, paidFlag);
   }
@@ -960,8 +1001,10 @@ async function handleOut(ctx) {
   // "me" (ME_TOKEN, lib/helpers.js) said on its own is the explicit way to
   // remove yourself - treated exactly like no argText at all. A bare "+N"
   // (no "me") only removes N of your own unnamed guest entries, NOT you -
-  // see PLUS_N_TOKEN's doc comment.
-  if (!rest || ME_TOKEN.test(rest.trim())) {
+  // see PLUS_N_TOKEN's doc comment. Guarded by `nonBotMentions.length ===
+  // 0` - a bare "!out @Grace" (nothing left after stripping the mention)
+  // means remove GRACE, not the sender themselves.
+  if ((!rest || ME_TOKEN.test(rest.trim())) && nonBotMentions.length === 0) {
     // No name given - remove "myself." Match by WhatsApp ID rather than
     // display name: your push name doesn't always match whatever text
     // ended up on the list (yours or whoever added you may have typed
@@ -1023,6 +1066,11 @@ async function handleOut(ctx) {
     } else {
       names = [own[0].name];
     }
+  } else if (!rest || ME_TOKEN.test(rest.trim())) {
+    // Nothing left after stripping the mention(s) - e.g. a bare "!out
+    // @Grace" - so there are no TYPED names to resolve here; the tagged
+    // mention(s) are merged in below, after this if/else chain.
+    names = [];
   } else {
     names = parseNames(rest, senderName);
     // One snapshot, taken before any name in this batch is actually
@@ -1033,6 +1081,29 @@ async function handleOut(ctx) {
     // needs to see the real, expanded count.
     const event = getCurrentEvent(groupId);
     names = names.flatMap((name) => resolveOutTokens(event, name));
+  }
+
+  // Each tagged mention resolves independently of whatever was typed
+  // above - see resolveMentionedName's own doc comment. Appended, not
+  // merged into any single-name slot, so "!out Henry @Grace" removes BOTH
+  // Henry and Grace. duePayments is included alongside entries/waitlist
+  // (not just for the removal itself) so a mention still resolves by
+  // identity for the "paid" half below even when the tagged person
+  // already left the CURRENT list and is now only on the payment-due one
+  // - same as a typed name already gets, since a typed name is never
+  // pre-checked against entries/waitlist at all (see the "leading paid"
+  // test above resolveOutTokens).
+  if (nonBotMentions.length) {
+    const mentionEvent = getCurrentEvent(groupId);
+    const mentionCandidates = [
+      ...mentionEvent.entries,
+      ...(mentionEvent.waitlist || []),
+      ...(mentionEvent.duePayments || []),
+    ];
+    for (const jid of nonBotMentions) {
+      const resolved = await resolveMentionedName(sock, groupId, jid, mentionCandidates);
+      names.push(resolved.name ? resolved.name : { rejectedMessage: `${resolved.resolvedName} - not on the list` });
+    }
   }
 
   const admin = await isGroupAdmin(sock, groupId, senderId);
@@ -1075,8 +1146,11 @@ async function handleOut(ctx) {
   }
 
   // Same independent-of-the-remove-outcome reasoning as handleIn's paid
-  // handling - see its comment above.
-  const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, rest ? names : null);
+  // handling - see its comment above. `rest` alone no longer tells us
+  // whether anyone was explicitly named - a bare "!out @Grace paid" has
+  // an empty `rest` but DOES target Grace, not the sender.
+  const hasExplicitTargets = Boolean(rest) || nonBotMentions.length > 0;
+  const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, hasExplicitTargets ? names : null);
 
   if (!isCatchUp) {
     if (rejected.length) {
@@ -1113,7 +1187,7 @@ async function handleList(ctx) {
 }
 
 async function handlePaid(ctx) {
-  const { sock, groupId, senderId, senderName, argText, upsertType, reply, postList } = ctx;
+  const { sock, msg, groupId, senderId, senderName, argText, upsertType, reply, postList } = ctx;
   const isCatchUp = upsertType === 'append';
   // Anyone can mark any name paid here - no owner/admin restriction,
   // unlike !out. Whoever collects the money (not necessarily an
@@ -1130,9 +1204,19 @@ async function handlePaid(ctx) {
   const event = getCurrentEvent(groupId);
   const dueSnapshot = event.duePayments || [];
 
+  // A tagged mention (e.g. "!paid @Grace") stands in for typing Grace's
+  // name - stripped out of argText before the rest of parsing even sees
+  // it. See resolveMentionedName's own doc comment for why each mention
+  // here resolves independently, unlike handleIn's tagging.
+  const mentionedJids = getMentionedJids(msg);
+  const nonBotMentions = getNonBotMentions(mentionedJids, sock);
+  const textForParsing = stripMentionTokens(argText, mentionedJids);
+
   // "me" (ME_TOKEN, lib/helpers.js) said on its own is the explicit way to
-  // mark yourself paid - treated exactly like no argText at all.
-  if (!argText || ME_TOKEN.test(argText.trim())) {
+  // mark yourself paid - treated exactly like no argText at all. Guarded
+  // by `nonBotMentions.length === 0` - a bare "!paid @Grace" (nothing left
+  // after stripping the mention) means mark GRACE paid, not the sender.
+  if ((!textForParsing || ME_TOKEN.test(textForParsing.trim())) && nonBotMentions.length === 0) {
     // No name given - mark "myself" paid. Delegates to resolveOwnDue()
     // above (its own doc comment covers the WhatsApp-ID matching and why
     // multiple entries under the SAME name aren't ambiguous anymore - only
@@ -1167,12 +1251,28 @@ async function handlePaid(ctx) {
       return { command: 'paid', senderName, argText, ambiguous: resolved.ambiguous };
     }
     names = resolved.names;
+  } else if (!textForParsing || ME_TOKEN.test(textForParsing.trim())) {
+    // Nothing left after stripping the mention(s) - e.g. a bare "!paid
+    // @Grace" - so there are no TYPED names to resolve here; the tagged
+    // mention(s) are merged in below, after this if/else chain.
+    names = [];
   } else {
-    names = parseNames(argText, senderName);
+    names = parseNames(textForParsing, senderName);
     // flatMap, not map - a raw "N-M" range token (see expandRangeToken)
     // expands into several names, and the MAX_NAMES_PER_COMMAND check
     // right below needs to see the real, expanded count.
     names = names.flatMap((name) => resolvePaidTokens(dueSnapshot, name));
+  }
+
+  // Each tagged mention resolves independently of whatever was typed
+  // above - see resolveMentionedName's own doc comment. Appended, not
+  // merged into any single-name slot, so "!paid Henry @Grace" marks BOTH
+  // Henry and Grace paid.
+  if (nonBotMentions.length) {
+    for (const jid of nonBotMentions) {
+      const resolved = await resolveMentionedName(sock, groupId, jid, dueSnapshot);
+      names.push(resolved.name ? resolved.name : { rejectedMessage: `${resolved.resolvedName} - not on the payment list` });
+    }
   }
 
   const senderIsAdmin = await isGroupAdmin(sock, groupId, senderId);

@@ -76,6 +76,8 @@ const TIPS_TEXT = [
   '',
   `_• Past the limit, ${COMMAND_PREFIX}in waitlists instead - auto-promoted (and tagged) when a spot opens_`,
   '',
+  `_• ${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid accept @-mentions too, e.g. ${COMMAND_PREFIX}out @Grace or ${COMMAND_PREFIX}paid Henry @Grace - tag as many people as you like alongside as many typed names as you like, no one-tag-per-name limit like ${COMMAND_PREFIX}in has_`,
+  '',
   '*Payments*',
   `_• Lead with "paid" on ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out to confirm payment in one message, e.g. ${COMMAND_PREFIX}in paid Grace, Sam_`,
   '',
