@@ -1231,9 +1231,10 @@ current state. Every group starts off - each one opts in individually.
     (rather than just pointing to `!help`) since those never touch Gemini
     at all, plus a link to Gemini's own Downdetector page
     (`https://downdetector.com.au/status/googlegemini/`) in case Gemini
-    itself is having a bad moment. The request may well have been
-    perfectly understandable, it just didn't get answered in time, so
-    "I'm not capable of doing that" would be misleading there.
+    itself is having a bad moment, plus the real underlying error text
+    appended at the end. The request may well have been perfectly
+    understandable, it just didn't get answered in time, so "I'm not
+    capable of doing that" would be misleading there.
   - A genuine Gemini call failure (a misconfigured/invalid API key, a
     malformed request, any other non-transient error) gets a reply that
     includes Gemini's own actual error text, rather than either of the

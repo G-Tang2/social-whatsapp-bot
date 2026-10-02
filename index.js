@@ -809,7 +809,16 @@ const AI_NOT_UNDERSTOOD_REPLY = `Ooh, that one's got me stumped! I'm not capable
 // slow/timed-out call is often (not always) a sign Gemini itself is
 // having a bad moment, and this lets whoever's asking check that
 // themselves instead of just taking the bot's word for it.
-const AI_TIMEOUT_REPLY = `Whoops, daydreamed a bit too long on that one - took too long to process. Try again in a bit, or use these typed commands:\n${COMMAND_PREFIX}in <name> - e.g. ${COMMAND_PREFIX}in John\n${COMMAND_PREFIX}out <name> - e.g. ${COMMAND_PREFIX}out John\n${COMMAND_PREFIX}paid - marks yourself paid (or ${COMMAND_PREFIX}paid John for someone else)\n\nSee ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) for the full list. If this keeps happening, Gemini itself might be having issues - check https://downdetector.com.au/status/googlegemini/`;
+// `errorMessage` (optional) is interpretMessage()'s own `error` text for
+// this same timed-out/transient-failure call (lib/geminiCommand.js) -
+// appended so the sender sees the actual underlying reason (e.g. a real
+// 504 from Gemini vs. a plain client-side abort) alongside the friendlier
+// "took too long" framing, same reasoning as formatAiErrorReply below.
+// Omitted (falsy) just means interpretMessage() didn't have one to give.
+function formatAiTimeoutReply(errorMessage) {
+  const detail = errorMessage ? `\n\n(Gemini said: "${errorMessage}")` : '';
+  return `Whoops, daydreamed a bit too long on that one - took too long to process. Try again in a bit, or use these typed commands:\n${COMMAND_PREFIX}in <name> - e.g. ${COMMAND_PREFIX}in John\n${COMMAND_PREFIX}out <name> - e.g. ${COMMAND_PREFIX}out John\n${COMMAND_PREFIX}paid - marks yourself paid (or ${COMMAND_PREFIX}paid John for someone else)\n\nSee ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) for the full list. If this keeps happening, Gemini itself might be having issues - check https://downdetector.com.au/status/googlegemini/${detail}`;
+}
 
 // Shown instead of AI_NOT_UNDERSTOOD_REPLY specifically when
 // interpretMessage() (lib/geminiCommand.js) genuinely failed to get a
@@ -875,7 +884,7 @@ const UNEXPECTED_ERROR_REPLY = "Uh oh, tripped over my own paws there - somethin
 //    plain AI_NOT_UNDERSTOOD_REPLY - EXCEPT when interpretMessage() gave up
 //    specifically because Gemini didn't respond in time
 //    (interpretation.timedOut - see that function's own doc comment),
-//    which gets AI_TIMEOUT_REPLY instead: a genuinely different situation
+//    which gets formatAiTimeoutReply() instead: a genuinely different situation
 //    ("might well have understood you, just didn't answer fast enough")
 //    deserves a genuinely different reply, not "I'm not capable of doing
 //    that" - which would wrongly suggest the request itself was the
@@ -1045,7 +1054,7 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
 
   if (!dispatchable.length) {
     if (interpretation && interpretation.timedOut) {
-      await reply(AI_TIMEOUT_REPLY);
+      await reply(formatAiTimeoutReply(interpretation.error));
     } else if (interpretation && interpretation.error) {
       await reply(formatAiErrorReply(interpretation.error));
     } else if (needsClarification.length) {

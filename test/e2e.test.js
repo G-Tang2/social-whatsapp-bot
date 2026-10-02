@@ -2172,6 +2172,9 @@ test('e2e: a Gemini call that times out gets a "took too long, try again" reply 
   assert.match(replyText, new RegExp(`${COMMAND_PREFIX}in <name> - e\\.g\\. ${COMMAND_PREFIX}in John`));
   assert.match(replyText, new RegExp(`${COMMAND_PREFIX}out <name> - e\\.g\\. ${COMMAND_PREFIX}out John`));
   assert.match(replyText, new RegExp(`${COMMAND_PREFIX}paid - marks yourself paid`));
+  // Real request: show the real error message even for a timeout, not just
+  // the friendlier framing above - see formatAiTimeoutReply (index.js).
+  assert.match(replyText, /The operation was aborted/);
 });
 
 // Regression coverage for the "last seen" About/status heartbeat
