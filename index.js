@@ -805,38 +805,45 @@ const AI_NOT_UNDERSTOOD_REPLY = `Ooh, that one's got me stumped! I'm not capable
 // all - a real, immediately usable way around it timing out again, not
 // just "hope it's faster this time," and worth showing rather than making
 // someone run a second command just to go look it up while they're
-// already stuck. Also links out to Gemini's own Downdetector page - a
-// slow/timed-out call is often (not always) a sign Gemini itself is
-// having a bad moment, and this lets whoever's asking check that
-// themselves instead of just taking the bot's word for it.
-// `errorMessage` (optional) is interpretMessage()'s own `error` text for
-// this same timed-out/transient-failure call (lib/geminiCommand.js) -
-// appended so the sender sees the actual underlying reason (e.g. a real
-// 504 from Gemini vs. a plain client-side abort) alongside the friendlier
-// "took too long" framing, same reasoning as formatAiErrorReply below.
-// Omitted (falsy) just means interpretMessage() didn't have one to give.
-function formatAiTimeoutReply(errorMessage) {
-  const detail = errorMessage ? `\n\nGemini status:\nError message: ${errorMessage}` : '';
+// already stuck.
+// `error` (optional) is interpretMessage()'s own `error` detail for this
+// same timed-out/transient-failure call (lib/geminiCommand.js) -
+// `{ message, code, status }`, appended so the sender sees the actual
+// underlying reason (e.g. a real 503 UNAVAILABLE from Gemini itself vs. a
+// plain client-side abort) alongside the friendlier "took too long"
+// framing, same reasoning as formatAiErrorReply below. `status` (Google's
+// own short error code, e.g. "UNAVAILABLE") is only ever present for a
+// real server-side ApiError - a client-side AbortError has no status of
+// its own to show, so that line is only included when there is one.
+// Omitted entirely (falsy `error`) just means interpretMessage() didn't
+// have any detail to give.
+function formatAiTimeoutReply(error) {
+  let detail = '';
+  if (error && error.message) {
+    const statusLine = error.status ? `Gemini status: ${error.status}\n` : '';
+    detail = `\n\n${statusLine}Error message: ${error.message}`;
+  }
   return `Whoops, daydreamed a bit too long on that one - took too long to process. Try again in a bit, or use these typed commands:\n${COMMAND_PREFIX}in <name> - e.g. ${COMMAND_PREFIX}in John\n${COMMAND_PREFIX}out <name> - e.g. ${COMMAND_PREFIX}out John\n${COMMAND_PREFIX}paid - marks yourself paid (or ${COMMAND_PREFIX}paid John for someone else)${detail}`;
 }
 
 // Shown instead of AI_NOT_UNDERSTOOD_REPLY specifically when
 // interpretMessage() (lib/geminiCommand.js) genuinely failed to get a
-// usable Gemini response at all (its `{ error }` shape - a real thrown
-// error, e.g. a misconfigured/invalid API key, a malformed request, a
-// non-transient API failure) rather than Gemini answering but the
-// request being too uncertain to act on. Real bug report: these two
-// completely different situations - "I broke" versus "I don't
-// understand you" - used to look IDENTICAL to the sender, hiding a
-// genuine outage/misconfiguration behind a reply that reads like a user
-// mistake. Includes the raw error text directly - unlike
-// UNEXPECTED_ERROR_REPLY below, which deliberately hides internal detail
-// for a command-handler crash, this is specifically Gemini's own
+// usable Gemini response at all (its `{ error }` shape - `{ message,
+// code, status }`, a real thrown error, e.g. a misconfigured/invalid API
+// key, a malformed request, a non-transient API failure) rather than
+// Gemini answering but the request being too uncertain to act on. Real
+// bug report: these two completely different situations - "I broke"
+// versus "I don't understand you" - used to look IDENTICAL to the
+// sender, hiding a genuine outage/misconfiguration behind a reply that
+// reads like a user mistake. Includes the raw error text directly -
+// unlike UNEXPECTED_ERROR_REPLY below, which deliberately hides internal
+// detail for a command-handler crash, this is specifically Gemini's own
 // reported reason, which is exactly what whoever's running the bot needs
 // to diagnose it (e.g. recognizing a bad/expired API key at a glance)
 // rather than having to go dig through server logs for it.
-function formatAiErrorReply(errorMessage) {
-  return `Ooh, hit a snag talking to Gemini: "${errorMessage}"\n\nTry again in a bit, or use typed commands - see ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin). Let an admin know if it keeps happening.`;
+function formatAiErrorReply(error) {
+  const statusLine = error.status ? `Gemini status: ${error.status}\n` : '';
+  return `Ooh, hit a snag talking to Gemini:\n${statusLine}Error message: ${error.message}\n\nTry again in a bit, or use typed commands - see ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin). Let an admin know if it keeps happening.`;
 }
 
 // Shown when a command handler (typed or AI-dispatched) throws instead of

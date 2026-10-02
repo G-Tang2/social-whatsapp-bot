@@ -64,11 +64,16 @@ function fakeClientThatTimesOut() {
 // misleading "I'm not capable of doing that" reply because a persistent
 // 504 after retries fell through to the generic null/failure branch
 // instead of being treated the same as a client-side timeout.
-function fakeClientThatFailsWithApiError(status, message) {
+// `googleStatus` (optional, default 'ERROR') is Google's own short error
+// code (e.g. "UNAVAILABLE" for a real 503 overload response) - distinct
+// from `status`, the plain numeric HTTP status. Defaulted rather than
+// required since most tests here only care about the numeric status/
+// message, not this extra detail.
+function fakeClientThatFailsWithApiError(status, message, googleStatus = 'ERROR') {
   return {
     models: {
       generateContent: async () => {
-        const err = new Error(JSON.stringify({ error: { code: status, message, status: 'ERROR' } }));
+        const err = new Error(JSON.stringify({ error: { code: status, message, status: googleStatus } }));
         err.name = 'ApiError';
         err.status = status;
         throw err;
@@ -201,36 +206,67 @@ test('interpretMessage: returns null when "actions" is an empty array', async ()
   assert.equal(result, null);
 });
 
-test('interpretMessage: returns { actions: [], error: message } (not null, not a throw) when the API call itself fails, so callers can show the real reason instead of a generic "I don\'t understand"', async () => {
+test('interpretMessage: returns { actions: [], error: { message } } (not null, not a throw) when the API call itself fails, so callers can show the real reason instead of a generic "I don\'t understand"', async () => {
   const client = fakeClientThatThrows('network error');
   const result = await interpretMessage('put me down', { client });
-  assert.deepEqual(result, { actions: [], error: 'network error' });
+  // A plain Error (not the SDK's own ApiError) never carries a code/status
+  // of its own - see extractErrorDetails' own doc comment.
+  assert.deepEqual(result, { actions: [], error: { message: 'network error' } });
 });
 
-test('interpretMessage: returns { actions: [], timedOut: true, error } (not null, not a throw) when the call was aborted for taking too long, so callers can tell this apart from every other failure and still show the real reason', async () => {
+test('interpretMessage: returns { actions: [], timedOut: true, error: { message } } (not null, not a throw) when the call was aborted for taking too long, so callers can tell this apart from every other failure and still show the real reason', async () => {
   const client = fakeClientThatTimesOut();
   const result = await interpretMessage('put me down', { client });
-  assert.deepEqual(result, { actions: [], timedOut: true, error: 'The operation was aborted' });
+  assert.deepEqual(result, { actions: [], timedOut: true, error: { message: 'The operation was aborted' } });
 });
 
-test('interpretMessage: also returns { actions: [], timedOut: true, error } for a persistent server-side 504 (Gemini itself timing out after retries), not just a client-side abort', async () => {
+test('interpretMessage: also returns { actions: [], timedOut: true, error: { message, code, status } } for a persistent server-side 504 (Gemini itself timing out after retries), not just a client-side abort', async () => {
   const client = fakeClientThatFailsWithApiError(504, 'Deadline expired before operation could complete.');
   const result = await interpretMessage('add me Milo t, Wesley, lee, Tyler, +1, Patrick', { client });
-  assert.deepEqual(result, { actions: [], timedOut: true, error: 'Deadline expired before operation could complete.' });
+  assert.deepEqual(result, {
+    actions: [],
+    timedOut: true,
+    error: { message: 'Deadline expired before operation could complete.', code: 504, status: 'ERROR' },
+  });
 });
 
-test('interpretMessage: treats every transient HTTP status the SDK itself already retried (408/429/500/502/503/504) as timedOut: true after retries are exhausted, with the real error message attached', async () => {
+// Real production log: a genuine 503 overload from Gemini itself -
+// confirms extractErrorDetails() pulls out Google's own short status
+// code ("UNAVAILABLE"), not just the numeric HTTP status or the message.
+test('interpretMessage: a real 503 "UNAVAILABLE" overload response carries its own Google status code through, not just the numeric HTTP status', async () => {
+  const client = fakeClientThatFailsWithApiError(
+    503,
+    'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.',
+    'UNAVAILABLE'
+  );
+  const result = await interpretMessage('put me down', { client });
+  assert.deepEqual(result, {
+    actions: [],
+    timedOut: true,
+    error: {
+      message: 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.',
+      code: 503,
+      status: 'UNAVAILABLE',
+    },
+  });
+});
+
+test('interpretMessage: treats every transient HTTP status the SDK itself already retried (408/429/500/502/503/504) as timedOut: true after retries are exhausted, with the real error detail attached', async () => {
   for (const status of [408, 429, 500, 502, 503, 504]) {
     const client = fakeClientThatFailsWithApiError(status, 'transient failure');
     const result = await interpretMessage('put me down', { client });
-    assert.deepEqual(result, { actions: [], timedOut: true, error: 'transient failure' }, `status ${status} should be treated as timedOut`);
+    assert.deepEqual(
+      result,
+      { actions: [], timedOut: true, error: { message: 'transient failure', code: status, status: 'ERROR' } },
+      `status ${status} should be treated as timedOut`
+    );
   }
 });
 
-test('interpretMessage: still returns { actions: [], error: message } for a non-transient server-side error (e.g. a 400 bad request), not timedOut: true', async () => {
+test('interpretMessage: still returns { actions: [], error: { message, code, status } } for a non-transient server-side error (e.g. a 400 bad request), not timedOut: true', async () => {
   const client = fakeClientThatFailsWithApiError(400, 'API key not valid');
   const result = await interpretMessage('put me down', { client });
-  assert.deepEqual(result, { actions: [], error: 'API key not valid' });
+  assert.deepEqual(result, { actions: [], error: { message: 'API key not valid', code: 400, status: 'ERROR' } });
 });
 
 test('interpretMessage: asks the SDK to retry transient failures (retryOptions.attempts > 1) rather than giving up on the first hiccup', async () => {
