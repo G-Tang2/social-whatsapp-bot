@@ -2133,7 +2133,13 @@ test('e2e: a live @-mention while !ai is off logs a diagnostic line instead of v
   );
 });
 
-test('e2e: a Gemini API failure does not crash, but still gets the same "I don\'t understand" reply (no reply is never OK for an @-mention)', async () => {
+// Real request: a genuine Gemini failure (bad API key, malformed request,
+// any non-timeout/non-transient error) used to collapse into the exact
+// same generic "I don't understand" reply as an honest "too uncertain to
+// guess" interpretation - completely hiding a real outage/misconfiguration
+// behind wording that reads like a user mistake. Now shows the actual
+// error text instead, so whoever's running the bot can tell at a glance.
+test('e2e: a Gemini API failure does not crash, and shows the real error message instead of the generic "I don\'t understand" reply', async () => {
   ai.setEnabled(GROUP_ID, true);
   setNextGeminiError('simulated network failure');
   fakeSockInstance.sentMessages.length = 0;
@@ -2141,7 +2147,9 @@ test('e2e: a Gemini API failure does not crash, but still gets the same "I don\'
   await deliver('put me down please', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
 
   assert.equal(fakeSockInstance.sentMessages.length, 1);
-  assert.match(fakeSockInstance.sentMessages[0].content.text, /not capable of doing that/i);
+  const replyText = fakeSockInstance.sentMessages[0].content.text;
+  assert.match(replyText, /simulated network failure/);
+  assert.doesNotMatch(replyText, /not capable of doing that/i);
 });
 
 test('e2e: a Gemini call that times out gets a "took too long, try again" reply pointing to !help/!admin for typed commands, NOT the generic "not capable of doing that" one', async () => {

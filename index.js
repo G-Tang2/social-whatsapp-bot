@@ -811,6 +811,25 @@ const AI_NOT_UNDERSTOOD_REPLY = `Ooh, that one's got me stumped! I'm not capable
 // themselves instead of just taking the bot's word for it.
 const AI_TIMEOUT_REPLY = `Whoops, daydreamed a bit too long on that one - took too long to process. Try again in a bit, or use these typed commands:\n${COMMAND_PREFIX}in <name> - e.g. ${COMMAND_PREFIX}in John\n${COMMAND_PREFIX}out <name> - e.g. ${COMMAND_PREFIX}out John\n${COMMAND_PREFIX}paid - marks yourself paid (or ${COMMAND_PREFIX}paid John for someone else)\n\nSee ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) for the full list. If this keeps happening, Gemini itself might be having issues - check https://downdetector.com.au/status/googlegemini/`;
 
+// Shown instead of AI_NOT_UNDERSTOOD_REPLY specifically when
+// interpretMessage() (lib/geminiCommand.js) genuinely failed to get a
+// usable Gemini response at all (its `{ error }` shape - a real thrown
+// error, e.g. a misconfigured/invalid API key, a malformed request, a
+// non-transient API failure) rather than Gemini answering but the
+// request being too uncertain to act on. Real bug report: these two
+// completely different situations - "I broke" versus "I don't
+// understand you" - used to look IDENTICAL to the sender, hiding a
+// genuine outage/misconfiguration behind a reply that reads like a user
+// mistake. Includes the raw error text directly - unlike
+// UNEXPECTED_ERROR_REPLY below, which deliberately hides internal detail
+// for a command-handler crash, this is specifically Gemini's own
+// reported reason, which is exactly what whoever's running the bot needs
+// to diagnose it (e.g. recognizing a bad/expired API key at a glance)
+// rather than having to go dig through server logs for it.
+function formatAiErrorReply(errorMessage) {
+  return `Ooh, hit a snag talking to Gemini: "${errorMessage}"\n\nTry again in a bit, or use typed commands - see ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin). Let an admin know if it keeps happening.`;
+}
+
 // Shown when a command handler (typed or AI-dispatched) throws instead of
 // completing normally - a bug, a transient network failure talking to
 // WhatsApp/Gemini, whatever. Without this, the sender previously just got
@@ -1027,6 +1046,8 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   if (!dispatchable.length) {
     if (interpretation && interpretation.timedOut) {
       await reply(AI_TIMEOUT_REPLY);
+    } else if (interpretation && interpretation.error) {
+      await reply(formatAiErrorReply(interpretation.error));
     } else if (needsClarification.length) {
       // Only the first, even if the model returned more than one low-
       // confidence guess - one clarifying question per exchange keeps the

@@ -201,10 +201,10 @@ test('interpretMessage: returns null when "actions" is an empty array', async ()
   assert.equal(result, null);
 });
 
-test('interpretMessage: returns null (not a throw) when the API call itself fails', async () => {
+test('interpretMessage: returns { actions: [], error: message } (not null, not a throw) when the API call itself fails, so callers can show the real reason instead of a generic "I don\'t understand"', async () => {
   const client = fakeClientThatThrows('network error');
   const result = await interpretMessage('put me down', { client });
-  assert.equal(result, null);
+  assert.deepEqual(result, { actions: [], error: 'network error' });
 });
 
 test('interpretMessage: returns { actions: [], timedOut: true } (not null, not a throw) when the call was aborted for taking too long, so callers can tell this apart from every other failure', async () => {
@@ -227,10 +227,10 @@ test('interpretMessage: treats every transient HTTP status the SDK itself alread
   }
 });
 
-test('interpretMessage: still returns plain null for a non-transient server-side error (e.g. a 400 bad request), not timedOut: true', async () => {
+test('interpretMessage: still returns { actions: [], error: message } for a non-transient server-side error (e.g. a 400 bad request), not timedOut: true', async () => {
   const client = fakeClientThatFailsWithApiError(400, 'API key not valid');
   const result = await interpretMessage('put me down', { client });
-  assert.equal(result, null);
+  assert.deepEqual(result, { actions: [], error: 'API key not valid' });
 });
 
 test('interpretMessage: asks the SDK to retry transient failures (retryOptions.attempts > 1) rather than giving up on the first hiccup', async () => {

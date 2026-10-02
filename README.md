@@ -1218,23 +1218,33 @@ current state. Every group starts off - each one opts in individually.
 - **Always replies to an @-mention - never silent, never a swallowed
   error.** Every case that doesn't end in a dispatched command, a
   clarifying question, or an off-topic reply gets some reply, never
-  silence - not list-related with no offTopicReply from the model, or the
-  Gemini API call itself failing/returning something unparseable, gets a
-  plain "I'm not capable of doing that" reply, but a call that
-  specifically took too long to respond gets its own, more accurate
-  "took too long to process - try again" reply instead, spelling out
-  `!in`/`!out`/`!paid` with real examples right there (rather than just
-  pointing to `!help`) since those never touch Gemini at all - a real,
-  immediately usable way around it timing out again - plus a link to
-  Gemini's own Downdetector page
-  (`https://downdetector.com.au/status/googlegemini/`) in case Gemini
-  itself is having a bad moment. The request may well have been perfectly
-  understandable, it just didn't get answered in time, so "I'm not
-  capable of doing that" would be misleading there, and a typed command
-  sidesteps Gemini entirely if it's having a slow moment. A failure is
-  still logged to the console for the operator either way, but the sender
-  in the group always hears back rather than being left wondering whether
-  the bot even saw their message.
+  silence. Three genuinely different situations get three different
+  replies, rather than collapsing into one generic one:
+  - Not list-related, with no offTopicReply from the model, or a response
+    that came back but didn't parse/match the expected shape, gets the
+    plain "I'm not capable of doing that" reply - an honest "too uncertain
+    to act on," not a real failure.
+  - A call that specifically took too long to respond (or Gemini itself
+    returning a persistent server error after retries) gets its own, more
+    accurate "took too long to process - try again" reply instead,
+    spelling out `!in`/`!out`/`!paid` with real examples right there
+    (rather than just pointing to `!help`) since those never touch Gemini
+    at all, plus a link to Gemini's own Downdetector page
+    (`https://downdetector.com.au/status/googlegemini/`) in case Gemini
+    itself is having a bad moment. The request may well have been
+    perfectly understandable, it just didn't get answered in time, so
+    "I'm not capable of doing that" would be misleading there.
+  - A genuine Gemini call failure (a misconfigured/invalid API key, a
+    malformed request, any other non-transient error) gets a reply that
+    includes Gemini's own actual error text, rather than either of the
+    above - a real failure is otherwise indistinguishable from an honest
+    "I don't understand you," which hides something an admin actually
+    needs to go fix (e.g. a bad API key) behind wording that reads like a
+    user mistake.
+
+  A failure is still logged to the console for the operator either way,
+  but the sender in the group always hears back rather than being left
+  wondering whether the bot even saw their message.
 
 See `lib/geminiCommand.js` for the actual prompt/schema if you want to
 tune its behavior, and `GEMINI_MODEL` in `.env.example` if you want to use
