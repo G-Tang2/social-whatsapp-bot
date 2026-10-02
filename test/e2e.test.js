@@ -226,7 +226,7 @@ const adminCheck = require('../lib/adminCheck'); // invalidate() - see the taggi
 // call time rather than holding their own destructured copy.
 const { commands, rawCommands } = require('../commands');
 const { COMMAND_PREFIX } = require('../lib/config');
-const { formatList } = require('../lib/helpers');
+const { formatList, SECTION_DIVIDER } = require('../lib/helpers');
 
 let fakeMsgCounter = 0;
 function makeMsg({ from, text, fromMe = false, mentions, quotedParticipant, quotedMessageText, messageTimestamp }) {
@@ -2150,6 +2150,12 @@ test('e2e: a Gemini API failure does not crash, and shows the real error message
   const replyText = fakeSockInstance.sentMessages[0].content.text;
   assert.match(replyText, /simulated network failure/);
   assert.doesNotMatch(replyText, /not capable of doing that/i);
+  // Real request: a visual divider ahead of the error detail - see
+  // formatAiErrorReply (index.js).
+  assert.ok(
+    replyText.includes(`${SECTION_DIVIDER}\nError message: simulated network failure`),
+    `expected a divider directly above "Error message:", got: ${JSON.stringify(replyText)}`
+  );
 });
 
 test('e2e: a Gemini call that times out gets a "took too long, try again" reply with the real error message, NOT the generic "not capable of doing that" one', async () => {
@@ -2172,7 +2178,11 @@ test('e2e: a Gemini call that times out gets a "took too long, try again" reply 
   assert.match(replyText, new RegExp(`${COMMAND_PREFIX}paid - marks yourself paid`));
   // Real request: show the real error message even for a timeout, not just
   // the friendlier framing above - see formatAiTimeoutReply (index.js).
-  assert.match(replyText, /The operation was aborted/);
+  // Preceded by a visual divider, same as formatAiErrorReply.
+  assert.ok(
+    replyText.includes(`${SECTION_DIVIDER}\nError message: The operation was aborted`),
+    `expected a divider directly above "Error message:", got: ${JSON.stringify(replyText)}`
+  );
 });
 
 // Regression coverage for the "last seen" About/status heartbeat

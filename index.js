@@ -261,7 +261,7 @@ const P = require('pino');
 const qrcode = require('qrcode-terminal');
 
 const config = require('./lib/config');
-const { getMessageText, formatList, getMentionedJids, getNonBotMentions, getQuotedParticipant, getQuotedMessageText, formatClarifyingQuestion, stripMentionTokens, substituteMentionNames, buildQuotePreviewMsg, normalizeJid, LITERAL_BOT_MENTION_REGEX } = require('./lib/helpers');
+const { getMessageText, formatList, SECTION_DIVIDER, getMentionedJids, getNonBotMentions, getQuotedParticipant, getQuotedMessageText, formatClarifyingQuestion, stripMentionTokens, substituteMentionNames, buildQuotePreviewMsg, normalizeJid, LITERAL_BOT_MENTION_REGEX } = require('./lib/helpers');
 const { parseListSections } = require('./lib/listParser');
 const { getRegularPlayers, getUndoableState, saveUndoSnapshot, getUndoSnapshot, restoreUndoableState } = require('./store');
 const { isGroupAdmin, getParticipantName } = require('./lib/adminCheck');
@@ -821,7 +821,7 @@ function formatAiTimeoutReply(error) {
   let detail = '';
   if (error && error.message) {
     const statusLine = error.status ? `Gemini status: ${error.status}\n` : '';
-    detail = `\n\n${statusLine}Error message: ${error.message}`;
+    detail = `\n\n${SECTION_DIVIDER}\n${statusLine}Error message: ${error.message}`;
   }
   return `Whoops, daydreamed a bit too long on that one - took too long to process. Try again in a bit, or use these typed commands:\n${COMMAND_PREFIX}in <name> - e.g. ${COMMAND_PREFIX}in John\n${COMMAND_PREFIX}out <name> - e.g. ${COMMAND_PREFIX}out John\n${COMMAND_PREFIX}paid - marks yourself paid (or ${COMMAND_PREFIX}paid John for someone else)${detail}`;
 }
@@ -843,7 +843,7 @@ function formatAiTimeoutReply(error) {
 // rather than having to go dig through server logs for it.
 function formatAiErrorReply(error) {
   const statusLine = error.status ? `Gemini status: ${error.status}\n` : '';
-  return `Ooh, hit a snag talking to Gemini:\n${statusLine}Error message: ${error.message}\n\nTry again in a bit, or use typed commands - see ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin). Let an admin know if it keeps happening.`;
+  return `Ooh, hit a snag talking to Gemini:\n${SECTION_DIVIDER}\n${statusLine}Error message: ${error.message}\n\nTry again in a bit, or use typed commands - see ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin). Let an admin know if it keeps happening.`;
 }
 
 // Shown when a command handler (typed or AI-dispatched) throws instead of
