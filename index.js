@@ -816,8 +816,8 @@ const AI_NOT_UNDERSTOOD_REPLY = `Ooh, that one's got me stumped! I'm not capable
 // "took too long" framing, same reasoning as formatAiErrorReply below.
 // Omitted (falsy) just means interpretMessage() didn't have one to give.
 function formatAiTimeoutReply(errorMessage) {
-  const detail = errorMessage ? `\n\n(Gemini said: "${errorMessage}")` : '';
-  return `Whoops, daydreamed a bit too long on that one - took too long to process. Try again in a bit, or use these typed commands:\n${COMMAND_PREFIX}in <name> - e.g. ${COMMAND_PREFIX}in John\n${COMMAND_PREFIX}out <name> - e.g. ${COMMAND_PREFIX}out John\n${COMMAND_PREFIX}paid - marks yourself paid (or ${COMMAND_PREFIX}paid John for someone else)\n\nSee ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) for the full list. If this keeps happening, Gemini itself might be having issues - check https://downdetector.com.au/status/googlegemini/${detail}`;
+  const detail = errorMessage ? `\n\nError message: ${errorMessage}` : '';
+  return `Whoops, daydreamed a bit too long on that one - took too long to process. Try again in a bit, or use these typed commands:\n${COMMAND_PREFIX}in <name> - e.g. ${COMMAND_PREFIX}in John\n${COMMAND_PREFIX}out <name> - e.g. ${COMMAND_PREFIX}out John\n${COMMAND_PREFIX}paid - marks yourself paid (or ${COMMAND_PREFIX}paid John for someone else)${detail}`;
 }
 
 // Shown instead of AI_NOT_UNDERSTOOD_REPLY specifically when

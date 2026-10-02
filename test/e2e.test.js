@@ -2152,7 +2152,7 @@ test('e2e: a Gemini API failure does not crash, and shows the real error message
   assert.doesNotMatch(replyText, /not capable of doing that/i);
 });
 
-test('e2e: a Gemini call that times out gets a "took too long, try again" reply pointing to !help/!admin for typed commands, NOT the generic "not capable of doing that" one', async () => {
+test('e2e: a Gemini call that times out gets a "took too long, try again" reply with the real error message, NOT the generic "not capable of doing that" one', async () => {
   ai.setEnabled(GROUP_ID, true);
   setNextGeminiTimeout();
   fakeSockInstance.sentMessages.length = 0;
@@ -2163,9 +2163,7 @@ test('e2e: a Gemini call that times out gets a "took too long, try again" reply 
   const replyText = fakeSockInstance.sentMessages[0].content.text;
   assert.match(replyText, /took too long/i);
   assert.match(replyText, /try again/i);
-  assert.match(replyText, new RegExp(`${COMMAND_PREFIX}help`));
   assert.doesNotMatch(replyText, /not capable of doing that/i);
-  assert.match(replyText, /https:\/\/downdetector\.com\.au\/status\/googlegemini\//);
   // Real request: spell out !in/!out/!paid with actual examples here,
   // rather than just pointing to !help and making someone run a second
   // command to look them up while they're already stuck.
