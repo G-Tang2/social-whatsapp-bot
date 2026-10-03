@@ -58,6 +58,7 @@ let socketCreateCount = 0;
 function buildFakeSock() {
   const sentMessages = [];
   const deleted = [];
+  const kicked = [];
   const reactions = [];
   const statusUpdates = [];
   const presenceUpdates = [];
@@ -76,6 +77,7 @@ function buildFakeSock() {
   const sock = {
     sentMessages,
     deleted,
+    kicked,
     reactions,
     statusUpdates,
     presenceUpdates,
@@ -100,6 +102,10 @@ function buildFakeSock() {
       }
       sentMessages.push({ jid, content, options });
       return { key: { id: `fake-${sentMessages.length}` } };
+    },
+    groupParticipantsUpdate: async (jid, participantIds, action) => {
+      kicked.push({ jid, participantIds, action });
+      return participantIds.map((id) => ({ status: '200', jid: id }));
     },
     groupMetadata: async (jid) => ({
       id: jid,
@@ -2370,6 +2376,59 @@ test('e2e: !spamfilter off actually turns off deletion for that group, and !spam
 
   await deliver('check out this guaranteed profit https://sketchy-coin.xyz/abc', { from: 'alex@s.whatsapp.net', type: 'notify' });
   assert.equal(fakeSockInstance.deleted.length, 1, 'spam should be deleted again once turned back on');
+});
+
+// --- Real request: let an admin opt the group into also removing a spam
+// sender from the group, not just deleting their message (!autokick,
+// commands/autokick.js) - ON by default, same "every group protected
+// automatically" reasoning as spam filtering itself. ---
+
+test('e2e: a spam message gets its sender removed from the group by default, not just deleted', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+  fakeSockInstance.deleted.length = 0;
+  fakeSockInstance.kicked.length = 0;
+
+  await deliver('check out this guaranteed profit https://sketchy-coin.xyz/abc', { from: 'alex@s.whatsapp.net', type: 'notify' });
+
+  assert.equal(fakeSockInstance.deleted.length, 1, 'expected the spam message to have been deleted');
+  assert.equal(fakeSockInstance.kicked.length, 1, 'expected the sender to have been removed');
+  assert.deepEqual(fakeSockInstance.kicked[0].participantIds, ['alex@s.whatsapp.net']);
+  assert.equal(fakeSockInstance.kicked[0].action, 'remove');
+});
+
+test('e2e: !autokick off stops the sender from being removed while deletion still happens, and !autokick on restores it', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+  fakeSockInstance.deleted.length = 0;
+  fakeSockInstance.kicked.length = 0;
+
+  await deliver('!autokick off', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('check out this guaranteed profit https://sketchy-coin.xyz/abc', { from: 'alex@s.whatsapp.net', type: 'notify' });
+  assert.equal(fakeSockInstance.deleted.length, 1, 'the message should still be deleted while only autokick is off');
+  assert.equal(fakeSockInstance.kicked.length, 0, 'the sender should NOT be removed while this group has opted out of autokick');
+
+  await deliver('!autokick on', { from: 'admin@s.whatsapp.net', type: 'notify' });
+  fakeSockInstance.deleted.length = 0;
+  fakeSockInstance.kicked.length = 0;
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('check out this guaranteed profit https://sketchy-coin.xyz/abc', { from: 'alex@s.whatsapp.net', type: 'notify' });
+  assert.equal(fakeSockInstance.kicked.length, 1, 'the sender should be removed again once autokick is turned back on');
+});
+
+// Same reasoning as the matching catch-up deletion test above - a kick is
+// just as safe to attempt regardless of timing as a delete is, so it
+// isn't skipped for an 'append' redelivery either.
+test('e2e: a spam link arriving as a catch-up ("append") redelivery still gets its sender removed, not just deleted', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+  fakeSockInstance.deleted.length = 0;
+  fakeSockInstance.kicked.length = 0;
+
+  await deliver('check out this guaranteed profit https://sketchy-coin.xyz/abc', { from: 'alex@s.whatsapp.net', type: 'append' });
+
+  assert.equal(fakeSockInstance.deleted.length, 1);
+  assert.equal(fakeSockInstance.kicked.length, 1, 'expected the sender to have been removed even on a catch-up redelivery');
 });
 
 // Regression coverage for the multi-line command-splitting fix in

@@ -10,6 +10,7 @@ const { getUndoableState, saveUndoSnapshot } = require('../store');
 const listCommands = require('./list');
 const adminCommands = require('./admin');
 const { handleSpamfilter } = require('./spamfilter');
+const { handleAutokick } = require('./autokick');
 const { handleWelcome } = require('./welcome');
 const { handleAi } = require('./ai');
 const { handleAutonewlist } = require('./autonewlist');
@@ -81,6 +82,7 @@ const rawCommands = {
   [`${COMMAND_PREFIX}update`]: adminCommands.handleUpdate,
 
   [`${COMMAND_PREFIX}spamfilter`]: handleSpamfilter,
+  [`${COMMAND_PREFIX}autokick`]: handleAutokick,
   [`${COMMAND_PREFIX}welcome`]: handleWelcome,
   [`${COMMAND_PREFIX}ai`]: handleAi,
   [`${COMMAND_PREFIX}autonewlist`]: handleAutonewlist,

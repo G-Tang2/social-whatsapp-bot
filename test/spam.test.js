@@ -30,6 +30,28 @@ test('spam: isEnabled defaults to true (on by default) and setEnabled persists b
   assert.equal(spam.isEnabled(groupId), true);
 });
 
+test('spam: isAutoKickEnabled defaults to true (on by default) and setAutoKickEnabled persists both ways', () => {
+  const groupId = freshGroupId();
+  // A group that's never touched !autokick gets this automatically too.
+  assert.equal(spam.isAutoKickEnabled(groupId), true);
+  spam.setAutoKickEnabled(groupId, false);
+  assert.equal(spam.isAutoKickEnabled(groupId), false);
+  spam.setAutoKickEnabled(groupId, true);
+  assert.equal(spam.isAutoKickEnabled(groupId), true);
+});
+
+// Real request: autoKick is deliberately independent of `enabled` - a
+// group should be able to turn one off without affecting the other.
+test('spam: setAutoKickEnabled does NOT affect isEnabled, and vice versa', () => {
+  const groupId = freshGroupId();
+  spam.setAutoKickEnabled(groupId, false);
+  assert.equal(spam.isEnabled(groupId), true, 'turning autokick off should leave deletion untouched');
+
+  const groupId2 = freshGroupId();
+  spam.setEnabled(groupId2, false);
+  assert.equal(spam.isAutoKickEnabled(groupId2), true, 'turning deletion off should leave autokick untouched');
+});
+
 test('spam: isSpamMessage (rule 2 - finance spam) requires BOTH a link and a keyword', () => {
   assert.equal(spam.isSpamMessage('check out this bitcoin opportunity https://sketchy.xyz/abc'), true);
   assert.equal(spam.isSpamMessage('just a link https://example.com'), false);

@@ -31,6 +31,7 @@ const { formatList } = require('../lib/helpers');
 const listCommands = require('../commands/list');
 const adminCommands = require('../commands/admin');
 const { handleSpamfilter } = require('../commands/spamfilter');
+const { handleAutokick } = require('../commands/autokick');
 const { handleWelcome } = require('../commands/welcome');
 const { handleAi } = require('../commands/ai');
 const { handleAutonewlist } = require('../commands/autonewlist');
@@ -3503,6 +3504,32 @@ test('handleSpamfilter: on by default, off/on toggle requires admin and always r
   const adminTurnOn = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'on' });
   await handleSpamfilter(adminTurnOn.ctx);
   assert.equal(spam.isEnabled(groupId), true);
+  assert.match(adminTurnOn.replies[0], /turned \*on\*/);
+});
+
+test('handleAutokick: on by default, off/on toggle requires admin and always replies', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  // A fresh group - never touched !autokick - already has it on.
+  const status = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
+  await handleAutokick(status.ctx);
+  assert.match(status.replies[0], /ON/);
+  assert.equal(spam.isAutoKickEnabled(groupId), true);
+
+  const nonAdminTry = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: 'off' });
+  await handleAutokick(nonAdminTry.ctx);
+  assert.match(nonAdminTry.replies[0], /Only a group admin/);
+  assert.equal(spam.isAutoKickEnabled(groupId), true);
+
+  const adminTurnOff = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'off' });
+  await handleAutokick(adminTurnOff.ctx);
+  assert.equal(spam.isAutoKickEnabled(groupId), false);
+  assert.match(adminTurnOff.replies[0], /turned \*off\*/);
+
+  const adminTurnOn = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'on' });
+  await handleAutokick(adminTurnOn.ctx);
+  assert.equal(spam.isAutoKickEnabled(groupId), true);
   assert.match(adminTurnOn.replies[0], /turned \*on\*/);
 });
 

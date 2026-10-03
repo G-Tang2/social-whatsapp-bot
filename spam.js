@@ -21,16 +21,26 @@
 // moderation.js, which blocks specific *entries* on the signup list, not
 // general chat.
 //
-// IMPORTANT: actually deleting someone else's message in a WhatsApp group
-// requires the bot's own linked account to be a group admin - that's a
-// WhatsApp-level restriction, not something this code can work around. If
-// the bot isn't an admin, detection still runs but the delete call will
-// fail; index.js catches and logs that rather than crashing. See the
-// README's "Spam filtering" section.
+// Separately, `autoKick` (see isAutoKickEnabled/setAutoKickEnabled below,
+// toggled via !autokick - commands/autokick.js) controls whether the
+// SENDER of a deleted spam message is also removed from the group, not
+// just their message. Deliberately independent of `enabled` above (a
+// group could want deletion without the harsher removal, though not the
+// other way around - index.js only ever attempts a kick alongside an
+// actual deletion) - also ON by default, per the same "every group
+// protected automatically" reasoning: a spam sender has no legitimate
+// reason to still be in the group once their message has been flagged.
+//
+// IMPORTANT: actually deleting someone else's message (or removing them
+// from the group) in WhatsApp requires the bot's own linked account to be
+// a group admin - that's a WhatsApp-level restriction, not something this
+// code can work around. If the bot isn't an admin, detection still runs
+// but the delete/remove calls will fail; index.js catches and logs that
+// rather than crashing. See the README's "Spam filtering" section.
 //
 // Shape on disk (data/spam.json):
 // {
-//   "<groupId>": { "enabled": true | false },
+//   "<groupId>": { "enabled": true | false, "autoKick": true | false },
 //   ...
 // }
 
@@ -95,6 +105,25 @@ function setEnabled(groupId, enabled) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = {};
   all[groupId].enabled = enabled;
+  writeAll(all);
+}
+
+// Whether a deleted spam message's SENDER is also removed from the group
+// - see the file-level comment above for how this relates to (and is
+// independent of) isEnabled. On by default, same "automatic protection"
+// reasoning as isEnabled - only an explicit !autokick off (which persists
+// `autoKick: false`) turns it off.
+function isAutoKickEnabled(groupId) {
+  const all = readAll();
+  if (!all[groupId] || all[groupId].autoKick === undefined) return true;
+  return !!all[groupId].autoKick;
+}
+
+// Flips the per-group auto-kick on/off switch.
+function setAutoKickEnabled(groupId, enabled) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = {};
+  all[groupId].autoKick = enabled;
   writeAll(all);
 }
 
@@ -195,5 +224,7 @@ function isSpamMessage(text) {
 module.exports = {
   isEnabled,
   setEnabled,
+  isAutoKickEnabled,
+  setAutoKickEnabled,
   isSpamMessage,
 };

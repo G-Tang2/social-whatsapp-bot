@@ -952,11 +952,31 @@ A few things worth knowing about how this works:
   the group's perspective (nothing visibly happens) and the console logs
   why, so make the bot's account a group admin if you want this feature to
   actually do anything.
-- **No per-message notice, and no separate offender tracking.** This is
-  intentionally simple - it deletes matching messages and nothing else. It
-  doesn't warn the sender, doesn't count repeat offenses, and doesn't
-  remove anyone from the group. If a group needs stronger handling of
-  repeat spammers, that's a manual admin call for now.
+- **No per-message notice, and no separate offender tracking.** It doesn't
+  warn the sender and doesn't count repeat offenses - deleting the message
+  (and, by default, removing its sender - see below) is the extent of it.
+- **Runs the same way for a catch-up ('append') redelivery as for a live
+  message.** Unlike the admin commands that are intentionally NOT replayed
+  after a reconnect (see "Catching up after a network outage" below),
+  deleting (and removing) a spam sender carries no staleness risk either
+  way - the message is either still sitting in the chat, or already gone
+  and the attempt just fails harmlessly.
+
+**The sender also gets removed from the group by default, not just their
+message - `!autokick [on|off]`.** A separate per-group setting, also **ON
+by default**, same "every group protected automatically" reasoning as
+spam filtering itself. Whoever sent a message `!spamfilter` deleted is
+also removed from the group entirely, unless `!autokick off` is set for
+that group - in which case the message still gets deleted, the sender just
+isn't removed. Run bare `!autokick` to see the current state. Same
+requirements/exemptions as deletion: the bot's own WhatsApp account needs
+to be a group admin for the removal to actually go through (if it isn't,
+the message is still deleted but the sender stays - logged to the
+console), and group admins are never removed (or deleted) in the first
+place. Worth weighing before leaving this on: it's a much harsher action
+than deleting a message, and the same regex-based detection that triggers
+deletion also decides who gets removed - there's no human review step in
+between, so a false positive gets kicked, not just muted.
 
 ## Welcoming new members
 
@@ -1300,11 +1320,12 @@ during the gap is intentionally ignored:
   "not capable of doing that" reply, nothing - a caught-up redelivery
   gets no per-message feedback of any kind, live or not.
 - Spam filtering is the one exception to all of this - it runs for a
-  caught-up message exactly the same as a live one. Unlike re-running an
-  admin command against a group whose state may have moved on, deleting a
-  spam link carries no such risk either way: it's either still sitting in
-  the chat (worth deleting, however late) or already gone (the delete
-  attempt just fails harmlessly).
+  caught-up message exactly the same as a live one, including removing
+  the sender too if `!autokick` is on. Unlike re-running an admin command
+  against a group whose state may have moved on, deleting a spam link (or
+  removing its sender) carries no such risk either way: it's either still
+  sitting in the chat (worth acting on, however late) or already gone and
+  the attempt just fails harmlessly.
 
 This distinction comes from how WhatsApp/Baileys tag messages: a live,
 just-arrived message comes through as `'notify'`; a message the bot missed
@@ -2128,8 +2149,9 @@ database to set up. Back up the
 reinstalled/reset PC would lose both otherwise.
 
 There's a second JSON file, `data/spam.json`, for the spam-filtering feature
-(see "Spam filtering" above) - just a per-group on/off flag, no other data,
-since spam filtering doesn't need to remember anything between messages.
+(see "Spam filtering" above) - just two per-group on/off flags (deletion
+and `!autokick`), no other data, since spam filtering doesn't need to
+remember anything between messages.
 
 There's a third JSON file, `data/catchup_queue.json`, for the "catching up
 after a network outage" feature (see below) - it holds whatever batch of
@@ -2198,7 +2220,8 @@ one giant switch statement. The actual work is split across two folders:
   "Reminding inactive members" above).
 - `commands/` - one file per group of related commands (`list.js` for
   `!in`/`!out`/`!list`/`!paid`, `admin.js` for the list-management
-  commands, `inactivity.js`, `spamfilter.js`, `welcome.js`, `help.js`),
+  commands, `inactivity.js`, `spamfilter.js`, `autokick.js`, `welcome.js`,
+  `help.js`),
   plus `commands/index.js`, which aggregates them into the dispatch table
   the top-level `index.js` uses. Each handler takes a single `ctx` object
   (`{ sock, msg, groupId, senderId, senderName, argText, reply, postList,

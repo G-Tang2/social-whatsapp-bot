@@ -1372,6 +1372,23 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
       } catch (err) {
         console.error(`[bot] Failed to delete a suspected-spam message in ${groupId} (is the bot a group admin?):`, err.message);
       }
+      // Separate try/catch from the delete above - a failed delete (e.g.
+      // the bot isn't an admin) shouldn't also skip attempting the kick,
+      // and vice versa; each is independently logged so the operator can
+      // tell which one (if either) actually failed. See !autokick
+      // (commands/autokick.js) for the per-group on/off toggle - ON by
+      // default, same "every group protected automatically" reasoning as
+      // spam filtering itself (see spam.js's file-level comment).
+      if (spam.isAutoKickEnabled(groupId)) {
+        try {
+          // Removing a participant also requires the bot's own WhatsApp
+          // account to be a group admin - same restriction as deleting a
+          // message, and just as likely to throw if it isn't.
+          await sock.groupParticipantsUpdate(groupId, [senderId], 'remove');
+        } catch (err) {
+          console.error(`[bot] Failed to auto-kick a suspected-spam sender in ${groupId} (is the bot a group admin?):`, err.message);
+        }
+      }
       return; // deleted (or tried to) - don't treat it as a command
     }
   }

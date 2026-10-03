@@ -30,6 +30,7 @@
 function createFakeSock({ admins = [], participantIds = [], participantNames = {}, botJid = 'bot:7@s.whatsapp.net' } = {}) {
   const sentMessages = [];
   const deleted = [];
+  const kicked = [];
   const reactions = [];
   const presenceUpdates = [];
 
@@ -38,6 +39,7 @@ function createFakeSock({ admins = [], participantIds = [], participantNames = {
   const sock = {
     sentMessages,
     deleted,
+    kicked,
     reactions,
     presenceUpdates,
     user: { id: botJid },
@@ -56,6 +58,10 @@ function createFakeSock({ admins = [], participantIds = [], participantNames = {
       const entry = { jid, content, options };
       sentMessages.push(entry);
       return { key: { id: `fake-${sentMessages.length}` } };
+    },
+    groupParticipantsUpdate: async (jid, participantIds, action) => {
+      kicked.push({ jid, participantIds, action });
+      return participantIds.map((id) => ({ status: '200', jid: id }));
     },
     groupMetadata: async (jid) => ({
       id: jid,
