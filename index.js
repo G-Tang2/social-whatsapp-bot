@@ -1369,6 +1369,16 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
         // throws and the message is left in place (logged below so the
         // operator can tell why nothing happened).
         await sock.sendMessage(groupId, { delete: msg.key });
+        // Real bug report: the "[debug] incoming message" log above fires
+        // for EVERY message, before spam filtering even runs, so it can
+        // never say whether THIS particular message went on to get
+        // deleted - working that out meant re-deriving isSpamMessage()'s
+        // own logic by hand against each line. This labels the exact
+        // message (by its own text/sender, matchable against the earlier
+        // debug line) that actually got deleted, right when it happens.
+        if (DEBUG) {
+          console.log(`[debug] Deleted spam message in ${groupId} from ${senderId}: ${JSON.stringify(text)}`);
+        }
       } catch (err) {
         console.error(`[bot] Failed to delete a suspected-spam message in ${groupId} (is the bot a group admin?):`, err.message);
       }
@@ -1385,6 +1395,9 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
           // account to be a group admin - same restriction as deleting a
           // message, and just as likely to throw if it isn't.
           await sock.groupParticipantsUpdate(groupId, [senderId], 'remove');
+          if (DEBUG) {
+            console.log(`[debug] Auto-kicked suspected-spam sender ${senderId} from ${groupId}`);
+          }
         } catch (err) {
           console.error(`[bot] Failed to auto-kick a suspected-spam sender in ${groupId} (is the bot a group admin?):`, err.message);
         }
