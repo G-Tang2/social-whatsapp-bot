@@ -1299,15 +1299,19 @@ during the gap is intentionally ignored:
   low-confidence, is silently skipped too - no clarifying question, no
   "not capable of doing that" reply, nothing - a caught-up redelivery
   gets no per-message feedback of any kind, live or not.
-- Plain chat during the gap isn't checked for spam - that's about *when*
-  something happened, and a message resurfacing well after the fact would
-  misrepresent that.
+- Spam filtering is the one exception to all of this - it runs for a
+  caught-up message exactly the same as a live one. Unlike re-running an
+  admin command against a group whose state may have moved on, deleting a
+  spam link carries no such risk either way: it's either still sitting in
+  the chat (worth deleting, however late) or already gone (the delete
+  attempt just fails harmlessly).
 
 This distinction comes from how WhatsApp/Baileys tag messages: a live,
 just-arrived message comes through as `'notify'`; a message the bot missed
-and is now catching up on comes through as `'append'`. Whatever ultimately
-resolves to `!in`/`!out`/`!paid` is honored for both; everything else only
-for `'notify'`. If you're debugging with `DEBUG=true` (see the
+and is now catching up on comes through as `'append'`. Spam filtering runs
+for both regardless; whatever ultimately resolves to `!in`/`!out`/`!paid`
+is also honored for both; everything else only for `'notify'`. If you're
+debugging with `DEBUG=true` (see the
 troubleshooting section below), the debug log line for each incoming
 message includes this as `upsertType`, so you can tell the two cases
 apart.

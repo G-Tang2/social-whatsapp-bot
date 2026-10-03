@@ -1341,6 +1341,41 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
     return; // safe default: do nothing until ALLOWED_GROUPS is configured
   }
 
+  // Spam filtering (link + stock/crypto keyword) - checked here, before
+  // EVERYTHING else below (the multiline-commands check, the catch-up
+  // gate, command dispatch), so a spam message can never slip through any
+  // of those paths untouched. Real bug report: this used to sit AFTER the
+  // catch-up gate below, which meant a spam link redelivered as a
+  // catch-up ('append') message during a reconnect blip was never even
+  // checked - the gate returned first, every time, leaving it sitting in
+  // the group untouched. Unlike re-running an admin command against
+  // possibly-stale state (the catch-up gate's own reasoning for staying
+  // conservative there - see its comment below), deleting a spam message
+  // is safe regardless of timing: the message is either still sitting in
+  // the chat (delete it - still correct, however late) or already gone
+  // (the delete attempt just fails harmlessly, logged below), so there's
+  // no real staleness risk here to guard against. isSpamMessage() is a
+  // cheap synchronous regex check, so it runs first; isGroupAdmin()
+  // (which needs a network call, though a cached one - see
+  // lib/adminCheck.js) is only reached for messages that already look
+  // like spam, keeping the per-message overhead near zero for everyone
+  // else.
+  if (spam.isEnabled(groupId) && spam.isSpamMessage(text)) {
+    const senderIsAdmin = await isGroupAdmin(sock, groupId, senderId);
+    if (!senderIsAdmin) {
+      try {
+        // Deleting someone else's message in a group requires the bot's
+        // own WhatsApp account to be a group admin - if it isn't, this
+        // throws and the message is left in place (logged below so the
+        // operator can tell why nothing happened).
+        await sock.sendMessage(groupId, { delete: msg.key });
+      } catch (err) {
+        console.error(`[bot] Failed to delete a suspected-spam message in ${groupId} (is the bot a group admin?):`, err.message);
+      }
+      return; // deleted (or tried to) - don't treat it as a command
+    }
+  }
+
   // Remembers this as the group's most recently seen LIVE message, so a
   // later edit to it (see handleMessageEdit below) can be reprocessed with
   // the right senderId/senderName - a WhatsApp edit event doesn't carry
@@ -1493,12 +1528,13 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
   // @-mention - see handleAiMentionCatchUp above) are honored - the
   // self-service actions where missing one is most disruptive to someone
   // trying to join, leave, or pay. Everything else about a catch-up
-  // message - spam filtering and every other command, admin or
-  // otherwise - is intentionally NOT processed: re-running an admin
-  // command like !newlist or !limit after an arbitrary delay, or
-  // backdating someone's spam status against a message that's no longer
-  // really "now", would do more harm than the missed message itself. A
-  // real @-mention still goes through the SAME natural-language
+  // message - every other command, admin or otherwise - is intentionally
+  // NOT processed: re-running an admin command like !newlist or !limit
+  // after an arbitrary delay would do more harm than the missed message
+  // itself. (Spam filtering is NOT part of that "everything else" - it
+  // already ran, uniformly for every upsertType, further up - see its own
+  // comment above for why re-checking a message for spam carries none of
+  // that same staleness risk.) A real @-mention still goes through the SAME natural-language
   // interpretation the live path uses (so "@Snoopy sign me up" catches up
   // exactly like a typed "!in" would), but ONLY a resulting action that
   // resolves to "in"/"out"/"paid" at "high" confidence ever actually
@@ -1545,29 +1581,6 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
       }
     }
     return;
-  }
-
-  // Spam filtering (link + stock/crypto keyword) - checked before anything
-  // else below, so a deleted spam message doesn't get accidentally parsed
-  // as a command. isSpamMessage() is a cheap synchronous regex check, so it
-  // runs first; isGroupAdmin() (which needs a network call, though a cached
-  // one - see lib/adminCheck.js) is only reached for messages that already
-  // look like spam, keeping the per-message overhead near zero for
-  // everyone else.
-  if (spam.isEnabled(groupId) && spam.isSpamMessage(text)) {
-    const senderIsAdmin = await isGroupAdmin(sock, groupId, senderId);
-    if (!senderIsAdmin) {
-      try {
-        // Deleting someone else's message in a group requires the bot's
-        // own WhatsApp account to be a group admin - if it isn't, this
-        // throws and the message is left in place (logged below so the
-        // operator can tell why nothing happened).
-        await sock.sendMessage(groupId, { delete: msg.key });
-      } catch (err) {
-        console.error(`[bot] Failed to delete a suspected-spam message in ${groupId} (is the bot a group admin?):`, err.message);
-      }
-      return; // deleted (or tried to) - don't treat it as a command
-    }
   }
 
   // Record activity for EVERY real message in a moderated group - not just

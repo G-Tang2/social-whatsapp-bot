@@ -2336,6 +2336,24 @@ test('e2e: spam is deleted before ever being treated as a command', async () => 
   assert.equal(fakeSockInstance.sentMessages.length, before, 'no reply/list should be posted for a deleted spam message');
 });
 
+// Real request: a spam link redelivered as a catch-up ('append') message
+// (e.g. one that arrived during a brief reconnect) used to sail straight
+// past spam filtering entirely - the catch-up gate returned first, before
+// the spam check was ever reached, leaving it sitting in the group
+// untouched. Spam filtering now runs before that gate, for every
+// upsertType uniformly - unlike re-running an admin command against
+// possibly-stale state, deleting a spam message carries no such
+// staleness risk (it's either still there to delete, or already gone).
+test('e2e: a spam link arriving as a catch-up ("append") redelivery still gets deleted, not silently skipped', async () => {
+  fakeSockInstance.sentMessages.length = 0;
+  fakeSockInstance.deleted.length = 0;
+
+  await deliver('check out this guaranteed profit https://sketchy-coin.xyz/abc', { from: 'alex@s.whatsapp.net', type: 'append' });
+
+  assert.equal(fakeSockInstance.deleted.length, 1, 'expected the spam message to have been deleted even though it arrived as a catch-up redelivery');
+  assert.equal(fakeSockInstance.sentMessages.length, 0, 'no reply/list should be posted for a deleted spam message');
+});
+
 test('e2e: !spamfilter off actually turns off deletion for that group, and !spamfilter on restores it', async () => {
   fakeSockInstance.sentMessages.length = 0;
   fakeSockInstance.deleted.length = 0;
