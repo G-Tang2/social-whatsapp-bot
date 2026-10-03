@@ -326,6 +326,13 @@ let reconnectAttempts = 0;
 let reconnectTimer = null;
 const MAX_RECONNECT_DELAY_MS = 30000;
 
+// How much of a message's text the "[debug] incoming message" log (see
+// handleMessage below) previews before truncating with a "(+N more
+// chars)" marker - keeps one unusually long message (a pasted !update
+// list, a wall-of-text spam message) from pushing the rest of that line
+// off-screen, while still showing enough to recognize what it was.
+const DEBUG_TEXT_PREVIEW_LENGTH = 150;
+
 // Whether this file is actually the process entry point (`node index.js`,
 // including under pm2) rather than require()'d by a test file - every
 // e2e test requires index.js as a module to drive it against a FAKE
@@ -1276,23 +1283,28 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
     // anyway. An unconfigured bot (ALLOWED_GROUPS empty) logs nothing
     // here either - see the separate, always-on "unconfigured group"
     // console.log below for that bootstrapping case instead.
-    console.log('[debug] incoming message', {
-      chat: msg.key.remoteJid,
-      fromMe: msg.key.fromMe,
-      participant: msg.key.participant,
-      text: getMessageText(msg),
-      upsertType,
-      mentionedJid: getMentionedJids(msg),
-      quotedParticipant: getQuotedParticipant(msg),
-      botJid: sock?.user?.id,
-      // messageMentionsBot() (below) checks BOTH of these against
-      // mentionedJid/quotedParticipant - a mention or reply that only
-      // matches one form (e.g. the group sent the LID form but botLid is
-      // undefined/different) is exactly how a genuine @-mention or reply
-      // silently fails to trigger !ai.
-      botLid: sock?.user?.lid,
-      mentionsBot: messageMentionsBot(sock, msg, getMessageText(msg), msg.key.remoteJid),
-    });
+    // ONE line per message, not Node's default multi-line object dump -
+    // real pain point: scanning a backlog of these (e.g. piped through
+    // `pm2 logs`, which repeats its own "<id>|<name> |" prefix on every
+    // line) meant wading through 9 lines per message, most of them
+    // (botJid/botLid especially) IDENTICAL across every single one. Text
+    // is JSON.stringify()'d (quoted, escaped) rather than interpolated
+    // raw - a multi-line pasted !update list would otherwise print its
+    // own embedded newlines and break the one-line format - and
+    // truncated past DEBUG_TEXT_PREVIEW_LENGTH so one long message can't
+    // push everything after it off-screen. Field order puts the
+    // almost-always-relevant ones first (chat/upsertType/fromMe/
+    // participant/text) and the ones only needed for debugging a
+    // specific @-mention-matching failure last (mentionedJid/
+    // quotedParticipant/botJid/botLid/mentionsBot - see
+    // messageMentionsBot()'s own doc comment for what those are for).
+    const debugText = getMessageText(msg);
+    const debugTextPreview = debugText.length > DEBUG_TEXT_PREVIEW_LENGTH
+      ? `${JSON.stringify(debugText.slice(0, DEBUG_TEXT_PREVIEW_LENGTH))} (+${debugText.length - DEBUG_TEXT_PREVIEW_LENGTH} more chars)`
+      : JSON.stringify(debugText);
+    console.log(
+      `[debug] incoming message: chat=${msg.key.remoteJid} upsertType=${upsertType} fromMe=${msg.key.fromMe} participant=${msg.key.participant} text=${debugTextPreview} mentionedJid=${JSON.stringify(getMentionedJids(msg))} quotedParticipant=${getQuotedParticipant(msg)} botJid=${sock?.user?.id} botLid=${sock?.user?.lid} mentionsBot=${messageMentionsBot(sock, msg, debugText, msg.key.remoteJid)}`
+    );
   }
 
   // Learn the bot's own lid for this group from its own outgoing
