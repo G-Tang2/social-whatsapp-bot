@@ -2654,3 +2654,23 @@ test('e2e: "add nicholas and I to tournament" moves the sender (already social-o
   assert.equal(byName.Adrian.tournament, true, 'expected the sender to be moved into the tournament');
   assert.equal(byName.Nicholas.tournament, true);
 });
+
+test('e2e: "add nicholas and I to tournament" when the sender is NOT on the list yet adds them to the tournament', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  store.setTournamentEnabled(GROUP_ID, true);
+  store.setLimit(GROUP_ID, 36);
+  setNextGeminiResponse({
+    actions: [
+      { command: 'in', argText: 'tournament', confidence: 'high' },
+      { command: 'in', argText: 'tournament, nicholas', confidence: 'high' },
+    ],
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('@Snoopy add nicholas and I to tournament', { from: 'zed@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  const ev = store.getCurrentEvent(GROUP_ID);
+  const all = [...ev.entries, ...ev.waitlist];
+  assert.equal(all.find((e) => e.name === 'zed').tournament, true);
+  assert.equal(all.find((e) => e.name.toLowerCase() === 'nicholas').tournament, true);
+});
