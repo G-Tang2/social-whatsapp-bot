@@ -2628,3 +2628,29 @@ test('e2e: a logged-out close does NOT schedule a reconnect', async () => {
 
   assert.equal(socketCreateCount, before, 'a logged-out session must not trigger a reconnect attempt');
 });
+// Real report: "@Snoopy add nicholas and I to tournament", where the sender
+// (Adrian) is already on the list as social only and Nicholas is already in
+// the tournament - the sender should be moved up. The live model returns the
+// two actions the prompt asks for (sender alone + the named other), and this
+// drives both through the real pipeline.
+test('e2e: "add nicholas and I to tournament" moves the sender (already social-only on the list) into the tournament', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  store.setTournamentEnabled(GROUP_ID, true);
+  store.setLimit(GROUP_ID, 36); // mirrors the real list's Attendance (23/36) - not at capacity
+  store.addEntry(GROUP_ID, 'Nicholas', 'nick@s.whatsapp.net', false, true, true);
+  store.addEntry(GROUP_ID, 'Adrian', 'someoneelse@s.whatsapp.net', false, false, false);
+  setNextGeminiResponse({
+    actions: [
+      { command: 'in', argText: 'tournament', confidence: 'high' },
+      { command: 'in', argText: 'tournament, nicholas', confidence: 'high' },
+    ],
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('@Snoopy add nicholas and I to tournament', { from: 'adrian@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  const ev = store.getCurrentEvent(GROUP_ID);
+  const byName = Object.fromEntries([...ev.entries, ...ev.waitlist].map((e) => [e.name, e]));
+  assert.equal(byName.Adrian.tournament, true, 'expected the sender to be moved into the tournament');
+  assert.equal(byName.Nicholas.tournament, true);
+});
