@@ -945,12 +945,26 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
   const tournamentLeft = [];
   const rejected = [];
   const alreadyOut = [];
+  const addedSocialOnly = [];
   const tournamentPromoted = [];
 
   for (const name of names) {
     const result = leaveTournament(groupId, name);
     if (!result.ok) {
-      rejected.push(`${name.trim()} - not on the list`);
+      // Real request: "add Ron to social only" for someone not on the list
+      // at all should add them fresh as social only (the same outcome the
+      // bare-self fallback above gives the sender), not reject them - the
+      // request's intent is clearly "Ron should be on the list, not in the
+      // tournament", which a fresh social-only add satisfies. A name that
+      // fails moderation or is already on the waitlist still gets rejected.
+      const addResult = checkEntry(name.trim()).ok
+        ? addEntry(groupId, name.trim(), senderId, admin, false, false)
+        : { ok: false };
+      if (addResult.ok) {
+        addedSocialOnly.push({ name: name.trim(), waitlisted: addResult.waitlisted });
+      } else {
+        rejected.push(`${name.trim()} - not on the list`);
+      }
     } else if (result.alreadyOut) {
       alreadyOut.push(name.trim());
     } else {
@@ -966,6 +980,13 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
   const paidOutcome = await runPaidIfFlagged(groupId, senderId, senderName, paidFlag, rest ? names : null);
 
   if (!isCatchUp) {
+    for (const added of addedSocialOnly) {
+      await reply(
+        added.waitlisted
+          ? `${added.name} wasn't on the list, so I've added them instead (social only) - they're on the waitlist for now, promoted the moment a spot frees up.`
+          : `${added.name} wasn't on the list, so I've added them instead - social only, as asked.`
+      );
+    }
     if (rejected.length) {
       await reply(`Couldn't move to social only, alas:\n${rejected.join('\n')}`);
     }
@@ -982,12 +1003,12 @@ async function handleLeaveTournament(ctx, rest, paidFlag) {
     // reposted list (now showing them under "Social only" instead of "🏆
     // Tournament", with no (🏆 WL) tag) is proof enough, same as
     // any other successful, authorized change.
-    if (tournamentLeft.length || tournamentPromoted.length || paidOutcome.paid.length) {
+    if (tournamentLeft.length || addedSocialOnly.length || tournamentPromoted.length || paidOutcome.paid.length) {
       await postList();
     }
   }
 
-  return { command: 'out', senderName, argText, tournamentLeft, rejected, alreadyOut, tournamentPromoted, ...paidOutcome };
+  return { command: 'out', senderName, argText, tournamentLeft, addedSocialOnly, rejected, alreadyOut, tournamentPromoted, ...paidOutcome };
 }
 
 async function handleOut(ctx) {

@@ -1338,7 +1338,9 @@ test('handleOut: "tournament" combines with "paid", either order, same as !in - 
   ]);
 });
 
-test('handleOut: "tournament" on a name not on the list at all is rejected, not silently ignored', async () => {
+// Real request: "add Ron to social only" for someone not on the list at all
+// adds them fresh as social only (non-tournament), instead of rejecting.
+test('handleOut: "tournament" on a name not on the list at all adds them fresh as social only, not rejected', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.setTournamentEnabled(groupId, true);
@@ -1346,7 +1348,27 @@ test('handleOut: "tournament" on a name not on the list at all is rejected, not 
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: 'tournament Nobody' });
   const outcome = await listCommands.handleOut(ctx);
 
-  assert.deepEqual(outcome.rejected, ['Nobody - not on the list']);
+  assert.deepEqual(outcome.addedSocialOnly.map((a) => a.name), ['Nobody']);
+  assert.deepEqual(outcome.rejected, []);
+  const added = store.getCurrentEvent(groupId).entries.find((e) => e.name === 'Nobody');
+  assert.ok(added, 'expected Nobody to have been added to the list');
+  assert.equal(added.tournament, false);
+  assert.equal(added.self, false);
+  assert.match(replies.join('\n'), /Nobody wasn't on the list, so I've added them instead/);
+  assert.doesNotMatch(replies.join('\n'), /Couldn't move to social only/);
+});
+
+test('handleOut: "tournament" on a name that fails moderation (too long) is still rejected, not added', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({});
+  store.setTournamentEnabled(groupId, true);
+  const tooLong = 'X'.repeat(500);
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'other@s.whatsapp.net', argText: `tournament ${tooLong}` });
+  const outcome = await listCommands.handleOut(ctx);
+
+  assert.deepEqual(outcome.addedSocialOnly, []);
+  assert.deepEqual(outcome.rejected, [`${tooLong} - not on the list`]);
   assert.match(replies.join('\n'), /Couldn't move to social only/);
 });
 
