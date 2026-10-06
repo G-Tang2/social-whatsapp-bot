@@ -32,7 +32,6 @@ process.env.ALLOWED_GROUPS = GROUP_IDS.join(',');
 // only a few real milliseconds, instead of needing to wait a real day (the
 // default) or fake the clock.
 process.env.INACTIVITY_WARN_AFTER_DAYS = '0.000000001'; // ~0.09ms
-process.env.INACTIVITY_CHECK_INTERVAL_DAYS = '1'; // irrelevant here - both functions are called directly, not via the timer
 
 const activity = require('../activity');
 const { checkGroupInactivity, checkAllGroupsInactivity } = require('../lib/inactivityCheck');
@@ -193,4 +192,32 @@ test('checkAllGroupsInactivity isolates one group\'s failure from the rest of th
 
   await assert.doesNotReject(() => checkAllGroupsInactivity(sock));
   assert.equal((sentByGroup[okGroup] || []).length, 1, 'a failure in one group must not stop the rest of the sweep');
+});
+
+// The daily sweep is scheduled at a fixed local hour (8pm in the group's
+// TIMEZONE) - see index.js's scheduleDailyInactivityCheck(). These pin the
+// "later today vs. tomorrow" arithmetic, including a non-UTC zone.
+test('msUntilNextDailyTime: before 8pm today, the next run is later today', () => {
+  const { msUntilNextDailyTime } = require('../lib/inactivityCheck');
+  const now = new Date('2026-10-06T10:00:00Z'); // 10:00 UTC
+  assert.equal(msUntilNextDailyTime(now, 20, 'UTC'), 10 * 60 * 60 * 1000);
+});
+
+test('msUntilNextDailyTime: after 8pm today, the next run is tomorrow', () => {
+  const { msUntilNextDailyTime } = require('../lib/inactivityCheck');
+  const now = new Date('2026-10-06T21:00:00Z'); // 21:00 UTC
+  assert.equal(msUntilNextDailyTime(now, 20, 'UTC'), 23 * 60 * 60 * 1000);
+});
+
+test('msUntilNextDailyTime: exactly 8pm counts as already passed, so the next run is tomorrow', () => {
+  const { msUntilNextDailyTime } = require('../lib/inactivityCheck');
+  const now = new Date('2026-10-06T20:00:00Z');
+  assert.equal(msUntilNextDailyTime(now, 20, 'UTC'), 24 * 60 * 60 * 1000);
+});
+
+test('msUntilNextDailyTime: 8pm is measured in the given timezone, not UTC', () => {
+  const { msUntilNextDailyTime } = require('../lib/inactivityCheck');
+  // 08:00 UTC is 19:00 in Sydney (AEDT, UTC+11 in early October) - one hour to 8pm local.
+  const now = new Date('2026-10-06T08:00:00Z');
+  assert.equal(msUntilNextDailyTime(now, 20, 'Australia/Sydney'), 60 * 60 * 1000);
 });

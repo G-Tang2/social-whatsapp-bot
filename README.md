@@ -1560,17 +1560,17 @@ or off for that group, and `!inactivity off` to turn it back off.
 
 Once on, the bot tracks the last time each group member sent *any*
 message - regular chat, images, stickers, voice notes, all count, not just
-bot commands. On a periodic background check (every
-`INACTIVITY_CHECK_INTERVAL_DAYS`, default 1), anyone who's gone quiet for
+bot commands. Once a day at 8pm (in the configured `TIMEZONE`), anyone who's gone quiet for
 `INACTIVITY_WARN_AFTER_DAYS` (default 1) gets tagged in the group with a
 one-time reminder that they'll be considered for removal if they stay
 quiet for another `INACTIVITY_REMOVE_AFTER_DAYS` (default 1). Sending any
 message - even just replying "here!" - clears the warning and resets their
-clock, exactly like the reminder promises. Those three timing settings
+clock, exactly like the reminder promises. Those two timing settings
 live in `.env` (see `.env.example`), accept fractional values if you want
 finer control (e.g. `0.5` for 12 hours), and apply to every group that has
 the feature turned on - they're global tuning knobs, only the on/off
-switch itself is per group.
+switch itself is per group. The daily check itself always runs at 8pm, in
+the configured `TIMEZONE`.
 
 A few things worth knowing about how this works:
 

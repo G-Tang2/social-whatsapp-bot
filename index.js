@@ -270,7 +270,7 @@ const catchUpQueue = require('./lib/catchUpQueue');
 const { updateLastSeenStatus } = require('./lib/lastSeenStatus');
 const { checkVacancyReminders } = require('./lib/vacancyReminder');
 const { checkAutoNewlist } = require('./lib/autoNewlistScheduler');
-const { checkAllGroupsInactivity } = require('./lib/inactivityCheck');
+const { checkAllGroupsInactivity, msUntilNextDailyTime, INACTIVITY_CHECK_HOUR } = require('./lib/inactivityCheck');
 const { interpretMessage, formatTodayForPrompt, formatRegularPlayersForPrompt } = require('./lib/geminiCommand');
 const spam = require('./spam');
 const welcome = require('./welcome');
@@ -286,7 +286,6 @@ const {
   LAST_SEEN_STATUS_ENABLED,
   LAST_SEEN_STATUS_INTERVAL_MS,
   VACANCY_REMINDER_INTERVAL_MS,
-  INACTIVITY_CHECK_INTERVAL_MS,
   TIMEZONE,
   LIVE_MESSAGE_MAX_AGE_MS,
 } = config;
@@ -1853,13 +1852,24 @@ if (typeof autoNewlistTimer.unref === 'function') autoNewlistTimer.unref();
 // actually checks (each configured group with !inactivity on, for members
 // who've gone quiet) and why it's unconditional (the per-group
 // !inactivity toggle - default off - already gates all the real work).
-// Own dedicated cadence (INACTIVITY_CHECK_INTERVAL_MS, default once a
-// day) rather than reusing VACANCY_REMINDER_INTERVAL_MS - these
-// thresholds are measured in days, not minutes.
-const inactivityTimer = setInterval(() => {
-  checkAllGroupsInactivity(currentSock);
-}, INACTIVITY_CHECK_INTERVAL_MS);
-if (typeof inactivityTimer.unref === 'function') inactivityTimer.unref();
+// Runs once a day at INACTIVITY_CHECK_HOUR (8pm, in TIMEZONE) - a fixed
+// wall-clock time rather than a fixed interval from process start, so the
+// reminder lands at the same time every evening. Reschedules itself after
+// each run. If the socket happens to be down at that exact moment, retries
+// every few minutes until it's back, so a brief disconnect at 8pm doesn't
+// silently skip the whole day's reminder.
+function scheduleDailyInactivityCheck(delayMs) {
+  const timer = setTimeout(() => {
+    if (!currentSock) {
+      scheduleDailyInactivityCheck(5 * 60 * 1000);
+      return;
+    }
+    checkAllGroupsInactivity(currentSock);
+    scheduleDailyInactivityCheck(msUntilNextDailyTime(new Date(), INACTIVITY_CHECK_HOUR, TIMEZONE));
+  }, delayMs);
+  if (typeof timer.unref === 'function') timer.unref();
+}
+scheduleDailyInactivityCheck(msUntilNextDailyTime(new Date(), INACTIVITY_CHECK_HOUR, TIMEZONE));
 
 start().catch((err) => {
   console.error('[bot] Fatal error on startup:', err);
