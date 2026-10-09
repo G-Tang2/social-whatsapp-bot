@@ -2674,3 +2674,29 @@ test('e2e: "add nicholas and I to tournament" when the sender is NOT on the list
   assert.equal(all.find((e) => e.name === 'zed').tournament, true);
   assert.equal(all.find((e) => e.name.toLowerCase() === 'nicholas').tournament, true);
 });
+
+// Real report: "add Stella to the tournament and me to social only" - the
+// sender is a DIFFERENT person from the one being tournament-flagged, so
+// this is SELF+OTHERS SPLIT with two DIFFERENT outcomes (Stella tournament-
+// flagged, the sender not). The model used to drop the flag from Stella's
+// own action too, misreading "social only" (about the sender) as applying
+// to the whole message - see the TOURNAMENT FLAG/"social only" prompt fix.
+test('e2e: "add X to the tournament and me to social only" keeps X tournament-flagged and the sender social-only', async () => {
+  ai.setEnabled(GROUP_ID, true);
+  store.setTournamentEnabled(GROUP_ID, true);
+  store.setLimit(GROUP_ID, 36);
+  setNextGeminiResponse({
+    actions: [
+      { command: 'in', argText: 'tournament, Stella', confidence: 'high' },
+      { command: 'in', argText: '', confidence: 'high' },
+    ],
+  });
+  fakeSockInstance.sentMessages.length = 0;
+
+  await deliver('add Stella to the tournament and me to social only.', { from: 'yam@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+
+  const ev = store.getCurrentEvent(GROUP_ID);
+  const all = [...ev.entries, ...ev.waitlist];
+  assert.equal(all.find((e) => e.name === 'Stella').tournament, true, 'expected Stella to be in the tournament');
+  assert.equal(all.find((e) => e.name === 'yam').tournament, false, 'expected the sender to stay social only');
+});
