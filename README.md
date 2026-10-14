@@ -24,7 +24,7 @@ every change.
 | `!limit [number]` | viewing: anyone; changing: group admins only | Caps the max number of people on the list. Before any courts are set, defaults to 6; once `!courts` is set, auto-scales to courts × 6 instead (admins can still override with `!limit`). Lowering it below the current headcount moves the excess (most recently added, in order) onto the waitlist. `!limit off` removes the cap. With no number, shows the current limit without changing it |
 | `!allow <count>` | group admins only | Lets `count` extra people in from the front of the waitlist right now (e.g. `!allow 2`), bypassing the limit for that batch. The limit itself doesn't change, so attendance can end up over it until it naturally drains back down |
 | `!paymentlabel [text]` | viewing: anyone; changing: group admins only | Sets the payment-due section's header (e.g. `!paymentlabel $20 please`). With no text, shows the current header without changing it |
-| `!regulars [name1, name2, ...]` | viewing: anyone; changing: group admins only | Manages a saved roster of "regular players" (see "Regular players" below), reusable later via the word `regular players` in place of names in `!in`/`!newlist`. A plain name list *replaces* the whole roster; `!regulars add <names>`/`!regulars remove <names>` tweak it instead; `!regulars clear` empties it. With no text, shows the current roster without changing it |
+| `!regulars [name1, name2, ...]` | viewing: anyone; changing: group admins only | Manages a saved roster of "regular players" (see "Regular players" below), reusable later via the word `regular players` in place of names in `!in`/`!newlist`. A plain name list *replaces* the whole roster; `!regulars add <names>`/`!regulars remove <names>` tweak it instead; `!regulars social <names>`/`!regulars tournament <names>` mark specific regulars social-only (or undo that) for every future `!newlist`; `!regulars clear` empties it. With no text, shows the current roster without changing it |
 | `!exempt [name1, name2, ...]` | viewing: anyone; changing: group admins only | Manages a saved roster of names who never need to pay (see "Tracking who owes payment" below) - the organizer, a sponsor, a coach, whoever. Same `add`/`remove`/`clear`/replace shape as `!regulars`. With no text, shows the current roster without changing it |
 | `!settournament [on\|off\|rules <text>]` | viewing: anyone; changing: group admins only | Turns the tournament sub-feature (see "Tournament" below) on or off for *this* group, and sets the rules text `!tournament` (below) shows. On by default everywhere. With no argument, shows who's currently opted in instead of changing anything. `!settournament rules <text>` sets the rules text (e.g. `!settournament rules Best of 3, single elimination`); `!settournament rules` with no text shows the current rules |
 | `!tournament` | anyone | Shows the tournament rules text set via `!settournament rules <text>` (see "Tournament" below) - does not show who's opted in (that's `!settournament`) |
@@ -186,6 +186,18 @@ deliberately only understood by `!in` and `!newlist`'s pre-populate
 clause, not `!out`/`!paid` - bulk-removing or bulk-charging a whole saved
 roster by a single shorthand word felt too easy to fire off by accident,
 so removing/paying still needs actual names.
+
+Every `!newlist` (whether or not you use the `with ...` clause) always
+adds the saved roster to the fresh list, and opts every one of them
+straight into the tournament by default - no need to say "tournament"
+yourself. If some regulars should stay social-only every cycle instead,
+mark them with `!regulars social Alice, Bob` (and `!regulars tournament
+Alice` to undo it later) - the bare `!regulars` view then shows them
+tagged "(social only)" in the roster. This is purely about what `!newlist`
+does automatically; a mid-week `!in regular players` still follows
+whatever you type that command with (bare = social only for everyone just
+added that way, `!in tournament, regular players` = tournament for
+everyone that way) regardless of anyone's saved social-only mark.
 
 **Joining/leaving and paying in one message:** lead with the word `paid` on
 `!in` or `!out` to also mark yourself (or the name(s) given) paid in
