@@ -36,7 +36,7 @@ const {
   addEntry,
   getRegularPlayers,
   setRegularPlayers,
-  getRegularPlayersSocialOnly,
+  getRegularPlayersTournament,
   setRegularPlayerTournamentPreference,
   getPaymentExempt,
   setPaymentExempt,
@@ -163,17 +163,16 @@ async function handleCancelSocial(ctx) {
 // on the list - callers decide what (if anything) to do with them, since
 // an automatic add has no message to reply to.
 //
-// Anyone who's actually on the saved !regulars roster is opted straight
-// into the tournament too (wantsTournament: true on addEntry - a no-op per
-// addEntry's own doc comment if the group's tournament isn't enabled or is
-// already full, same as any other tournament add) - UNLESS that regular is
-// also on the saved social-only subset (see store.js's
-// regularPlayersSocialOnly/getRegularPlayersSocialOnly, set via !regulars
-// social), letting an admin keep some regulars social-only every cycle
-// while the rest still auto-join. An explicitly-passed `names` entry keeps
-// its own (non-tournament) treatment unless it happens to literally match
-// a saved regular's name, exactly like !newlist's old inline behavior this
-// was extracted from.
+// A saved regular defaults to SOCIAL ONLY when !newlist adds them to a
+// fresh list - only the ones an admin has explicitly opted in (see
+// store.js's regularPlayersTournament/getRegularPlayersTournament, set via
+// !regulars tournament) get wantsTournament: true on addEntry (itself a
+// no-op per addEntry's own doc comment if the group's tournament isn't
+// enabled or is already full, same as any other tournament add). An
+// explicitly-passed `names` entry keeps its own (non-tournament) treatment
+// unless it happens to literally match a saved, tournament-opted-in
+// regular's name, exactly like !newlist's old inline behavior this was
+// extracted from.
 //
 // "regular players" (see REGULAR_PLAYERS_TOKEN/expandRegularPlayersToken in
 // lib/helpers.js, and !regulars below for how that roster is set) still
@@ -192,7 +191,7 @@ function addRegularsToCurrentList(groupId, addedBy, addedByIsAdmin, names = []) 
 
   const regulars = getRegularPlayers(groupId);
   const regularNamesNormalized = new Set(regulars.map(normalizeName));
-  const socialOnlyNormalized = new Set(getRegularPlayersSocialOnly(groupId).map(normalizeName));
+  const tournamentNormalized = new Set(getRegularPlayersTournament(groupId).map(normalizeName));
   const seen = new Set(expandedNames.map(normalizeName));
   for (const name of regulars) {
     if (seen.has(normalizeName(name))) continue;
@@ -207,7 +206,7 @@ function addRegularsToCurrentList(groupId, addedBy, addedByIsAdmin, names = []) 
       continue;
     }
     const normalizedName = normalizeName(name);
-    const wantsTournament = regularNamesNormalized.has(normalizedName) && !socialOnlyNormalized.has(normalizedName);
+    const wantsTournament = regularNamesNormalized.has(normalizedName) && tournamentNormalized.has(normalizedName);
     const result = addEntry(groupId, name, addedBy, addedByIsAdmin, false, wantsTournament);
     if (!result.ok) {
       rejected.push(`${name.trim()} - already on the list`);
@@ -592,15 +591,16 @@ async function handlePaymentlabel(ctx) {
 
 // Formats the regular-players roster the same numbered way as any other
 // list section in this bot, for both handleRegulars' own view/confirmation
-// replies below. `socialOnlyNames` (optional - omit to not annotate at
-// all) tags each name that's on it with "(social only)", so the saved
-// tournament/social split (see store.js's regularPlayersSocialOnly) is
-// visible straight from the roster, not just inferred from silence.
-function formatRegularPlayers(names, socialOnlyNames) {
+// replies below. `tournamentNames` (optional - omit to not annotate at
+// all) tags each name that's on it with "(🏆 tournament)", so the saved
+// tournament/social split (see store.js's regularPlayersTournament) is
+// visible straight from the roster - social-only is the silent default,
+// so only the opted-in exception needs calling out.
+function formatRegularPlayers(names, tournamentNames) {
   if (!names.length) return '(none set)';
-  const socialOnlyNormalized = new Set((socialOnlyNames || []).map(normalizeName));
+  const tournamentNormalized = new Set((tournamentNames || []).map(normalizeName));
   return names
-    .map((n, i) => `${i + 1}. ${n}${socialOnlyNormalized.has(normalizeName(n)) ? ' (social only)' : ''}`)
+    .map((n, i) => `${i + 1}. ${n}${tournamentNormalized.has(normalizeName(n)) ? ' (🏆 tournament)' : ''}`)
     .join('\n');
 }
 
@@ -623,23 +623,25 @@ function formatRegularPlayers(names, socialOnlyNames) {
 //                                    same normalizeName() case/whitespace
 //                                    matching as everything else in this
 //                                    bot - see store.js)
-//   !regulars social <names>       -> marks these regulars social-only -
-//                                    !newlist adds them but does NOT
-//                                    auto-opt them into the tournament (see
-//                                    addRegularsToCurrentList above).
+//   !regulars tournament <names>   -> opts these regulars INTO the
+//                                    tournament - !newlist auto-joins them
+//                                    (see addRegularsToCurrentList above),
+//                                    instead of adding them social-only
+//                                    like every other regular by default.
 //                                    Added to the roster first if not
 //                                    already on it, same as !regulars add.
-//   !regulars tournament <names>   -> the opposite - (re)marks these
-//                                    regulars for the tournament, !newlist's
-//                                    original/default behavior. Also adds
-//                                    them to the roster first if needed.
+//   !regulars social <names>       -> the opposite - (re)marks these
+//                                    regulars social-only, !newlist's
+//                                    default behavior. Also adds them to
+//                                    the roster first if needed.
 //   !regulars <names>              -> REPLACES the whole roster outright -
 //                                    the natural mapping for someone just
 //                                    declaring who the regulars are for
 //                                    the first time, e.g. "these people
 //                                    are regular players: Alice, Bob, Carla"
-//                                    - every name defaults to tournament
-//                                    unless marked social-only afterward.
+//                                    - every name defaults to social only
+//                                    unless opted into the tournament
+//                                    afterward.
 // Always replies with the resulting roster (there's no "list" to repost
 // that would otherwise make the change visible, unlike most other admin
 // commands here) rather than staying quiet on success.
@@ -648,9 +650,9 @@ async function handleRegulars(ctx) {
 
   if (!argText) {
     const current = getRegularPlayers(groupId);
-    const socialOnly = getRegularPlayersSocialOnly(groupId);
+    const tournament = getRegularPlayersTournament(groupId);
     await reply(
-      `*Regular players*\n${formatRegularPlayers(current, socialOnly)}\n\nTo change (admins only): ${COMMAND_PREFIX}regulars Name1, Name2, ... (replaces the whole list), ${COMMAND_PREFIX}regulars add <names>, ${COMMAND_PREFIX}regulars remove <names>, ${COMMAND_PREFIX}regulars social <names> (exempt from !newlist's tournament auto-add), ${COMMAND_PREFIX}regulars tournament <names> (undo that), or ${COMMAND_PREFIX}regulars clear`
+      `*Regular players*\n${formatRegularPlayers(current, tournament)}\n\nTo change (admins only): ${COMMAND_PREFIX}regulars Name1, Name2, ... (replaces the whole list), ${COMMAND_PREFIX}regulars add <names>, ${COMMAND_PREFIX}regulars remove <names>, ${COMMAND_PREFIX}regulars tournament <names> (opt into !newlist's tournament auto-add), ${COMMAND_PREFIX}regulars social <names> (undo that), or ${COMMAND_PREFIX}regulars clear`
     );
     return;
   }
@@ -669,13 +671,13 @@ async function handleRegulars(ctx) {
     return;
   }
 
-  const socialMatch = trimmed.match(/^social\s+(.+)$/i);
   const tournamentMatch = trimmed.match(/^tournament\s+(.+)$/i);
+  const socialMatch = trimmed.match(/^social\s+(.+)$/i);
   if (socialMatch || tournamentMatch) {
     const wantsTournament = Boolean(tournamentMatch);
     const requestedNames = splitCommaList((socialMatch || tournamentMatch)[1]);
     if (!requestedNames.length) {
-      await reply(`Usage: ${COMMAND_PREFIX}regulars social <names>, or ${COMMAND_PREFIX}regulars tournament <names>`);
+      await reply(`Usage: ${COMMAND_PREFIX}regulars tournament <names>, or ${COMMAND_PREFIX}regulars social <names>`);
       return;
     }
     const rejected = [];
@@ -688,12 +690,12 @@ async function handleRegulars(ctx) {
         validNames.push(name);
       }
     }
-    const { regularPlayers: updated, regularPlayersSocialOnly: socialOnly } =
+    const { regularPlayers: updated, regularPlayersTournament: tournament } =
       setRegularPlayerTournamentPreference(groupId, validNames, wantsTournament);
     if (rejected.length) {
       await reply(`Hmm, couldn't include these:\n${rejected.join('\n')}`);
     }
-    await reply(`*Regular players*\n${formatRegularPlayers(updated, socialOnly)}`);
+    await reply(`*Regular players*\n${formatRegularPlayers(updated, tournament)}`);
     return;
   }
 
@@ -742,7 +744,7 @@ async function handleRegulars(ctx) {
   if (rejected.length) {
     await reply(`Hmm, couldn't include these:\n${rejected.join('\n')}`);
   }
-  await reply(`*Regular players*\n${formatRegularPlayers(updated, getRegularPlayersSocialOnly(groupId))}`);
+  await reply(`*Regular players*\n${formatRegularPlayers(updated, getRegularPlayersTournament(groupId))}`);
 }
 
 // Formats the payment-exempt roster the same numbered way as regular

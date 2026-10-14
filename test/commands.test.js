@@ -1846,7 +1846,7 @@ test('handleNewlist: "with regular players" on an empty saved roster adds nobody
   assert.ok(ctx.replies.some((r) => /none saved yet/i.test(r)));
 });
 
-test('handleNewlist: the saved regulars roster is always added and opted into the tournament, even with no "with" clause at all', async () => {
+test('handleNewlist: the saved regulars roster is always added, but social only by default, even with no "with" clause at all', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setTournamentEnabled(groupId, true);
@@ -1857,10 +1857,10 @@ test('handleNewlist: the saved regulars roster is always added and opted into th
 
   const event = store.getCurrentEvent(groupId);
   assert.deepEqual(event.entries.map((e) => e.name), ['Alice', 'Bob', 'Carla']);
-  assert.ok(event.entries.every((e) => e.tournament === true));
+  assert.ok(event.entries.every((e) => e.tournament === false));
 });
 
-test('handleNewlist: an explicit "with <names>" clause stays social-only, while the merged-in regulars are opted into the tournament', async () => {
+test('handleNewlist: an explicit "with <names>" clause and the merged-in regulars are both social only by default', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setTournamentEnabled(groupId, true);
@@ -1873,11 +1873,11 @@ test('handleNewlist: an explicit "with <names>" clause stays social-only, while 
   assert.deepEqual(event.entries.map((e) => e.name), ['Extra Guest', 'Alice', 'Bob']);
   const byName = Object.fromEntries(event.entries.map((e) => [e.name, e]));
   assert.equal(byName['Extra Guest'].tournament, false);
-  assert.equal(byName['Alice'].tournament, true);
-  assert.equal(byName['Bob'].tournament, true);
+  assert.equal(byName['Alice'].tournament, false);
+  assert.equal(byName['Bob'].tournament, false);
 });
 
-test('handleNewlist: a regular also explicitly named in "with <names>" is added once, still opted into the tournament', async () => {
+test('handleNewlist: a regular also explicitly named in "with <names>" is added once, still social only by default', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setTournamentEnabled(groupId, true);
@@ -1889,30 +1889,31 @@ test('handleNewlist: a regular also explicitly named in "with <names>" is added 
   const event = store.getCurrentEvent(groupId);
   assert.deepEqual(event.entries.map((e) => e.name), ['Alice', 'Extra Guest', 'Bob']);
   const byName = Object.fromEntries(event.entries.map((e) => [e.name, e]));
-  assert.equal(byName['Alice'].tournament, true);
-  assert.equal(byName['Bob'].tournament, true);
+  assert.equal(byName['Alice'].tournament, false);
+  assert.equal(byName['Bob'].tournament, false);
   assert.equal(byName['Extra Guest'].tournament, false);
   assert.ok(!ctx.replies.some((r) => /already on the list/i.test(r)));
 });
 
-// Real request: let an admin keep SOME saved regulars social-only every
-// cycle while the rest still auto-join the tournament, via !regulars
-// social (store.js's regularPlayersSocialOnly/setRegularPlayerTournamentPreference).
-test('handleNewlist: a regular marked "!regulars social" is added but NOT opted into the tournament, while the rest of the roster still is', async () => {
+// Real request: let an admin opt SOME saved regulars into the tournament
+// every cycle while the rest stay social only (the default), via
+// !regulars tournament (store.js's regularPlayersTournament/
+// setRegularPlayerTournamentPreference).
+test('handleNewlist: a regular marked "!regulars tournament" is opted in, while the rest of the roster stays social only (the default)', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setTournamentEnabled(groupId, true);
   store.setRegularPlayers(groupId, ['Alice', 'Bob', 'Carla']);
-  store.setRegularPlayerTournamentPreference(groupId, ['Bob'], false);
+  store.setRegularPlayerTournamentPreference(groupId, ['Bob'], true);
 
   const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 EBC' });
   await adminCommands.handleNewlist(ctx.ctx);
 
   const event = store.getCurrentEvent(groupId);
   const byName = Object.fromEntries(event.entries.map((e) => [e.name, e]));
-  assert.equal(byName['Alice'].tournament, true);
-  assert.equal(byName['Bob'].tournament, false);
-  assert.equal(byName['Carla'].tournament, true);
+  assert.equal(byName['Alice'].tournament, false);
+  assert.equal(byName['Bob'].tournament, true);
+  assert.equal(byName['Carla'].tournament, false);
 });
 
 test('handleIn: "regular players" adds the saved roster, and none of the added entries are marked self', async () => {
@@ -2019,57 +2020,57 @@ test('handleRegulars: "clear" empties the roster', async () => {
   assert.deepEqual(store.getRegularPlayers(groupId), []);
 });
 
-test('handleRegulars: "social <names>" marks existing regulars social-only, shown annotated in the bare view', async () => {
+test('handleRegulars: "tournament <names>" opts existing regulars into the tournament, shown annotated in the bare view', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setRegularPlayers(groupId, ['Alice', 'Bob']);
-
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'social Bob' });
-  await adminCommands.handleRegulars(ctx.ctx);
-
-  assert.deepEqual(store.getRegularPlayersSocialOnly(groupId), ['Bob']);
-  assert.match(ctx.replies[0], /1\. Alice\n2\. Bob \(social only\)/);
-
-  const view = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
-  await adminCommands.handleRegulars(view.ctx);
-  assert.match(view.replies[0], /Bob \(social only\)/);
-});
-
-test('handleRegulars: "social <names>" also adds a name to the roster if it wasn\'t on it yet', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setRegularPlayers(groupId, ['Alice']);
-
-  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'social Bob' });
-  await adminCommands.handleRegulars(ctx.ctx);
-
-  assert.deepEqual(store.getRegularPlayers(groupId), ['Alice', 'Bob']);
-  assert.deepEqual(store.getRegularPlayersSocialOnly(groupId), ['Bob']);
-});
-
-test('handleRegulars: "tournament <names>" un-marks a regular back to tournament', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-  store.setRegularPlayers(groupId, ['Alice', 'Bob']);
-  store.setRegularPlayerTournamentPreference(groupId, ['Alice', 'Bob'], false);
 
   const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'tournament Bob' });
   await adminCommands.handleRegulars(ctx.ctx);
 
-  assert.deepEqual(store.getRegularPlayersSocialOnly(groupId), ['Alice']);
-  assert.doesNotMatch(ctx.replies[0], /Bob \(social only\)/);
+  assert.deepEqual(store.getRegularPlayersTournament(groupId), ['Bob']);
+  assert.match(ctx.replies[0], /1\. Alice\n2\. Bob \(🏆 tournament\)/);
+
+  const view = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
+  await adminCommands.handleRegulars(view.ctx);
+  assert.match(view.replies[0], /Bob \(🏆 tournament\)/);
 });
 
-test('handleRegulars: only an admin can mark a regular social-only or back to tournament', async () => {
+test('handleRegulars: "tournament <names>" also adds a name to the roster if it wasn\'t on it yet', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setRegularPlayers(groupId, ['Alice']);
 
-  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'social Alice' });
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'tournament Bob' });
+  await adminCommands.handleRegulars(ctx.ctx);
+
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Alice', 'Bob']);
+  assert.deepEqual(store.getRegularPlayersTournament(groupId), ['Bob']);
+});
+
+test('handleRegulars: "social <names>" un-marks a regular back to the social-only default', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setRegularPlayers(groupId, ['Alice', 'Bob']);
+  store.setRegularPlayerTournamentPreference(groupId, ['Alice', 'Bob'], true);
+
+  const ctx = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'social Bob' });
+  await adminCommands.handleRegulars(ctx.ctx);
+
+  assert.deepEqual(store.getRegularPlayersTournament(groupId), ['Alice']);
+  assert.doesNotMatch(ctx.replies[0], /Bob \(🏆 tournament\)/);
+});
+
+test('handleRegulars: only an admin can opt a regular into the tournament or back to social only', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setRegularPlayers(groupId, ['Alice']);
+
+  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'tournament Alice' });
   await adminCommands.handleRegulars(ctx.ctx);
 
   assert.match(ctx.replies[0], /only a group admin/i);
-  assert.deepEqual(store.getRegularPlayersSocialOnly(groupId), []);
+  assert.deepEqual(store.getRegularPlayersTournament(groupId), []);
 });
 
 // --- !exempt (who never needs to pay) - same add/remove/clear/replace shape

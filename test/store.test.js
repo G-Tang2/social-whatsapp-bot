@@ -1159,44 +1159,44 @@ test('setRegularPlayers: replaces the whole roster and getRegularPlayers reflect
   assert.deepEqual(store.getRegularPlayers(groupId), ['Only Alice']);
 });
 
-test('getRegularPlayersSocialOnly: an unconfigured group has an empty list, not an error', () => {
+test('getRegularPlayersTournament: an unconfigured group has an empty list, not an error', () => {
   const groupId = freshGroupId();
-  assert.deepEqual(store.getRegularPlayersSocialOnly(groupId), []);
+  assert.deepEqual(store.getRegularPlayersTournament(groupId), []);
 });
 
-test('setRegularPlayerTournamentPreference(false): marks a regular social-only, and also adds them to the roster if they weren\'t on it yet', () => {
+test('setRegularPlayerTournamentPreference(true): opts a regular into the tournament, and also adds them to the roster if they weren\'t on it yet', () => {
   const groupId = freshGroupId();
   store.setRegularPlayers(groupId, ['Alice', 'Bob']);
 
-  const result = store.setRegularPlayerTournamentPreference(groupId, ['Bob', 'Carla'], false);
+  const result = store.setRegularPlayerTournamentPreference(groupId, ['Bob', 'Carla'], true);
   assert.deepEqual(result.regularPlayers, ['Alice', 'Bob', 'Carla']); // Carla added
-  assert.deepEqual(result.regularPlayersSocialOnly, ['Bob', 'Carla']);
-  assert.deepEqual(store.getRegularPlayersSocialOnly(groupId), ['Bob', 'Carla']);
+  assert.deepEqual(result.regularPlayersTournament, ['Bob', 'Carla']);
+  assert.deepEqual(store.getRegularPlayersTournament(groupId), ['Bob', 'Carla']);
 });
 
-test('setRegularPlayerTournamentPreference(true): un-marks a regular back to tournament', () => {
+test('setRegularPlayerTournamentPreference(false): un-marks a regular back to the social-only default', () => {
   const groupId = freshGroupId();
   store.setRegularPlayers(groupId, ['Alice', 'Bob']);
-  store.setRegularPlayerTournamentPreference(groupId, ['Alice', 'Bob'], false);
+  store.setRegularPlayerTournamentPreference(groupId, ['Alice', 'Bob'], true);
 
-  const result = store.setRegularPlayerTournamentPreference(groupId, ['Bob'], true);
-  assert.deepEqual(result.regularPlayersSocialOnly, ['Alice']);
+  const result = store.setRegularPlayerTournamentPreference(groupId, ['Bob'], false);
+  assert.deepEqual(result.regularPlayersTournament, ['Alice']);
 });
 
-// Real request: a social-only mark only means anything for someone
+// Real request: a tournament opt-in only means anything for someone
 // actually on the roster - removing (or replacing past) them should drop
 // the stale mark rather than letting it linger forever.
-test('setRegularPlayers prunes regularPlayersSocialOnly down to whoever is still on the new roster', () => {
+test('setRegularPlayers prunes regularPlayersTournament down to whoever is still on the new roster', () => {
   const groupId = freshGroupId();
   store.setRegularPlayers(groupId, ['Alice', 'Bob', 'Carla']);
-  store.setRegularPlayerTournamentPreference(groupId, ['Alice', 'Bob'], false);
-  assert.deepEqual(store.getRegularPlayersSocialOnly(groupId), ['Alice', 'Bob']);
+  store.setRegularPlayerTournamentPreference(groupId, ['Alice', 'Bob'], true);
+  assert.deepEqual(store.getRegularPlayersTournament(groupId), ['Alice', 'Bob']);
 
   store.setRegularPlayers(groupId, ['Bob', 'Carla']); // Alice removed
-  assert.deepEqual(store.getRegularPlayersSocialOnly(groupId), ['Bob']);
+  assert.deepEqual(store.getRegularPlayersTournament(groupId), ['Bob']);
 
   store.setRegularPlayers(groupId, []); // cleared entirely
-  assert.deepEqual(store.getRegularPlayersSocialOnly(groupId), []);
+  assert.deepEqual(store.getRegularPlayersTournament(groupId), []);
 });
 
 test('regularPlayers survives newList() and clearList() - it is not part of the current cycle', () => {
@@ -1226,19 +1226,19 @@ test('getUndoableState: reflects current/history/regularPlayers as of right now'
   assert.deepEqual(snapshot.history, []);
 });
 
-test('getUndoableState/restoreUndoableState round-trip regularPlayersSocialOnly alongside regularPlayers', () => {
+test('getUndoableState/restoreUndoableState round-trip regularPlayersTournament alongside regularPlayers', () => {
   const groupId = freshGroupId();
   store.setRegularPlayers(groupId, ['Alice', 'Bob']);
-  store.setRegularPlayerTournamentPreference(groupId, ['Bob'], false);
+  store.setRegularPlayerTournamentPreference(groupId, ['Bob'], true);
 
   const before = store.getUndoableState(groupId);
-  assert.deepEqual(before.regularPlayersSocialOnly, ['Bob']);
+  assert.deepEqual(before.regularPlayersTournament, ['Bob']);
 
-  store.setRegularPlayerTournamentPreference(groupId, ['Alice'], false);
-  assert.deepEqual(store.getRegularPlayersSocialOnly(groupId), ['Bob', 'Alice']);
+  store.setRegularPlayerTournamentPreference(groupId, ['Alice'], true);
+  assert.deepEqual(store.getRegularPlayersTournament(groupId), ['Bob', 'Alice']);
 
   store.restoreUndoableState(groupId, before);
-  assert.deepEqual(store.getRegularPlayersSocialOnly(groupId), ['Bob']);
+  assert.deepEqual(store.getRegularPlayersTournament(groupId), ['Bob']);
 });
 
 test('saveUndoSnapshot/getUndoSnapshot: round-trips a snapshot and its description', () => {

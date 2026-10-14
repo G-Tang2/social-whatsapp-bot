@@ -357,17 +357,16 @@ function emptyGroupState() {
     // every time !newlist starts a fresh cycle; it's meant to persist
     // indefinitely until an admin explicitly changes it.
     regularPlayers: [],
-    // Which saved regulars (by name, see regularPlayers above) should NOT
-    // be auto-opted into the tournament when !newlist adds them to a fresh
+    // Which saved regulars (by name, see regularPlayers above) SHOULD be
+    // auto-opted into the tournament when !newlist adds them to a fresh
     // list - see addRegularsToCurrentList (commands/admin.js) and
-    // setRegularPlayerTournamentPreference/getRegularPlayersSocialOnly
-    // below. A regular NOT in this list defaults to tournament (the
-    // original, still-default behavior); this is purely an opt-OUT list,
-    // not a parallel roster - a name here with nothing on regularPlayers
-    // does nothing. Pruned automatically by setRegularPlayers() whenever
-    // the main roster changes, so a name removed from regularPlayers can
-    // never linger here forever.
-    regularPlayersSocialOnly: [],
+    // setRegularPlayerTournamentPreference/getRegularPlayersTournament
+    // below. A regular NOT in this list defaults to social only; this is
+    // purely an opt-IN list, not a parallel roster - a name here with
+    // nothing on regularPlayers does nothing. Pruned automatically by
+    // setRegularPlayers() whenever the main roster changes, so a name
+    // removed from regularPlayers can never linger here forever.
+    regularPlayersTournament: [],
     // A saved roster of names an admin has marked as never needing to pay
     // (e.g. the organizer themselves, a sponsor, a coach) - see
     // getPaymentExempt/setPaymentExempt below and commands/admin.js's
@@ -619,9 +618,9 @@ function getRegularPlayers(groupId) {
 // trimmed/validated by the caller - see commands/admin.js's handleRegulars,
 // which is also where add/remove/clear semantics are implemented, on top
 // of this single "set the whole list" primitive). Also prunes
-// regularPlayersSocialOnly down to just the names still present in `names`
-// (by normalizeName() identity) - a social-only preference only means
-// anything for someone actually on the roster, and this keeps that true
+// regularPlayersTournament down to just the names still present in `names`
+// (by normalizeName() identity) - a tournament opt-in only means anything
+// for someone actually on the roster, and this keeps that true
 // automatically for every caller (set/add/remove/clear alike) without each
 // one having to remember to do it separately. Returns the new list.
 function setRegularPlayers(groupId, names) {
@@ -629,37 +628,38 @@ function setRegularPlayers(groupId, names) {
   if (!all[groupId]) all[groupId] = emptyGroupState();
   all[groupId].regularPlayers = names;
   const normalizedNames = new Set(names.map(normalizeName));
-  all[groupId].regularPlayersSocialOnly = (all[groupId].regularPlayersSocialOnly || []).filter(
+  all[groupId].regularPlayersTournament = (all[groupId].regularPlayersTournament || []).filter(
     (n) => normalizedNames.has(normalizeName(n))
   );
   writeAll(all);
   return all[groupId].regularPlayers;
 }
 
-// Which saved regulars should NOT be auto-opted into the tournament on
-// !newlist - see regularPlayersSocialOnly's own doc comment above. A name
+// Which saved regulars SHOULD be auto-opted into the tournament on
+// !newlist - see regularPlayersTournament's own doc comment above. A name
 // here that's since been removed from regularPlayers (via setRegularPlayers'
 // own pruning) can never actually appear - no defensive filtering needed
 // here, unlike getRegularPlayers' `|| []` (which only guards a group with no
 // saved data at all, same convention as every other top-level roster).
-function getRegularPlayersSocialOnly(groupId) {
+function getRegularPlayersTournament(groupId) {
   const all = readAll();
-  return (all[groupId] || emptyGroupState()).regularPlayersSocialOnly || [];
+  return (all[groupId] || emptyGroupState()).regularPlayersTournament || [];
 }
 
-// Marks `names` as social-only (wantsTournament: false) or back to
-// tournament (true) among the saved regulars - see !regulars social/
-// !regulars tournament (commands/admin.js's handleRegulars). Also adds any
-// name in `names` that isn't already on regularPlayers - marking someone's
-// tournament preference implies they should be tracked as a regular at
-// all, same "just do what was clearly meant" reasoning as !regulars add.
-// Returns `{ regularPlayers, regularPlayersSocialOnly }`.
+// Marks `names` as opted into the tournament (wantsTournament: true) or
+// back to the social-only default (false) among the saved regulars - see
+// !regulars tournament/!regulars social (commands/admin.js's
+// handleRegulars). Also adds any name in `names` that isn't already on
+// regularPlayers - marking someone's tournament preference implies they
+// should be tracked as a regular at all, same "just do what was clearly
+// meant" reasoning as !regulars add.
+// Returns `{ regularPlayers, regularPlayersTournament }`.
 function setRegularPlayerTournamentPreference(groupId, names, wantsTournament) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
   const current = all[groupId];
   if (!current.regularPlayers) current.regularPlayers = [];
-  if (!current.regularPlayersSocialOnly) current.regularPlayersSocialOnly = [];
+  if (!current.regularPlayersTournament) current.regularPlayersTournament = [];
 
   const rosterNormalized = new Set(current.regularPlayers.map(normalizeName));
   for (const name of names) {
@@ -671,23 +671,23 @@ function setRegularPlayerTournamentPreference(groupId, names, wantsTournament) {
   }
 
   const requestedNormalized = new Set(names.map(normalizeName));
-  if (wantsTournament) {
-    current.regularPlayersSocialOnly = current.regularPlayersSocialOnly.filter(
+  if (!wantsTournament) {
+    current.regularPlayersTournament = current.regularPlayersTournament.filter(
       (n) => !requestedNormalized.has(normalizeName(n))
     );
   } else {
-    const existingSocialNormalized = new Set(current.regularPlayersSocialOnly.map(normalizeName));
+    const existingNormalized = new Set(current.regularPlayersTournament.map(normalizeName));
     for (const name of names) {
       const key = normalizeName(name);
-      if (!existingSocialNormalized.has(key)) {
-        current.regularPlayersSocialOnly.push(name);
-        existingSocialNormalized.add(key);
+      if (!existingNormalized.has(key)) {
+        current.regularPlayersTournament.push(name);
+        existingNormalized.add(key);
       }
     }
   }
 
   writeAll(all);
-  return { regularPlayers: current.regularPlayers, regularPlayersSocialOnly: current.regularPlayersSocialOnly };
+  return { regularPlayers: current.regularPlayers, regularPlayersTournament: current.regularPlayersTournament };
 }
 
 // The group's saved "never needs to pay" roster - see !exempt
@@ -1148,7 +1148,7 @@ function getUndoableState(groupId) {
     current: state.current,
     history: state.history,
     regularPlayers: state.regularPlayers || [],
-    regularPlayersSocialOnly: state.regularPlayersSocialOnly || [],
+    regularPlayersTournament: state.regularPlayersTournament || [],
     paymentExempt: state.paymentExempt || [],
     courtCanceller: state.courtCanceller || null,
     tournamentLeaderboard: state.tournamentLeaderboard || [],
@@ -1156,7 +1156,7 @@ function getUndoableState(groupId) {
 }
 
 // Overwrites the group's current/history/regularPlayers/
-// regularPlayersSocialOnly/paymentExempt/courtCanceller/tournamentLeaderboard
+// regularPlayersTournament/paymentExempt/courtCanceller/tournamentLeaderboard
 // wholesale from a snapshot
 // previously returned by getUndoableState() - the actual "restore" half
 // of !undo. Leaves `undo` itself untouched - the dispatch wrapper
@@ -1169,7 +1169,7 @@ function restoreUndoableState(groupId, snapshot) {
   all[groupId].current = snapshot.current;
   all[groupId].history = snapshot.history;
   all[groupId].regularPlayers = snapshot.regularPlayers;
-  all[groupId].regularPlayersSocialOnly = snapshot.regularPlayersSocialOnly !== undefined ? snapshot.regularPlayersSocialOnly : [];
+  all[groupId].regularPlayersTournament = snapshot.regularPlayersTournament !== undefined ? snapshot.regularPlayersTournament : [];
   all[groupId].paymentExempt = snapshot.paymentExempt !== undefined ? snapshot.paymentExempt : [];
   all[groupId].courtCanceller = snapshot.courtCanceller !== undefined ? snapshot.courtCanceller : null;
   all[groupId].tournamentLeaderboard = snapshot.tournamentLeaderboard !== undefined ? snapshot.tournamentLeaderboard : [];
@@ -2187,7 +2187,7 @@ module.exports = {
   setDuePaymentsLabel,
   getRegularPlayers,
   setRegularPlayers,
-  getRegularPlayersSocialOnly,
+  getRegularPlayersTournament,
   setRegularPlayerTournamentPreference,
   getPaymentExempt,
   setPaymentExempt,
