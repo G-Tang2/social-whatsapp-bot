@@ -699,6 +699,39 @@ test('formatList: shows a cancelled banner above everything else once cancelSoci
   assert.doesNotMatch(formatList(groupId), /cancelled/i);
 });
 
+// Real request: showing an empty "(0/36)" Attendance section right under
+// the cancelled banner read as contradictory, as if the list were still
+// open - cancelSocial() wipes entries/waitlist to empty anyway, and
+// handleIn refuses every new signup against a cancelled cycle, so neither
+// section can ever have anything real to show until the next !newlist.
+test('formatList: Attendance/Waitlist are omitted entirely while cancelled, back once a fresh !newlist starts', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.addEntry(groupId, 'Alice', 'alice@s.whatsapp.net', false, true);
+  assert.match(formatList(groupId), /\*Attendance\*/);
+
+  store.cancelSocial(groupId);
+  const cancelledList = formatList(groupId);
+  assert.doesNotMatch(cancelledList, /\*Attendance\*/);
+  assert.doesNotMatch(cancelledList, /\*Waitlist\*/);
+
+  store.newList(groupId, '2026-08-20', {});
+  assert.match(formatList(groupId), /\*Attendance\*/);
+});
+
+// The payment-due section is a different cycle's unfinished business - it
+// shouldn't vanish just because THIS cycle got called off.
+test('formatList: the payment-due section still shows while cancelled - it is unrelated to THIS cycle', () => {
+  const groupId = freshRegularPlayersGroupId();
+  store.addEntry(groupId, 'Alice', 'alice@s.whatsapp.net', false, true);
+  store.newList(groupId, '2026-08-20', {}); // Alice now owes for the cycle that just ended
+
+  store.cancelSocial(groupId);
+  const cancelledList = formatList(groupId);
+  assert.doesNotMatch(cancelledList, /\*Attendance\*/);
+  assert.match(cancelledList, /\*Payment\*/);
+  assert.match(cancelledList, /Alice/);
+});
+
 test('adminCheck: isGroupAdmin reflects groupMetadata and caches the result', async () => {
   const groupId = 'admincheck-test-1@g.us';
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'], participantIds: ['member@s.whatsapp.net'] });

@@ -480,10 +480,14 @@ unrelated cycle still owes it. Running it sends an announcement
 @-mentioning everyone who was on the attendance list or waitlist right
 before it got wiped, so nobody has to find out by trying to `!in` and
 getting refused, and the reposted list itself shows a "This social has
-been cancelled" banner above `*Attendance*` until the next `!newlist`.
-Same as `!clear`/`!clearpayments`, it's immediate with no confirmation
-prompt, but `!undo` (see "Undoing the last change" below) reverses it like
-any other command.
+been cancelled" banner in place of `*Attendance*`/`*Waitlist*` entirely
+(there's nothing real to show there until the next `!newlist` anyway, and
+an empty-looking Attendance section right under that banner read as
+contradictory - as if the list were still open) until the next `!newlist`.
+The payment-due section, if anyone owes from an earlier, unrelated cycle,
+still shows underneath as normal. Same as `!clear`/`!clearpayments`, it's
+immediate with no confirmation prompt, but `!undo` (see "Undoing the last
+change" below) reverses it like any other command.
 
 Some people never need to pay at all - the organizer themselves, a
 sponsor, a coach. A group admin can mark them exempt with `!exempt Alice`
