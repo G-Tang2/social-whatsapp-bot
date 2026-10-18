@@ -270,6 +270,7 @@ const catchUpQueue = require('./lib/catchUpQueue');
 const { updateLastSeenStatus } = require('./lib/lastSeenStatus');
 const { checkVacancyReminders } = require('./lib/vacancyReminder');
 const { checkAutoNewlist } = require('./lib/autoNewlistScheduler');
+const { checkCancelledSocialResume } = require('./lib/cancelledSocialResumeScheduler');
 const { checkAllGroupsInactivity, msUntilNextDailyTime, INACTIVITY_CHECK_HOUR } = require('./lib/inactivityCheck');
 const { interpretMessage, formatTodayForPrompt, formatRegularPlayersForPrompt } = require('./lib/geminiCommand');
 const spam = require('./spam');
@@ -1846,6 +1847,22 @@ const autoNewlistTimer = setInterval(() => {
   checkAutoNewlist(currentSock);
 }, VACANCY_REMINDER_INTERVAL_MS);
 if (typeof autoNewlistTimer.unref === 'function') autoNewlistTimer.unref();
+
+// Same "single module-scope interval, read currentSock fresh each tick"
+// pattern as the timers above - see lib/cancelledSocialResumeScheduler.js
+// for what this actually checks (each configured group currently called
+// off via !cancelsocial, for a real risk the LAST of its cancelled weeks
+// has "ended") and why it's unconditional, unlike the !autonewlist timer
+// just above: there's no separate per-group toggle gating this one - a
+// group only ever has anything for it to act on once an admin has
+// actually run !cancelsocial, same "no wasted cost otherwise" reasoning
+// in spirit, just driven by a one-shot admin action instead of an on/off
+// setting. Reuses the same tick cadence as the other two timers above - a
+// social "ending" doesn't need second-precision checks either.
+const cancelledSocialResumeTimer = setInterval(() => {
+  checkCancelledSocialResume(currentSock);
+}, VACANCY_REMINDER_INTERVAL_MS);
+if (typeof cancelledSocialResumeTimer.unref === 'function') cancelledSocialResumeTimer.unref();
 
 // Same "single module-scope interval, read currentSock fresh each tick"
 // pattern as the timers above - see lib/inactivityCheck.js for what this

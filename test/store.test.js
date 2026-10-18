@@ -243,15 +243,42 @@ test('cancelSocial wipes entries and waitlist, keeps duePayments/header fields, 
   assert.equal(after.location, 'EBC'); // preserved
   assert.equal(after.duePayments.length, 1); // preserved - cancelSocial doesn't touch payments
   assert.equal(after.cancelled, true);
+  assert.equal(after.cancelledWeeks, 1); // default - "just the upcoming one"
+  assert.equal(after.cancelledResumeCreated, false);
 });
 
-test('newList() resets `cancelled` back to false, even when the outgoing cycle was cancelled', () => {
+test('cancelSocial(groupId, weeks): stores the requested week count, clamped to a minimum of 1', () => {
   const groupId = freshGroupId();
-  store.cancelSocial(groupId);
+  store.cancelSocial(groupId, 3);
+  assert.equal(store.getCurrentEvent(groupId).cancelledWeeks, 3);
+
+  const groupId2 = freshGroupId();
+  store.cancelSocial(groupId2, 0); // nonsensical input - still at least 1
+  assert.equal(store.getCurrentEvent(groupId2).cancelledWeeks, 1);
+});
+
+test('markCancelledResumeCreated: flips cancelledResumeCreated to true, and newList() resets it back to false for the fresh cycle', () => {
+  const groupId = freshGroupId();
+  store.cancelSocial(groupId, 2);
+  assert.equal(store.getCurrentEvent(groupId).cancelledResumeCreated, false);
+
+  store.markCancelledResumeCreated(groupId);
+  assert.equal(store.getCurrentEvent(groupId).cancelledResumeCreated, true);
+
+  store.newList(groupId, '2026-09-03', {});
+  assert.equal(store.getCurrentEvent(groupId).cancelledResumeCreated, false);
+});
+
+test('newList() resets `cancelled`/`cancelledWeeks` back to false/0, even when the outgoing cycle was cancelled', () => {
+  const groupId = freshGroupId();
+  store.cancelSocial(groupId, 2);
   assert.equal(store.getCurrentEvent(groupId).cancelled, true);
+  assert.equal(store.getCurrentEvent(groupId).cancelledWeeks, 2);
 
   store.newList(groupId, '2026-08-20', {});
-  assert.equal(store.getCurrentEvent(groupId).cancelled, false);
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.cancelled, false);
+  assert.equal(event.cancelledWeeks, 0);
 });
 
 test('markPaid removes someone from duePayments', () => {

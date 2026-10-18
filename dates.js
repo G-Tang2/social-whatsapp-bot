@@ -268,6 +268,24 @@ function oneWeekAfter(isoDate) {
   return `${yy}-${mm}-${dd}`;
 }
 
+// `weeks` repeated applications of oneWeekAfter() above - e.g.
+// addWeeks('2026-08-20', 2) is the Thursday two weeks after. Used by
+// lib/cancelledSocialResumeScheduler.js to work out both which cancelled
+// week's assumed end-time actually triggers the automatic resume (the
+// LAST of the cancelled weeks, `weeks - 1` after the one !cancelsocial was
+// run against) and the fresh date the resumed list actually opens on (one
+// week after that, i.e. `weeks` after the original). `weeks: 0` returns
+// `isoDate` unchanged. Returns null for a malformed input, same as
+// oneWeekAfter() itself.
+function addWeeks(isoDate, weeks) {
+  let result = isoDate;
+  for (let i = 0; i < weeks; i++) {
+    result = oneWeekAfter(result);
+    if (!result) return null;
+  }
+  return result;
+}
+
 function ordinalSuffix(day) {
   if (day >= 11 && day <= 13) return 'th'; // 11th, 12th, 13th are exceptions
   switch (day % 10) {
@@ -395,6 +413,7 @@ module.exports = {
   parseOwedSinceDisplayDate,
   nextOccurrenceOfSameWeekday,
   oneWeekAfter,
+  addWeeks,
   parseTimeOfDay,
   zonedDateTimeToUtc,
 };

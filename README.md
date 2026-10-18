@@ -14,7 +14,7 @@ every change.
 | `!list` | anyone | Posts the current list |
 | `!clear` | group admins only | Wipes the current list's entries, keeping its date/location/courts/time |
 | `!clearpayments` | group admins only | Wipes who currently owes payment, without touching the list's entries/waitlist or anything else - the mirror of `!clear` |
-| `!cancelsocial` | group admins only | Calls off the *current* social entirely - see "Cancelling a social" below. Unlike `!clear`, blocks new `!in` signups until `!newlist` starts a fresh cycle, and @-mentions everyone who was on the list to let them know nobody needs to pay for it |
+| `!cancelsocial [weeks]` | group admins only | Calls off the *current* social entirely - see "Cancelling a social" below. Unlike `!clear`, blocks new `!in` signups, and @-mentions everyone who was on the list to let them know nobody needs to pay for it. An optional number of weeks (default 1) calls off that many in a row; a fresh list starts automatically on its own once the last of them has passed - no need to `!newlist` it yourself |
 | `!newlist DD/MM\|same [location] \| [courts] \| [time] [with name1, name2, ...]` | group admins only | Archives the current list and starts a fresh, empty one dated `DD/MM` (no year - see below) - everyone from the old list is carried over as owing payment. Type `same` instead of a date to reuse whatever day of the week the current list is already on (see "Reusing the same day of the week" below). An optional trailing `with ...` clause immediately signs up everyone named, in order, on the brand new list (see "Starting a new dated list" below) |
 | `!date [DD/MM]` | viewing: anyone; changing: group admins only | Corrects the *current* list's date without archiving it or starting a new one - unlike `!newlist`, entries/waitlist/payments/location/courts/time/limit are all left untouched. Same `DD/MM` format and year inference as `!newlist`. With no text, shows the current date without changing it |
 | `!paid [name]` | anyone, up to 8 names per command (no limit for group admins) | Marks yourself (or `[name]`) as paid - clears EVERY entry for that name at once, so if they owe for more than one missed event (see "Tracking who owes payment" below), one `!paid` settles all of it in one go. No ownership check - anyone can clear anyone |
@@ -468,26 +468,39 @@ any other command.
 
 **Cancelling a social:** sometimes the whole thing falls through - rain, no
 courts, not enough people - and it's not just one person leaving, the
-event itself is off. `!cancelsocial` (admin only) is for exactly that:
-distinct from `!clear` above, which just empties the list while leaving it
-open under the same date/location/time for people to re-sign-up, this
-instead blocks new `!in` signups against THIS cycle entirely, until the
-next `!newlist` starts a genuinely fresh one. It leaves the payment-due
-list completely untouched - nobody who was on the cancelled list gets
-added to it (that only ever happens via `!newlist`, which this
-deliberately isn't), but anyone who already owed from an earlier,
-unrelated cycle still owes it. Running it sends an announcement
-@-mentioning everyone who was on the attendance list or waitlist right
-before it got wiped, so nobody has to find out by trying to `!in` and
-getting refused, and the reposted list itself shows a "This social has
-been cancelled" banner in place of `*Attendance*`/`*Waitlist*` entirely
-(there's nothing real to show there until the next `!newlist` anyway, and
-an empty-looking Attendance section right under that banner read as
-contradictory - as if the list were still open) until the next `!newlist`.
-The payment-due section, if anyone owes from an earlier, unrelated cycle,
-still shows underneath as normal. Same as `!clear`/`!clearpayments`, it's
-immediate with no confirmation prompt, but `!undo` (see "Undoing the last
-change" below) reverses it like any other command.
+event itself is off. `!cancelsocial [weeks]` (admin only) is for exactly
+that: distinct from `!clear` above, which just empties the list while
+leaving it open under the same date/location/time for people to
+re-sign-up, this instead blocks new `!in` signups against the cancelled
+cycle(s) entirely. It leaves the payment-due list completely untouched -
+nobody who was on the cancelled list gets added to it (that only ever
+happens when a fresh list actually starts, which cancelling deliberately
+isn't), but anyone who already owed from an earlier, unrelated cycle still
+owes it. Running it sends an announcement @-mentioning everyone who was on
+the attendance list or waitlist right before it got wiped, so nobody has
+to find out by trying to `!in` and getting refused, and the reposted list
+itself shows a "This social has been cancelled" banner in place of
+`*Attendance*`/`*Waitlist*` entirely (there's nothing real to show there
+until a fresh list starts anyway, and an empty-looking Attendance section
+right under that banner read as contradictory - as if the list were still
+open). The payment-due section, if anyone owes from an earlier, unrelated
+cycle, still shows underneath as normal.
+
+**An optional number of weeks** - this one included - calls off that many
+in a row: `!cancelsocial 2` cancels the upcoming social AND the one the
+week after it; a bare `!cancelsocial` is exactly 1 week, same as before.
+Either way, **a fresh list starts automatically on its own** once the LAST
+of the cancelled weeks is assumed to have ended (same "assumed end time"
+heuristic `!autonewlist` already uses - see "Auto-starting next week's
+list" below), carrying forward location/courts/time and the saved
+`!regulars` roster exactly like a manual `!newlist` would, and posting the
+result - no need to remember to run `!newlist` yourself once the
+cancellation period is over, and this happens regardless of whether
+`!autonewlist` is turned on for the group, since it's resuming from this
+explicit admin action rather than the general weekly advance. Same as
+`!clear`/`!clearpayments`, running `!cancelsocial` itself is immediate with
+no confirmation prompt, but `!undo` (see "Undoing the last change" below)
+reverses it like any other command.
 
 Some people never need to pay at all - the organizer themselves, a
 sponsor, a coach. A group admin can mark them exempt with `!exempt Alice`

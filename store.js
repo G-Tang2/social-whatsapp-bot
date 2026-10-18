@@ -290,6 +290,22 @@ function emptyGroupState() {
       // cancelled banner, until the next !newlist resets it back to false
       // (see newList() below) by starting an entirely fresh cycle.
       cancelled: false,
+      // How many weeks !cancelsocial was told to cancel (default 1, "just
+      // the upcoming one") - see cancelSocial() below. Meaningless while
+      // `cancelled` is false; only read by
+      // lib/cancelledSocialResumeScheduler.js to work out which of the
+      // cancelled weeks is the LAST one, so it knows when to
+      // automatically start a fresh (non-cancelled) list again, same
+      // "assumed end-time" heuristic lib/autoNewlistScheduler.js already
+      // uses for the ordinary "social just ended" case - except this one
+      // runs regardless of the per-group !autonewlist toggle, since it's
+      // resuming from an explicit admin action, not the general weekly
+      // advance.
+      cancelledWeeks: 0,
+      // One-shot guard so that automatic resume above only ever fires
+      // once per cancelled cycle - see markCancelledResumeCreated() below,
+      // same reasoning/lifecycle as autoNewlistCreated just below.
+      cancelledResumeCreated: false,
       // Tournament sub-feature - see !settournament/!tournament/
       // !tournamentlimit/!tournamentwinners in commands/admin.js. OFF by
       // default per group, same "each group opts in individually" pattern
@@ -1948,15 +1964,28 @@ function clearList(groupId) {
 // which just empties the list while leaving it open under the same date/
 // location/time for people to re-sign-up. This instead marks it
 // `cancelled: true`, so handleIn (commands/list.js) refuses new !in
-// signups against it until the next !newlist starts an entirely fresh
-// cycle (see newList()'s own `cancelled: false` reset). Same as
-// clearList(), deliberately does NOT touch duePayments - nobody currently
-// on the list needs to pay for a social that never happened, but anyone
-// who already owed from an earlier cycle still owes it.
+// signups against it until a fresh cycle starts (see newList()'s own
+// `cancelled: false` reset). Same as clearList(), deliberately does NOT
+// touch duePayments - nobody currently on the list needs to pay for a
+// social that never happened, but anyone who already owed from an earlier
+// cycle still owes it.
+//
+// `weeks` (default 1, "just the upcoming one") is how many consecutive
+// weeks - this one included - to call off; see commands/admin.js's
+// !cancelsocial for the typed argument this comes from. Stored as
+// `cancelledWeeks` so lib/cancelledSocialResumeScheduler.js knows when
+// the LAST of those weeks has assumedly ended, and automatically starts a
+// fresh, non-cancelled list right after - an admin never has to remember
+// to manually !newlist their way back, and it isn't gated on the
+// separate !autonewlist toggle (this is resuming from an explicit admin
+// action, not the general weekly advance). `cancelledResumeCreated`
+// resets to false so that scheduler's one-shot guard is fresh for this
+// new cancellation, in case an earlier one (now long since resumed on its
+// own) left it true.
 // Returns the entries/waitlist that existed right before cancelling (not
 // the now-emptied ones), so the caller (commands/admin.js's
 // !cancelsocial) can announce who's off the hook.
-function cancelSocial(groupId) {
+function cancelSocial(groupId, weeks = 1) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
   const current = all[groupId].current;
@@ -1965,8 +1994,23 @@ function cancelSocial(groupId) {
   current.entries = [];
   current.waitlist = [];
   current.cancelled = true;
+  current.cancelledWeeks = Math.max(1, Math.round(weeks) || 1);
+  current.cancelledResumeCreated = false;
   writeAll(all);
   return { entries: cancelledEntries, waitlist: cancelledWaitlist };
+}
+
+// Marks this cancelled cycle's automatic resume as already handled - see
+// cancelSocial()'s own doc comment on `cancelledWeeks`/
+// `cancelledResumeCreated` and lib/cancelledSocialResumeScheduler.js,
+// which calls this (BEFORE actually starting the fresh list, same
+// race-avoidance pattern as markAutoNewlistCreated() above) so two
+// overlapping ticks can't both act on the same cancellation.
+function markCancelledResumeCreated(groupId) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  all[groupId].current.cancelledResumeCreated = true;
+  writeAll(all);
 }
 
 // Wipes the current duePayments list in place - forgives everyone still
@@ -2170,9 +2214,12 @@ function newList(groupId, date, details = {}) {
     // markAutoNewlistCreated above.
     autoNewlistCreated: false,
     // A brand new cycle is never cancelled just because the PREVIOUS one
-    // was - !newlist starting a fresh list is exactly how an admin
-    // re-opens signups after a !cancelsocial (see cancelSocial() below).
+    // was - !newlist starting a fresh list is exactly how an admin (or
+    // lib/cancelledSocialResumeScheduler.js, automatically) re-opens
+    // signups after a !cancelsocial (see cancelSocial() below).
     cancelled: false,
+    cancelledWeeks: 0,
+    cancelledResumeCreated: false,
   };
 
   writeAll(all);
@@ -2209,6 +2256,7 @@ module.exports = {
   markVacancy50hNotified,
   markVacancyCancelWarningNotified,
   markAutoNewlistCreated,
+  markCancelledResumeCreated,
   getUndoableState,
   restoreUndoableState,
   saveUndoSnapshot,

@@ -57,7 +57,7 @@ const {
   restoreUndoableState,
   normalizeName,
 } = require('../store');
-const { parseTypedDate, formatDisplayDate, nextOccurrenceOfSameWeekday } = require('../dates');
+const { parseTypedDate, formatDisplayDate, nextOccurrenceOfSameWeekday, addWeeks } = require('../dates');
 const { isGroupAdmin } = require('../lib/adminCheck');
 const { checkEntry } = require('../moderation');
 const ai = require('../ai');
@@ -116,20 +116,36 @@ async function handleClearpayments(ctx) {
   await postList();
 }
 
+// Highest week count !cancelsocial accepts - purely a sanity cap against
+// a typo'd huge number (e.g. mistaking a year for a week count), not a
+// real operational limit anyone should ever need to approach.
+const MAX_CANCEL_SOCIAL_WEEKS = 52;
+
 // Calls off the CURRENT social outright (store.js's cancelSocial()) -
 // distinct from !clear above, which empties the list but leaves it open
 // under the same date/location/time for people to re-sign-up. This
 // instead marks it cancelled, so a bare !in (commands/list.js) refuses new
-// signups against it until an admin starts an entirely fresh cycle with
-// !newlist. Same as !clear, deliberately leaves duePayments untouched -
-// nobody currently on the list needs to pay for a social that never
-// happened, but anyone who already owed from an earlier cycle still owes
-// it. Announces the cancellation, @-mentioning everyone who was on the
-// attendance list or waitlist right before it got wiped (see
+// signups against it. Same as !clear, deliberately leaves duePayments
+// untouched - nobody currently on the list needs to pay for a social that
+// never happened, but anyone who already owed from an earlier cycle still
+// owes it. Announces the cancellation, @-mentioning everyone who was on
+// the attendance list or waitlist right before it got wiped (see
 // formatCancelledSocialMessage in lib/helpers.js), so nobody has to find
 // out the hard way by trying to !in and getting refused.
+//
+// `argText` optionally leads with a number of weeks to cancel - this one
+// included - e.g. "!cancelsocial 2" calls off the upcoming social AND the
+// one after it; a bare !cancelsocial (or any non-numeric argText) is
+// exactly 1 week, today's existing behavior. Whichever it is, an admin
+// never has to remember to manually restart things afterward:
+// lib/cancelledSocialResumeScheduler.js automatically starts a fresh,
+// non-cancelled list right after the LAST cancelled week's social is
+// assumed to have ended, same "assumed end-time" heuristic
+// lib/autoNewlistScheduler.js already uses - this happens regardless of
+// whether that separate !autonewlist toggle is on, since it's resuming
+// from an explicit admin action, not the general weekly advance.
 async function handleCancelSocial(ctx) {
-  const { sock, msg, groupId, senderId, reply, postList } = ctx;
+  const { sock, msg, groupId, senderId, argText, reply, postList } = ctx;
   const admin = await isGroupAdmin(sock, groupId, senderId);
   if (!admin) {
     await reply('Only a group admin can cancel the social - nice try, though!');
@@ -139,12 +155,23 @@ async function handleCancelSocial(ctx) {
     await reply(`This social's already cancelled - run ${COMMAND_PREFIX}newlist to start a fresh one.`);
     return;
   }
-  const { entries, waitlist } = cancelSocial(groupId);
+  const weeksMatch = (argText || '').trim().match(/^(\d+)/);
+  const weeks = weeksMatch ? Math.min(MAX_CANCEL_SOCIAL_WEEKS, Math.max(1, parseInt(weeksMatch[1], 10))) : 1;
+  const originalDate = getCurrentEvent(groupId).date;
+  const { entries, waitlist } = cancelSocial(groupId, weeks);
   const cancelMsg = formatCancelledSocialMessage([...entries, ...waitlist]);
   if (cancelMsg) {
     await sock.sendMessage(groupId, { text: cancelMsg.text, mentions: cancelMsg.mentions }, { quoted: buildQuotePreviewMsg(msg) });
   } else {
     await reply("This social's been cancelled - nobody was even signed up yet.");
+  }
+  const resumeDate = originalDate ? addWeeks(originalDate, weeks) : null;
+  if (weeks > 1) {
+    await reply(
+      `That's the next ${weeks} weeks called off${resumeDate ? ` - I'll automatically start a fresh list for ${formatDisplayDate(resumeDate)} once the last of those has passed` : ''}.`
+    );
+  } else if (resumeDate) {
+    await reply(`I'll automatically start a fresh list for ${formatDisplayDate(resumeDate)} once this one's passed - no need to ${COMMAND_PREFIX}newlist it yourself.`);
   }
   await postList();
 }

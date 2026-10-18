@@ -13,6 +13,8 @@ const {
   nextOccurrenceOfSameWeekday,
   parseTimeOfDay,
   zonedDateTimeToUtc,
+  oneWeekAfter,
+  addWeeks,
 } = require('../dates');
 
 test('isValidDateString accepts real calendar dates and rejects rollovers', () => {
@@ -201,4 +203,22 @@ test('zonedDateTimeToUtc: a plain UTC timezone needs no adjustment', () => {
 test('zonedDateTimeToUtc: returns null for an invalid date string', () => {
   assert.equal(zonedDateTimeToUtc('not-a-date', 20, 0, 'UTC'), null);
   assert.equal(zonedDateTimeToUtc(null, 20, 0, 'UTC'), null);
+});
+
+test('addWeeks: 1 week matches oneWeekAfter exactly', () => {
+  assert.equal(addWeeks('2026-08-20', 1), oneWeekAfter('2026-08-20'));
+});
+
+test('addWeeks: repeated application, including across a month/year boundary', () => {
+  assert.equal(addWeeks('2026-08-20', 2), '2026-09-03');
+  assert.equal(addWeeks('2026-12-24', 2), '2027-01-07');
+});
+
+test('addWeeks: 0 weeks returns the same date unchanged', () => {
+  assert.equal(addWeeks('2026-08-20', 0), '2026-08-20');
+});
+
+test('addWeeks: returns null for an invalid date string', () => {
+  assert.equal(addWeeks('not-a-date', 2), null);
+  assert.equal(addWeeks(null, 2), null);
 });

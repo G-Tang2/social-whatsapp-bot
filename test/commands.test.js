@@ -1525,6 +1525,57 @@ test('handleCancelSocial: running it again on an already-cancelled social is a n
   assert.match(replies[0], /already cancelled/i);
 });
 
+// --- Real request: let !cancelsocial take a week count, and tell the
+// admin when it'll automatically pick back up on its own - see
+// lib/cancelledSocialResumeScheduler.js for the actual automatic resume. ---
+
+test('handleCancelSocial: a bare call cancels exactly 1 week and mentions the automatic resume date', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setDate(groupId, '2026-08-20');
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '' });
+  await adminCommands.handleCancelSocial(ctx);
+
+  assert.equal(store.getCurrentEvent(groupId).cancelledWeeks, 1);
+  assert.ok(replies.some((r) => /automatically start a fresh list for 27th Aug/i.test(r)));
+});
+
+test('handleCancelSocial: "2" cancels this week AND the next, resuming the week after both', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setDate(groupId, '2026-08-20');
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '2' });
+  await adminCommands.handleCancelSocial(ctx);
+
+  assert.equal(store.getCurrentEvent(groupId).cancelledWeeks, 2);
+  assert.ok(replies.some((r) => /next 2 weeks/i.test(r)));
+  assert.ok(replies.some((r) => /3rd Sep/i.test(r))); // 2026-08-20 + 2 weeks
+});
+
+test('handleCancelSocial: a non-numeric argText is treated the same as bare (1 week)', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setDate(groupId, '2026-08-20');
+
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'for good' });
+  await adminCommands.handleCancelSocial(ctx);
+
+  assert.equal(store.getCurrentEvent(groupId).cancelledWeeks, 1);
+});
+
+test('handleCancelSocial: a huge week count is clamped to a sane maximum rather than taken literally', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setDate(groupId, '2026-08-20');
+
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '9999' });
+  await adminCommands.handleCancelSocial(ctx);
+
+  assert.equal(store.getCurrentEvent(groupId).cancelledWeeks, 52);
+});
+
 // Real request: an admin should be able to cancel a social outright -
 // distinct from !clear (list.js's own tests cover the ordinary case).
 // This confirms the two commands actually diverge: !clear leaves the
