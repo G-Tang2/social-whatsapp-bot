@@ -31,6 +31,7 @@ const {
   formatCount,
   formatElapsed,
   formatPromotedMessage,
+  formatTournamentPromotedMessage,
   formatCancelledSocialMessage,
   formatList,
   resolveDuePaymentNumber,
@@ -679,12 +680,57 @@ test('formatPromotedMessage builds a tagged notice and returns null for an empty
   assert.deepEqual(result.mentions, ['sam@s.whatsapp.net']);
 });
 
+// Real crash report: a saved regular auto-added by !newlist/!autonewlist
+// (addedBy: null - see commands/admin.js's addRegularsToCurrentList) later
+// got promoted off the waitlist, and `e.addedBy.split('@')[0]` threw on the
+// null - never caught until it hit production. Must degrade to a plain,
+// untagged name instead of throwing, and never end up in `mentions`.
+test('formatPromotedMessage falls back to a plain untagged name for an entry with no addedBy at all (an auto-added regular)', () => {
+  const result = formatPromotedMessage([
+    { name: 'Henry', addedBy: 'sam@s.whatsapp.net' },
+    { name: 'Ivy', addedBy: null },
+  ]);
+  assert.match(result.text, /@sam — Henry/);
+  assert.match(result.text, /(?<!@)\bIvy\b/);
+  assert.doesNotMatch(result.text, /@.*Ivy/);
+  assert.deepEqual(result.mentions, ['sam@s.whatsapp.net']);
+});
+
+// Same null-addedBy fallback as formatPromotedMessage above, for the
+// tournament-waitlist-specific counterpart.
+test('formatTournamentPromotedMessage falls back to a plain untagged name for an entry with no addedBy at all (an auto-added regular)', () => {
+  const result = formatTournamentPromotedMessage([
+    { name: 'Henry', addedBy: 'sam@s.whatsapp.net' },
+    { name: 'Ivy', addedBy: null },
+  ]);
+  assert.match(result.text, /@sam — Henry/);
+  assert.match(result.text, /(?<!@)\bIvy\b/);
+  assert.doesNotMatch(result.text, /@.*Ivy/);
+  assert.deepEqual(result.mentions, ['sam@s.whatsapp.net']);
+});
+
 test('formatCancelledSocialMessage builds a tagged notice and returns null for an empty list', () => {
   assert.equal(formatCancelledSocialMessage([]), null);
   assert.equal(formatCancelledSocialMessage(null), null);
   const result = formatCancelledSocialMessage([{ name: 'Henry', addedBy: 'sam@s.whatsapp.net' }]);
   assert.match(result.text, /cancelled/i);
   assert.match(result.text, /@sam — Henry/);
+  assert.deepEqual(result.mentions, ['sam@s.whatsapp.net']);
+});
+
+// Same real crash report as formatPromotedMessage above, but for
+// !cancelsocial: cancelling a social with an auto-added regular (addedBy:
+// null) on it threw mid-way through, AFTER cancelSocial() had already
+// mutated and persisted the store - so the social genuinely got cancelled
+// even though the sender only saw the generic "something went wrong" error.
+test('formatCancelledSocialMessage falls back to a plain untagged name for an entry with no addedBy at all (an auto-added regular)', () => {
+  const result = formatCancelledSocialMessage([
+    { name: 'Henry', addedBy: 'sam@s.whatsapp.net' },
+    { name: 'Ivy', addedBy: null },
+  ]);
+  assert.match(result.text, /@sam — Henry/);
+  assert.match(result.text, /(?<!@)\bIvy\b/);
+  assert.doesNotMatch(result.text, /@.*Ivy/);
   assert.deepEqual(result.mentions, ['sam@s.whatsapp.net']);
 });
 
@@ -750,6 +796,25 @@ test('adminCheck: isGroupAdmin reflects groupMetadata and caches the result', as
   adminCheck.invalidate(groupId);
   assert.equal(await adminCheck.isGroupAdmin(sock, groupId, 'admin@s.whatsapp.net'), true);
   assert.equal(fetchCount, 2); // invalidate forced a re-fetch
+});
+
+// Real bug report: an admin @-mentioned the bot via their WhatsApp "lid"
+// address (a separate linked-device identifier Baileys sometimes uses as
+// the message sender instead of the usual phone-number JID), and got told
+// "Only a group admin can..." despite genuinely being one. groupMetadata's
+// participant record lists the admin flag against `p.id` (the phone-number
+// form), with the lid as a SEPARATE `p.lid` field - isGroupAdmin only ever
+// compared against `p.id`, so a sender arriving in lid form never matched.
+// getParticipantName (right below in lib/adminCheck.js) already defended
+// against exactly this by matching `p.id`/`p.lid`/`p.jid` - isGroupAdmin
+// needed the same fallback.
+test('adminCheck: isGroupAdmin matches an admin whose message arrived via their "lid" address, not just their phone-number id', async () => {
+  const groupId = 'admincheck-test-1b@g.us';
+  const sock = createFakeSock({
+    admins: ['admin@s.whatsapp.net'],
+    participantLids: { 'admin@s.whatsapp.net': 'admin-lid@lid' },
+  });
+  assert.equal(await adminCheck.isGroupAdmin(sock, groupId, 'admin-lid@lid'), true);
 });
 
 test('adminCheck: isGroupAdmin fails closed (returns false) if groupMetadata throws', async () => {

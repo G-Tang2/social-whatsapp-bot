@@ -27,7 +27,7 @@
 // Baileys sock.user.id always has) specifically so tests exercise the
 // normalizeJid() stripping that comparison depends on, rather than
 // accidentally passing via a same-shape coincidence.
-function createFakeSock({ admins = [], participantIds = [], participantNames = {}, botJid = 'bot:7@s.whatsapp.net' } = {}) {
+function createFakeSock({ admins = [], participantIds = [], participantNames = {}, participantLids = {}, botJid = 'bot:7@s.whatsapp.net' } = {}) {
   const sentMessages = [];
   const deleted = [];
   const kicked = [];
@@ -69,11 +69,18 @@ function createFakeSock({ admins = [], participantIds = [], participantNames = {
       // `notify` (only included when the caller actually set one via
       // `participantNames`) mirrors Baileys' real Contact shape - "name of
       // the contact, the contact has set on their own on WA" - exercised by
-      // lib/adminCheck.js's getParticipantName().
+      // lib/adminCheck.js's getParticipantName(). `lid` (only included when
+      // the caller actually set one via `participantLids`) mirrors Baileys'
+      // real behavior where a participant's `id` is their phone-number JID
+      // and `lid` is a SEPARATE linked-device identifier - a message's own
+      // senderId can arrive in either form, which is exactly why both
+      // isGroupAdmin() and getParticipantName() match against `p.id`,
+      // `p.lid`, AND `p.jid`, not just `p.id` alone.
       participants: allParticipantIds.map((id) => ({
         id,
         admin: admins.includes(id) ? 'admin' : null,
         ...(participantNames[id] ? { notify: participantNames[id] } : {}),
+        ...(participantLids[id] ? { lid: participantLids[id] } : {}),
       })),
     }),
     // Lets a test add a participant (e.g. simulating someone joining)
