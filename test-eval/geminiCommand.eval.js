@@ -38,6 +38,7 @@ const assert = require('node:assert/strict');
 
 const { GEMINI_API_KEY } = require('../lib/config');
 const { interpretMessage } = require('../lib/geminiCommand');
+const { parseCourtCount } = require('../store');
 
 const skipReason = GEMINI_API_KEY
   ? undefined
@@ -429,23 +430,21 @@ evalTest('a genuinely ambiguous request ("Megan paid Megan in") comes back low-c
 });
 
 // --- A "courts" request giving only a COUNT ("we have 6 courts now") with
-// no actual court numbers must ask specifically for the numbers, not a
-// generic add-vs-replace choice - argText needs real numbers/ranges either
-// way, so that's the actually-missing information, not which of the two
-// modes it is. Real user report: the model's question offered "add 6
-// extra courts" vs. "replace with court 6" - a false choice that doesn't
-// resolve anything, since neither answer alone gives usable court numbers -
-// see the added SPECIAL CASE sentence on "courts" in COMMAND_ARG_GUIDE. ---
+// no actual court numbers must be read as the NEW TOTAL number of courts,
+// not an amount to add on top, and not something to ask a clarifying
+// question about either - synthesize a "1-N" range so the resulting
+// courtCount is actually N. See the SPECIAL CASE sentence on "courts" in
+// COMMAND_ARG_GUIDE. ---
 
-evalTest('"we have 6 courts now" (a bare count, no court numbers) asks specifically for the court numbers, not add-vs-replace', async () => {
+evalTest('"we have 4 courts" (a bare count, no court numbers) sets the total to 4, not 4 extra', async () => {
   const listText = '*Attendance* (0/10)\n\n(empty - use !in to add your name)';
-  const result = await interpretMessage('we have 6 courts now', { listText });
+  const result = await interpretMessage('we have 4 courts', { listText });
   assert.ok(result, 'expected a parsed result, not null');
-  const uncertain = result.actions.find((a) => a.command === 'courts' && a.confidence === 'low');
-  assert.ok(uncertain, `expected a low-confidence "courts" action, got: ${JSON.stringify(result.actions)}`);
-  assert.ok(uncertain.question && uncertain.question.trim(), 'expected a non-empty "question"');
-  assert.match(uncertain.question, /which|what/i, 'expected the question to ask for the actual court numbers');
-  assert.doesNotMatch(uncertain.question, /replace/i, 'must not offer a false add-vs-replace choice that still leaves the numbers unknown');
+  const action = result.actions.find((a) => a.command === 'courts' && a.confidence === 'high');
+  assert.ok(action, `expected a high-confidence "courts" action, got: ${JSON.stringify(result.actions)}`);
+  assert.doesNotMatch(action.argText, /^add\b/i, 'must replace the total, not add 4 extra courts on top');
+  const count = parseCourtCount(action.argText);
+  assert.equal(count, 4, `expected argText to parse to a court count of 4, got argText "${action.argText}" (parsed count: ${count})`);
 });
 
 // --- A number reference for "paid" must resolve against the PAYMENT
