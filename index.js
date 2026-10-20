@@ -291,6 +291,35 @@ const {
   LIVE_MESSAGE_MAX_AGE_MS,
 } = config;
 
+// Real bug report: a corrupted WhatsApp session (the Signal protocol's
+// "double ratchet" state desynced from what the sender's phone expects -
+// see the README's "Running more than one deployment" section for the
+// most common cause, two processes having touched the same `auth_info` at
+// once) throws deep inside Baileys' own decryption internals
+// (node_modules/libsignal), surfacing here as a bare, unexplained stack
+// trace right before the process exits. Restarting does NOT fix this on
+// its own - the same undecryptable message is simply redelivered on
+// reconnect, so the exact same crash repeats on every restart until pm2's
+// own `max_restarts` gives up and the bot goes down for good. Matched
+// against every known error signature this actually shows up as (not
+// just one exact string - libsignal throws several different messages
+// for the same underlying desync), so whichever one it happens to be,
+// the SAME actionable fix is surfaced right in the crash log itself
+// rather than leaving an operator to go search for it after the fact.
+const SESSION_DESYNC_ERROR_PATTERNS = [
+  /Bad MAC/,
+  /MessageCounterError/,
+  /Closing open session in favor of incoming prekey bundle/,
+  /SessionError: Over \d+ messages into the future/,
+];
+function logSessionDesyncHintIfMatched(err) {
+  const message = (err && err.message) || String(err);
+  if (!SESSION_DESYNC_ERROR_PATTERNS.some((pattern) => pattern.test(message))) return;
+  console.error(
+    '[bot] This looks like a corrupted WhatsApp session (Signal protocol state desync) - restarting will NOT fix it on its own, the same crash will repeat. See the README\'s "Running more than one deployment"/Troubleshooting sections: pm2 stop this deployment, rename (don\'t delete outright) its auth_info folder, pm2 restart, then scan the fresh QR code shown in pm2 logs.'
+  );
+}
+
 // Last-resort safety net. Without these, a single unexpected rejection or
 // thrown error ANYWHERE (e.g. a reconnect attempt failing right after the
 // host machine wakes from sleep, before its network is back up) crashes the
@@ -304,10 +333,12 @@ const {
 // silently, which is the best a single Node process can do for itself.
 process.on('unhandledRejection', (err) => {
   console.error('[bot] Unhandled promise rejection - exiting so a process supervisor (e.g. pm2) can restart cleanly:', err);
+  logSessionDesyncHintIfMatched(err);
   process.exit(1);
 });
 process.on('uncaughtException', (err) => {
   console.error('[bot] Uncaught exception - exiting so a process supervisor (e.g. pm2) can restart cleanly:', err);
+  logSessionDesyncHintIfMatched(err);
   process.exit(1);
 });
 

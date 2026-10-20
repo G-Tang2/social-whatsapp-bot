@@ -1942,8 +1942,10 @@ stops working days later:
   same one, even briefly, desyncs it in a way that doesn't self-heal.
   You'll see it as a flood of `Bad MAC` / `MessageCounterError: Key used
   already or never filled` / `Closing open session in favor of incoming
-  prekey bundle` errors in `pm2 logs ... --err`, and the only fix at that
-  point is deleting `auth_info` and re-linking from scratch (see the
+  prekey bundle` / `SessionError: Over 2000 messages into the future`
+  errors in `pm2 logs ... --err` (the bot's own crash log calls this out
+  directly too, whichever of these it happens to be), and the only fix at
+  that point is deleting `auth_info` and re-linking from scratch (see the
   Troubleshooting section below). If you ever need to run a deployment
   manually for any reason (e.g. to re-scan its QR code because the code
   rendered awkwardly through `pm2 logs`), always `pm2 stop` it first - a
@@ -2035,11 +2037,14 @@ Check these in order:
    retrying - check the machine's actual internet connection.
 
 9. **Do `pm2 logs ... --err` show a flood of `Bad MAC`, `MessageCounterError:
-   Key used already or never filled`, or repeated `Closing open session in
-   favor of incoming prekey bundle` lines?** This is a corrupted WhatsApp
-   session (the Signal protocol state has desynced from what the sender's
-   phone expects), most often caused by two processes having touched the
-   same `auth_info` at once at some point - see "Running more than one
+   Key used already or never filled`, repeated `Closing open session in
+   favor of incoming prekey bundle` lines, or a crash with `SessionError:
+   Over 2000 messages into the future`?** (The bot's own crash log
+   recognizes all of these and calls out this exact cause for you, right
+   above the stack trace.) This is a corrupted WhatsApp session (the
+   Signal protocol state has desynced from what the sender's phone
+   expects), most often caused by two processes having touched the same
+   `auth_info` at once at some point - see "Running more than one
    deployment" above for how that happens and how to avoid it going
    forward. Once desynced, it doesn't self-heal - the fix is:
    ```bash
