@@ -24,7 +24,7 @@ every change.
 | `!limit [number]` | viewing: anyone; changing: group admins only | Caps the max number of people on the list. Before any courts are set, defaults to 6; once `!courts` is set, auto-scales to courts × 6 instead (admins can still override with `!limit`). Lowering it below the current headcount moves the excess (most recently added, in order) onto the waitlist. `!limit off` removes the cap. With no number, shows the current limit without changing it |
 | `!allow <count>` | group admins only | Lets `count` extra people in from the front of the waitlist right now (e.g. `!allow 2`), bypassing the limit for that batch. The limit itself doesn't change, so attendance can end up over it until it naturally drains back down |
 | `!paymentlabel [text]` | viewing: anyone; changing: group admins only | Sets the payment-due section's header (e.g. `!paymentlabel $20 please`). With no text, shows the current header without changing it |
-| `!regulars [name1, name2, ...]` | viewing: anyone; changing: group admins only | Manages a saved roster of "regular players" (see "Regular players" below), reusable later via the word `regular players` in place of names in `!in`/`!newlist`. A plain name list *replaces* the whole roster; `!regulars add <names>`/`!regulars remove <names>` tweak it instead; `!regulars tournament <names>`/`!regulars social <names>` opt specific regulars into the tournament (or undo that, back to the social-only default) for every future `!newlist`; `!regulars clear` empties it. With no text, shows the current roster without changing it |
+| `!regulars [name1, name2, ...]` | viewing: anyone; `add`/`remove`: anyone; replacing the whole list, `tournament`/`social`, and `clear`: group admins only | Manages a saved roster of "regular players" (see "Regular players" below), reusable later via the word `regular players` in place of names in `!in`/`!newlist`. `!regulars add <names>`/`!regulars remove <names>` tweak the roster and are open to anyone; a plain name list *replaces* the whole roster instead (admins only); `!regulars tournament <names>`/`!regulars social <names>` opt specific regulars into the tournament (or undo that, back to the social-only default) for every future `!newlist` (admins only); `!regulars clear` empties it (admins only). With no text, shows the current roster without changing it |
 | `!exempt [name1, name2, ...]` | viewing: anyone; changing: group admins only | Manages a saved roster of names who never need to pay (see "Tracking who owes payment" below) - the organizer, a sponsor, a coach, whoever. Same `add`/`remove`/`clear`/replace shape as `!regulars`. With no text, shows the current roster without changing it |
 | `!settournament [on\|off\|rules <text>]` | viewing: anyone; changing: group admins only | Turns the tournament sub-feature (see "Tournament" below) on or off for *this* group, and sets the rules text `!tournament` (below) shows. On by default everywhere. With no argument, shows who's currently opted in instead of changing anything. `!settournament rules <text>` sets the rules text (e.g. `!settournament rules Best of 3, single elimination`); `!settournament rules` with no text shows the current rules |
 | `!tournament` | anyone | Shows the tournament rules text set via `!settournament rules <text>` (see "Tournament" below) - does not show who's opted in (that's `!settournament`) |
@@ -169,23 +169,27 @@ to name the friends individually just list them normally instead (e.g.
 to write a bare `!in`.
 
 **Regular players:** save a group's regulars once with `!regulars Alice, Bob,
-Carla` (admins only to change; anyone can run bare `!regulars` to see the
-current roster). From then on, anyone can sign the whole saved roster up
-by typing the words `regular players` in place of names - `!in regular
-players` adds them all in one command, and it can combine with an
-explicitly named extra person too, e.g. `!in regular players, Extra Guest`.
-The same `regular players` phrase also works in `!newlist`'s `with ...`
-clause (see below) to pre-populate a brand new list with the regulars
-straight away, e.g. `!newlist 20/08 with regular players`. It's a *saved*
-roster, not a phase of the current list - it survives `!newlist`/`!clear`
-and stays as-is until an admin changes it. To tweak it without retyping
-everyone: `!regulars add <names>` appends to the existing roster (skipping
-anyone already on it), `!regulars remove <names>` takes specific people off
-it, and `!regulars clear` empties it entirely. `regular players` is
-deliberately only understood by `!in` and `!newlist`'s pre-populate
-clause, not `!out`/`!paid` - bulk-removing or bulk-charging a whole saved
-roster by a single shorthand word felt too easy to fire off by accident,
-so removing/paying still needs actual names.
+Carla` (admins only to change the whole list this way; anyone can run bare
+`!regulars` to see the current roster). From then on, anyone can sign the
+whole saved roster up by typing the words `regular players` in place of
+names - `!in regular players` adds them all in one command, and it can
+combine with an explicitly named extra person too, e.g. `!in regular
+players, Extra Guest`. The same `regular players` phrase also works in
+`!newlist`'s `with ...` clause (see below) to pre-populate a brand new list
+with the regulars straight away, e.g. `!newlist 20/08 with regular
+players`. It's a *saved* roster, not a phase of the current list - it
+survives `!newlist`/`!clear` and stays as-is until changed. To tweak it
+without retyping everyone: `!regulars add <names>` appends to the existing
+roster (skipping anyone already on it), and `!regulars remove <names>`
+takes specific people off it - **both open to anyone**, not just admins,
+so a regular can add or remove themselves (or a friend who's becoming
+one) without needing to flag one down. `!regulars clear` empties it
+entirely, but that one - like replacing the whole list outright - stays
+admins-only. `regular players` is deliberately only understood by `!in`
+and `!newlist`'s pre-populate clause, not `!out`/`!paid` - bulk-removing or
+bulk-charging a whole saved roster by a single shorthand word felt too
+easy to fire off by accident, so removing/paying still needs actual
+names.
 
 Every `!newlist` (whether or not you use the `with ...` clause) always
 adds the saved roster to the fresh list, and adds every one of them

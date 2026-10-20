@@ -2007,7 +2007,7 @@ test('handleRegulars: bare command shows "(none set)" for a brand new group, and
   assert.match(shown.replies[0], /2\. Bob/);
 });
 
-test('handleRegulars: only an admin can change it - a non-admin\'s attempt to set it is refused', async () => {
+test('handleRegulars: only an admin can REPLACE the whole roster - a non-admin\'s attempt is refused', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
@@ -2015,6 +2015,44 @@ test('handleRegulars: only an admin can change it - a non-admin\'s attempt to se
   await adminCommands.handleRegulars(ctx.ctx);
   assert.match(ctx.replies[0], /only a group admin/i);
   assert.deepEqual(store.getRegularPlayers(groupId), []);
+});
+
+test('handleRegulars: only an admin can "clear" the roster - a non-admin\'s attempt is refused', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setRegularPlayers(groupId, ['Alice']);
+
+  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'clear' });
+  await adminCommands.handleRegulars(ctx.ctx);
+  assert.match(ctx.replies[0], /only a group admin/i);
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Alice']);
+});
+
+// Real request: add/remove should be open to anyone, not just admins - a
+// regular typing themselves in/out, or anyone adding a friend who's
+// becoming a regular, shouldn't need to flag down an admin for it.
+test('handleRegulars: "add <names>" is open to ANYONE, not just admins', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setRegularPlayers(groupId, ['Alice']);
+
+  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'add Bob' });
+  await adminCommands.handleRegulars(ctx.ctx);
+
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Alice', 'Bob']);
+  assert.doesNotMatch(ctx.replies.join('\n'), /only a group admin/i);
+});
+
+test('handleRegulars: "remove <names>" is open to ANYONE, not just admins', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setRegularPlayers(groupId, ['Alice', 'Bob']);
+
+  const ctx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', argText: 'remove Bob' });
+  await adminCommands.handleRegulars(ctx.ctx);
+
+  assert.deepEqual(store.getRegularPlayers(groupId), ['Alice']);
+  assert.doesNotMatch(ctx.replies.join('\n'), /only a group admin/i);
 });
 
 test('handleRegulars: a plain name list REPLACES the whole roster', async () => {

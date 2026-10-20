@@ -642,33 +642,42 @@ function formatRegularPlayers(names, tournamentNames) {
 //
 // Bare !regulars (no argument) just shows the current roster - anyone can
 // do this, same "viewing: anyone" pattern as !location/!courts/!time.
-// Changing it is admins-only, with six sub-forms recognized by a
-// leading keyword (case-insensitive) in argText:
-//   !regulars clear                -> empties the roster
-//   !regulars add <names>          -> adds to the existing roster (no dupes)
+// `add`/`remove` are ALSO open to anyone - real request: a regular typing
+// themselves in/out, or anyone adding a friend who's becoming a regular,
+// shouldn't need to flag down an admin for it. Every other sub-form
+// (wholesale replace, clear, and the tournament/social opt-in split,
+// which changes what !newlist does automatically every week) is still
+// admins-only - six sub-forms in total, recognized by a leading keyword
+// (case-insensitive) in argText:
+//   !regulars add <names>          -> adds to the existing roster (no
+//                                    dupes) - ANYONE, not just admins
 //   !regulars remove <names>       -> removes matching names (by identity,
 //                                    same normalizeName() case/whitespace
 //                                    matching as everything else in this
-//                                    bot - see store.js)
+//                                    bot - see store.js) - ANYONE, not
+//                                    just admins
+//   !regulars clear                -> empties the roster (admins only)
 //   !regulars tournament <names>   -> opts these regulars INTO the
-//                                    tournament - !newlist auto-joins them
-//                                    (see addRegularsToCurrentList above),
+//                                    tournament (admins only) - !newlist
+//                                    auto-joins them (see
+//                                    addRegularsToCurrentList above),
 //                                    instead of adding them social-only
 //                                    like every other regular by default.
 //                                    Added to the roster first if not
 //                                    already on it, same as !regulars add.
-//   !regulars social <names>       -> the opposite - (re)marks these
-//                                    regulars social-only, !newlist's
-//                                    default behavior. Also adds them to
-//                                    the roster first if needed.
-//   !regulars <names>              -> REPLACES the whole roster outright -
-//                                    the natural mapping for someone just
-//                                    declaring who the regulars are for
-//                                    the first time, e.g. "these people
-//                                    are regular players: Alice, Bob, Carla"
-//                                    - every name defaults to social only
-//                                    unless opted into the tournament
-//                                    afterward.
+//   !regulars social <names>       -> the opposite (admins only) -
+//                                    (re)marks these regulars social-only,
+//                                    !newlist's default behavior. Also
+//                                    adds them to the roster first if
+//                                    needed.
+//   !regulars <names>              -> REPLACES the whole roster outright
+//                                    (admins only) - the natural mapping
+//                                    for someone just declaring who the
+//                                    regulars are for the first time, e.g.
+//                                    "these people are regular players:
+//                                    Alice, Bob, Carla" - every name
+//                                    defaults to social only unless opted
+//                                    into the tournament afterward.
 // Always replies with the resulting roster (there's no "list" to repost
 // that would otherwise make the change visible, unlike most other admin
 // commands here) rather than staying quiet on success.
@@ -679,18 +688,28 @@ async function handleRegulars(ctx) {
     const current = getRegularPlayers(groupId);
     const tournament = getRegularPlayersTournament(groupId);
     await reply(
-      `*Regular players*\n${formatRegularPlayers(current, tournament)}\n\nTo change (admins only): ${COMMAND_PREFIX}regulars Name1, Name2, ... (replaces the whole list), ${COMMAND_PREFIX}regulars add <names>, ${COMMAND_PREFIX}regulars remove <names>, ${COMMAND_PREFIX}regulars tournament <names> (opt into !newlist's tournament auto-add), ${COMMAND_PREFIX}regulars social <names> (undo that), or ${COMMAND_PREFIX}regulars clear`
+      `*Regular players*\n${formatRegularPlayers(current, tournament)}\n\nTo change: ${COMMAND_PREFIX}regulars add <names> or ${COMMAND_PREFIX}regulars remove <names> (anyone can), ${COMMAND_PREFIX}regulars Name1, Name2, ... (replaces the whole list, admins only), ${COMMAND_PREFIX}regulars tournament <names> (opt into !newlist's tournament auto-add, admins only), ${COMMAND_PREFIX}regulars social <names> (undo that, admins only), or ${COMMAND_PREFIX}regulars clear (admins only)`
     );
     return;
   }
 
-  const admin = await isGroupAdmin(sock, groupId, senderId);
-  if (!admin) {
-    await reply('Only a group admin can change the regular players list - my paws are tied.');
-    return;
-  }
-
   const trimmed = argText.trim();
+  const addMatch = trimmed.match(/^add\s+(.+)$/i);
+  const removeMatch = trimmed.match(/^remove\s+(.+)$/i);
+
+  // Real request: add/remove are open to anyone - a regular typing their
+  // own name in/out, or anyone adding a friend who's becoming a regular,
+  // shouldn't need to flag down an admin for it. The more impactful
+  // sub-forms below (wholesale replace, clear, and the tournament/social
+  // opt-in split, which changes what !newlist does automatically every
+  // week) stay admin-only.
+  if (!addMatch && !removeMatch) {
+    const admin = await isGroupAdmin(sock, groupId, senderId);
+    if (!admin) {
+      await reply(`Only a group admin can do that to the regular players list - my paws are tied. Anyone can use ${COMMAND_PREFIX}regulars add/${COMMAND_PREFIX}regulars remove though.`);
+      return;
+    }
+  }
 
   if (/^clear$/i.test(trimmed)) {
     setRegularPlayers(groupId, []);
@@ -726,8 +745,6 @@ async function handleRegulars(ctx) {
     return;
   }
 
-  const addMatch = trimmed.match(/^add\s+(.+)$/i);
-  const removeMatch = trimmed.match(/^remove\s+(.+)$/i);
   const mode = addMatch ? 'add' : removeMatch ? 'remove' : 'set';
   const namesPart = addMatch ? addMatch[1] : removeMatch ? removeMatch[1] : trimmed;
 
