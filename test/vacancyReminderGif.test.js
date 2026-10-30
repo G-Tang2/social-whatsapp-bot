@@ -26,7 +26,7 @@ process.env.VACANCY_REMINDER_IMAGE_PATH = fakeVideoPath;
 
 const store = require('../store');
 const { createFakeSock } = require('./helpers/mockBaileys');
-const { checkVacancyReminders, FIRST_WARNING_HOURS } = require('../lib/vacancyReminder');
+const { checkVacancyReminders } = require('../lib/vacancyReminder');
 
 let groupIdx = 0;
 function freshGroupId() {
@@ -60,7 +60,11 @@ test('sendFirstWarning sends an .mp4 VACANCY_REMINDER_IMAGE_PATH as a looping vi
   const groupId = freshGroupId();
   const participantIds = ['a@s.whatsapp.net', 'b@s.whatsapp.net'];
   const sock = createFakeSock({ participantIds });
-  setUpList(groupId, { hoursFromNow: FIRST_WARNING_HOURS - 1, limit: 10, entryCount: 0 });
+  // Comfortably within the group-wide warning's own trigger (2 days
+  // before the social at 4pm) no matter what time of day this suite
+  // happens to run - see test/vacancyReminder.test.js's own comment on
+  // its equivalent offset for the margin reasoning.
+  setUpList(groupId, { hoursFromNow: 10, limit: 10, entryCount: 0 });
 
   await checkVacancyReminders(sock);
 

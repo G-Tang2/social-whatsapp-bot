@@ -1083,8 +1083,9 @@ function setCourtCanceller(groupId, canceller) {
   return all[groupId].courtCanceller;
 }
 
-// Marks the CURRENT list's 50-hours-before "plenty of spots, sign up or
-// courts may be cancelled" group-wide warning as sent - see
+// Marks the CURRENT list's "plenty of spots, sign up or courts may be
+// cancelled" group-wide warning (fires 2 days before the social, at 4pm)
+// as sent - see
 // lib/vacancyReminder.js, which checks this (via getCurrentEvent's
 // notifiedVacancy50h) before sending, so the warning fires AT MOST ONCE
 // per list cycle regardless of how often the periodic check runs. Reset

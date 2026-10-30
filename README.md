@@ -1488,18 +1488,21 @@ does.
 If a group's current list is still 6 or more spots short of its limit as
 the social's start time closes in, the bot sends two escalating warnings:
 
-- **52 hours before start:** `@`-mentions the WHOLE group, e.g. "6 spots
-  still open! Plenty of room - sign up soon or courts may be cancelled
-  tomorrow."
-- **26 hours before start**, if there's *still* 6+ spots open: `@`-mentions
-  whoever `!courtcanceller` names (see the command table above), as a
-  direct heads-up to actually go cancel the courts if nobody fills in by
-  then.
+- **2 days before the social, at 4pm:** `@`-mentions the WHOLE group, e.g.
+  "6 spots still open! Plenty of room - sign up soon or courts may be
+  cancelled tomorrow." This trigger is a fixed date+time - the social's own
+  date minus 2 days, at 4pm - computed from the social's DATE alone, not
+  its start time, so it fires at the same time of day regardless of
+  whether the social itself starts at 6pm or 9pm.
+- **26 hours before the social's real start time**, if there's *still* 6+
+  spots open: `@`-mentions whoever `!courtcanceller` names (see the command
+  table above), as a direct heads-up to actually go cancel the courts if
+  nobody fills in by then.
 
 Each warning fires **at most once** per list - it won't repeat every time
 the periodic check runs, and a fresh `!newlist` resets both, so a new cycle
 gets its own fresh pair of warnings. If no `!courtcanceller` is set, the
-26-hour warning simply never goes out (the 52-hour one still does).
+26-hour warning simply never goes out (the group-wide one still does).
 
 **This needs a real, computable start time**, not just a limit and a date -
 `!time` has always been pure freeform display text (e.g. "8pm - 10pm", "8PM
@@ -1521,7 +1524,7 @@ Configurable in `.env` (see `.env.example`):
   list's date/time are interpreted in when computing the real start
   instant.
 - `VACANCY_REMINDER_IMAGE_PATH` - optional path to an image or video (a
-  flyer, a poster, whatever) to attach to the 52-hour broadcast
+  flyer, a poster, whatever) to attach to the group-wide broadcast
   specifically. Same file for every group the bot moderates. Left unset,
   that broadcast stays plain text. Read fresh off disk on every send, not
   cached at startup, so swapping the file takes effect on the very next
@@ -2251,7 +2254,7 @@ one giant switch statement. The actual work is split across two folders:
   `!in`/`!out`/`!paid` outcomes into one combined summary - see below), and
   `lastSeenStatus.js` (the WhatsApp About/status heartbeat - see "Last seen
   status heartbeat" above), `vacancyReminder.js` (the low-signup
-  52-hour/26-hour warnings - see "Vacancy warnings" above),
+  group-wide/26-hour warnings - see "Vacancy warnings" above),
   `autoNewlistScheduler.js` (auto-starting next week's list - see
   "Auto-starting next week's list" above), and `inactivityCheck.js` (the
   periodic background sweep for the inactivity-reminders feature - see

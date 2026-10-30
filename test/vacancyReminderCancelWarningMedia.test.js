@@ -55,11 +55,12 @@ function setUpList(groupId, { hoursFromNow, limit, entryCount = 0 }) {
   }
 }
 
-// hoursFromNow is deliberately within BOTH FIRST_WARNING_HOURS and
-// CANCEL_WARNING_HOURS (same setup test/vacancyReminder.test.js's own
-// cancel-warning tests use) - so both warnings fire in the same check;
-// find() picks out the cancel-warning message specifically rather than
-// assuming it's the only one sent.
+// hoursFromNow is deliberately within CANCEL_WARNING_HOURS (which also
+// puts it well past the group-wide warning's own 2-days-before-at-4pm
+// trigger - same setup test/vacancyReminder.test.js's own cancel-warning
+// tests use) - so both warnings fire in the same check; find() picks out
+// the cancel-warning message specifically rather than assuming it's the
+// only one sent.
 test('sendCancelWarning sends the configured .mp4 as a looping video, tagging only the court-canceller', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net', 'canceller@s.whatsapp.net'] });

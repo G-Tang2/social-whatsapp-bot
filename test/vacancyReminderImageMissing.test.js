@@ -21,7 +21,7 @@ process.env.VACANCY_REMINDER_IMAGE_PATH = path.join(tmpDir, 'does-not-exist.jpg'
 
 const store = require('../store');
 const { createFakeSock } = require('./helpers/mockBaileys');
-const { checkVacancyReminders, FIRST_WARNING_HOURS } = require('../lib/vacancyReminder');
+const { checkVacancyReminders } = require('../lib/vacancyReminder');
 
 let groupIdx = 0;
 function freshGroupId() {
@@ -54,7 +54,7 @@ function setUpList(groupId, { hoursFromNow, limit, entryCount = 0 }) {
 test('falls back to plain text (and logs, but does not throw) when VACANCY_REMINDER_IMAGE_PATH points at a missing file', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
-  setUpList(groupId, { hoursFromNow: FIRST_WARNING_HOURS - 1, limit: 10, entryCount: 0 });
+  setUpList(groupId, { hoursFromNow: 10, limit: 10, entryCount: 0 });
 
   const originalError = console.error;
   const logged = [];

@@ -15,6 +15,7 @@ const {
   zonedDateTimeToUtc,
   oneWeekAfter,
   addWeeks,
+  addDays,
 } = require('../dates');
 
 test('isValidDateString accepts real calendar dates and rejects rollovers', () => {
@@ -203,6 +204,26 @@ test('zonedDateTimeToUtc: a plain UTC timezone needs no adjustment', () => {
 test('zonedDateTimeToUtc: returns null for an invalid date string', () => {
   assert.equal(zonedDateTimeToUtc('not-a-date', 20, 0, 'UTC'), null);
   assert.equal(zonedDateTimeToUtc(null, 20, 0, 'UTC'), null);
+});
+
+test('addDays: moves forward or backward across a month/year boundary', () => {
+  assert.equal(addDays('2026-08-20', 2), '2026-08-22');
+  assert.equal(addDays('2026-08-20', -2), '2026-08-18');
+  assert.equal(addDays('2026-08-31', 1), '2026-09-01');
+  assert.equal(addDays('2026-01-01', -1), '2025-12-31');
+});
+
+test('addDays: 0 days returns the same date unchanged', () => {
+  assert.equal(addDays('2026-08-20', 0), '2026-08-20');
+});
+
+test('addDays: 7 days matches oneWeekAfter exactly', () => {
+  assert.equal(addDays('2026-08-20', 7), oneWeekAfter('2026-08-20'));
+});
+
+test('addDays: returns null for an invalid date string', () => {
+  assert.equal(addDays('not-a-date', 2), null);
+  assert.equal(addDays(null, 2), null);
 });
 
 test('addWeeks: 1 week matches oneWeekAfter exactly', () => {

@@ -29,7 +29,7 @@ process.env.TIMEZONE = 'UTC';
 
 const store = require('../store');
 const { createFakeSock } = require('./helpers/mockBaileys');
-const { checkVacancyReminders, computeVacancies, MIN_VACANCIES, FIRST_WARNING_HOURS, CANCEL_WARNING_HOURS } = require('../lib/vacancyReminder');
+const { checkVacancyReminders, computeVacancies, MIN_VACANCIES, CANCEL_WARNING_HOURS } = require('../lib/vacancyReminder');
 
 let groupIdx = 0;
 function freshGroupId() {
@@ -98,19 +98,31 @@ test(`does nothing when vacancies are below MIN_VACANCIES (${MIN_VACANCIES})`, a
   assert.equal(sock.sentMessages.length, 0);
 });
 
-test(`does nothing yet when more than ${FIRST_WARNING_HOURS} hours remain, even with plenty of vacancies`, async () => {
+// The group-wide warning's own trigger is a FIXED wall-clock date+time -
+// FIRST_WARNING_DAYS_BEFORE days before the social's own date, at
+// FIRST_WARNING_HOUR:FIRST_WARNING_MINUTE local time (see
+// lib/vacancyReminder.js) - not a smooth "N hours before start" countdown.
+// That makes picking a test offset slightly less obvious than a pure-hours
+// threshold would be: an offset has to be either comfortably LESS than a
+// day (so the computed trigger date is unambiguously still in the past
+// relative to right now, whatever the real wall-clock hour happens to be
+// when this suite runs) or comfortably MORE than
+// FIRST_WARNING_DAYS_BEFORE*24 hours PLUS a full extra day (so the
+// trigger is unambiguously still in the future) - 10 and 80 below satisfy
+// those margins unconditionally, not just "usually".
+test('does nothing yet when the group-wide trigger (2 days before the social, at 4pm) hasn\'t arrived, even with plenty of vacancies', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
-  setUpList(groupId, { hoursFromNow: FIRST_WARNING_HOURS + 5, limit: 10, entryCount: 0 });
+  setUpList(groupId, { hoursFromNow: 80, limit: 10, entryCount: 0 });
   await checkVacancyReminders(sock);
   assert.equal(sock.sentMessages.length, 0);
 });
 
-test('sends the 50-hour group-wide warning once vacancies>=MIN and within FIRST_WARNING_HOURS, tagging every participant', async () => {
+test('sends the group-wide warning once vacancies>=MIN and the 2-days-before-at-4pm trigger has arrived, tagging every participant', async () => {
   const groupId = freshGroupId();
   const participantIds = ['a@s.whatsapp.net', 'b@s.whatsapp.net', 'c@s.whatsapp.net'];
   const sock = createFakeSock({ participantIds });
-  setUpList(groupId, { hoursFromNow: FIRST_WARNING_HOURS - 1, limit: 10, entryCount: 0 });
+  setUpList(groupId, { hoursFromNow: 10, limit: 10, entryCount: 0 });
 
   await checkVacancyReminders(sock);
 
@@ -121,30 +133,30 @@ test('sends the 50-hour group-wide warning once vacancies>=MIN and within FIRST_
   assert.equal(store.getCurrentEvent(groupId).notifiedVacancy50h, true);
 });
 
-test('the 50-hour warning fires AT MOST ONCE per list cycle, even across repeated checks', async () => {
+test('the group-wide warning fires AT MOST ONCE per list cycle, even across repeated checks', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
-  setUpList(groupId, { hoursFromNow: FIRST_WARNING_HOURS - 1, limit: 10, entryCount: 0 });
+  setUpList(groupId, { hoursFromNow: 10, limit: 10, entryCount: 0 });
 
   await checkVacancyReminders(sock);
   await checkVacancyReminders(sock);
   await checkVacancyReminders(sock);
 
-  assert.equal(sock.sentMessages.length, 1, 'expected exactly one 50-hour warning, not one per check');
+  assert.equal(sock.sentMessages.length, 1, 'expected exactly one group-wide warning, not one per check');
 });
 
 test('a fresh !newlist resets notifiedVacancy50h, allowing the warning to fire again for the new cycle', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
-  setUpList(groupId, { hoursFromNow: FIRST_WARNING_HOURS - 1, limit: 10, entryCount: 0 });
+  setUpList(groupId, { hoursFromNow: 10, limit: 10, entryCount: 0 });
   await checkVacancyReminders(sock);
   assert.equal(sock.sentMessages.length, 1);
 
-  const { isoDate, time } = futureDateTime(FIRST_WARNING_HOURS - 1);
+  const { isoDate, time } = futureDateTime(10);
   store.newList(groupId, isoDate, { time });
   await checkVacancyReminders(sock);
 
-  assert.equal(sock.sentMessages.length, 2, 'expected a second 50-hour warning for the new list cycle');
+  assert.equal(sock.sentMessages.length, 2, 'expected a second group-wide warning for the new list cycle');
 });
 
 test(`does nothing for the cancel warning yet when more than ${CANCEL_WARNING_HOURS} hours remain`, async () => {
@@ -155,8 +167,9 @@ test(`does nothing for the cancel warning yet when more than ${CANCEL_WARNING_HO
 
   await checkVacancyReminders(sock);
 
-  // Still within the 50-hour window, so the group-wide warning DOES fire -
-  // just not the cancel-specific one yet.
+  // Past the group-wide warning's own (earlier) 2-days-before-at-4pm
+  // trigger, so IT still fires here - just not the cancel-specific one
+  // yet, which is gated on the social's real start time instead.
   assert.equal(sock.sentMessages.length, 1);
   assert.doesNotMatch(sock.sentMessages[0].content.text, /cancel some courts/i);
 });
@@ -186,7 +199,7 @@ test('does NOT send the cancel warning when no court-canceller is configured, an
   assert.equal(store.getCurrentEvent(groupId).notifiedVacancyCancelWarning, false);
 });
 
-test('a bot outage through the 50-hour mark still catches up: both warnings fire in the same check once already inside CANCEL_WARNING_HOURS', async () => {
+test('a bot outage through the group-wide trigger still catches up: both warnings fire in the same check once already inside CANCEL_WARNING_HOURS', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
   store.setCourtCanceller(groupId, { jid: 'canceller@s.whatsapp.net' });
