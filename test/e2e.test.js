@@ -911,7 +911,7 @@ test('e2e: AI mention that is not list-related (command: none) still gets an "I 
   assert.match(fakeSockInstance.sentMessages[0].content.text, /not capable of doing that/i);
 });
 
-test('e2e: an off-topic AI mention (command: none) with an "offTopicReply" from the model gets that reply plus the fixed "join the social" reminder, instead of the generic "not capable" fallback', async () => {
+test('e2e: an off-topic AI mention (command: none) with an "offTopicReply" from the model gets that reply sent verbatim, with nothing appended, instead of the generic "not capable" fallback', async () => {
   ai.setEnabled(GROUP_ID, true);
   setNextGeminiResponse({
     command: 'none',
@@ -925,9 +925,7 @@ test('e2e: an off-topic AI mention (command: none) with an "offTopicReply" from 
 
   assert.equal(fakeSockInstance.sentMessages.length, 1);
   const sent = fakeSockInstance.sentMessages[0].content.text;
-  assert.match(sent, /Layer bread, filling, and condiments - simple as that!/);
-  assert.match(sent, /running the signup list/i);
-  assert.match(sent, /join the social/i);
+  assert.equal(sent, 'Layer bread, filling, and condiments - simple as that!');
   assert.doesNotMatch(sent, /not capable of doing that/i);
 });
 
@@ -978,7 +976,7 @@ test('e2e: a compound @-mention with a real dispatchable action plus an off-topi
   assert.ok(posted, 'expected the real "in" action to have dispatched and posted the updated list');
   const offTopic = fakeSockInstance.sentMessages.find((m) => /Layer bread, filling, and condiments/.test(m.content.text || ''));
   assert.ok(offTopic, 'expected a separate reply addressing the off-topic sandwich question');
-  assert.match(offTopic.content.text, /join the social/i);
+  assert.equal(offTopic.content.text, 'Layer bread, filling, and condiments - simple as that!');
 });
 
 // Real bug report: "@Snoopy I paid and me to social only" from someone who

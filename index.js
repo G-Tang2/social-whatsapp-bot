@@ -903,10 +903,9 @@ const UNEXPECTED_ERROR_REPLY = "Uh oh, tripped over my own paws there - somethin
 //    `priorBotMessage` context (see handleAiMention below). No question
 //    available, but the model DID mark the (sole) action 'none' with a
 //    real `offTopicReply` (see RESPONSE_SCHEMA's doc comment in
-//    lib/geminiCommand.js): reply with that instead - a brief, direct
-//    response to whatever off-topic thing was actually said, with a fixed
-//    reminder that Snoopy's currently running the signup list appended
-//    (see formatOffTopicReply below) - rather than the generic "I'm not
+//    lib/geminiCommand.js): reply with that instead, sent verbatim - a
+//    genuine, direct response to whatever off-topic thing was actually
+//    said, in Snoopy's own voice - rather than the generic "I'm not
 //    capable of doing that", which reads oddly for ordinary small talk.
 //    Neither a question nor an offTopicReply available falls back to the
 //    plain AI_NOT_UNDERSTOOD_REPLY. Being @-mentioned always gets SOME
@@ -954,16 +953,6 @@ const UNEXPECTED_ERROR_REPLY = "Uh oh, tripped over my own paws there - somethin
 //    question/an offTopicReply per the bullet above.
 // formatClarifyingQuestion moved to lib/helpers.js so commands/list.js can
 // share it too, for its own "which one, though?" disambiguation prompts.
-
-// Fixed reminder appended after a model-authored `offTopicReply` (see
-// RESPONSE_SCHEMA's doc comment in lib/geminiCommand.js) - kept OUT of the
-// prompt itself (SYSTEM_PROMPT's OFFTOPICREPLY paragraph explicitly tells
-// the model not to write its own version) so the wording here is fixed,
-// not dependent on the model repeating it faithfully every time.
-const OFF_TOPIC_REMINDER = "Anyway, enough chit-chat - I'm officially on duty running the signup list right now! If you or your friends want to join the social, just say the word.";
-function formatOffTopicReply(offTopicReply) {
-  return `${offTopicReply}\n\n${OFF_TOPIC_REMINDER}`;
-}
 
 // Shared setup for a natural-language @-mention interpretation call -
 // used by both handleAiMention (the live path, below) and
@@ -1113,7 +1102,7 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
       // sender unsure which one their reply is even answering.
       await reply(formatClarifyingQuestion(needsClarification[0].question));
     } else if (offTopicReplies.length) {
-      await reply(formatOffTopicReply(offTopicReplies[0].offTopicReply));
+      await reply(offTopicReplies[0].offTopicReply);
     } else {
       await reply(AI_NOT_UNDERSTOOD_REPLY);
     }
@@ -1214,7 +1203,7 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   // "how do I make a sandwich, also sign me up" dispatches the "in" half
   // above and separately gets a brief reply to the sandwich question here.
   for (const action of offTopicReplies) {
-    await reply(formatOffTopicReply(action.offTopicReply));
+    await reply(action.offTopicReply);
   }
 }
 
@@ -1491,8 +1480,8 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
   // language mapping call (interpretMessage, see lib/geminiCommand.js),
   // which is also the ONLY place a live Gemini-authored reply reaches the
   // sender at all: the `offTopicReply` it produces for genuinely off-topic
-  // messages (see formatOffTopicReply above) - everything else, including
-  // every dispatched command's confirmation, stays fully hand-written.
+  // messages, sent verbatim - everything else, including every dispatched
+  // command's confirmation, stays fully hand-written.
   //
   // Defined up here (rather than just below the catch-up gate, where a
   // single live command dispatches) so the multiline-commands block right

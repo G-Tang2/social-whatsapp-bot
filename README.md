@@ -1222,8 +1222,8 @@ current state. Every group starts off - each one opts in individually.
   same waitlisting/authorization/promotion behavior). Otherwise - low
   confidence, or the message doesn't look list-related at all - nothing is
   guessed or acted on; instead the bot either asks a clarifying question, or
-  briefly addresses an off-topic message, or falls back to a plain "I'm not
-  capable of doing that" (see the next three bullets for which).
+  genuinely chats back for an off-topic message, or falls back to a plain
+  "I'm not capable of doing that" (see the next three bullets for which).
 - **Asks instead of guessing when it's unsure what you meant.** For a
   low-confidence request that's still clearly *trying* to do something
   list-related (as opposed to not being list-related at all), the model is
@@ -1252,22 +1252,17 @@ current state. Every group starts off - each one opts in individually.
   off, those questions still work exactly as before (retype the full
   command), just without the reply shortcut, since a plain reply is only
   ever picked up through this natural-language path.
-- **Briefly addresses an off-topic message, then reminds people Snoopy's
-  busy running the list.** For a message that isn't list-related at all
-  (small talk, an unrelated question - "how do I make a sandwich"), the
-  model is asked for a short, direct reply to whatever was actually said,
-  which the bot sends back with a fixed reminder appended that it's
-  currently running the group's signup list, and an invitation for the
-  sender (or their friends) to join the social - rather than either
-  ignoring the message or the flat "not capable" brush-off. Kept
-  deliberately brief (one or two sentences, no step-by-step instructions),
-  and the model is told to sidestep anything sensitive/personal/
-  inappropriate with a neutral line instead of engaging with it. Same
-  "alongside a real dispatched action" treatment as a clarifying question
-  above for a compound message - "how do I make a sandwich, also sign me
-  up" both signs the sender up AND gets a separate reply about the
-  sandwich. No offTopicReply from the model falls back to the plain "not
-  capable" reply below.
+- **Actually chats back for an off-topic message, no canned brush-off.**
+  For a message that isn't list-related at all (small talk, an unrelated
+  question - "how do I make a sandwich"), the model is asked for a
+  genuine, direct reply to whatever was actually said, in Snoopy's own
+  voice, sent back to the sender exactly as written - no fixed reminder
+  or "back to business" line tacked on, and no length/topic restriction
+  beyond writing as Snoopy would. Same "alongside a real dispatched
+  action" treatment as a clarifying question above for a compound message
+  - "how do I make a sandwich, also sign me up" both signs the sender up
+  AND gets a separate reply about the sandwich. No offTopicReply from the
+  model falls back to the plain "not capable" reply below.
 - **Always replies to an @-mention - never silent, never a swallowed
   error.** Every case that doesn't end in a dispatched command, a
   clarifying question, or an off-topic reply gets some reply, never
