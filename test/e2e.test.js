@@ -2164,31 +2164,41 @@ test('e2e: a Gemini API failure does not crash, and shows the real error message
   );
 });
 
-test('e2e: a Gemini call that times out gets a "took too long, try again" reply with the real error message, NOT the generic "not capable of doing that" one', async () => {
+// Real request: a Gemini timeout should never tell the sender to try
+// again themselves - Gemini can just be slow, and the sender would rather
+// wait than have to notice a "try again" reply and retype the exact same
+// message. The bot should say so once, then keep retrying the SAME
+// request silently in the background until it actually succeeds.
+test('e2e: a Gemini call that times out gets a single "taking longer, I\'ll keep trying" reply, then keeps retrying until it succeeds, NOT a "try again" one', async () => {
   ai.setEnabled(GROUP_ID, true);
   setNextGeminiTimeout();
+  setNextGeminiTimeout();
+  setNextGeminiResponse({ command: 'in', argText: '', confidence: 'high' });
   fakeSockInstance.sentMessages.length = 0;
+  geminiCallCount = 0;
 
   await deliver('put me down please', { from: 'jordan@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
 
-  assert.equal(fakeSockInstance.sentMessages.length, 1);
-  const replyText = fakeSockInstance.sentMessages[0].content.text;
-  assert.match(replyText, /took too long/i);
-  assert.match(replyText, /try again/i);
-  assert.doesNotMatch(replyText, /not capable of doing that/i);
-  // Real request: spell out !in/!out/!paid with actual examples here,
-  // rather than just pointing to !help and making someone run a second
-  // command to look them up while they're already stuck.
-  assert.match(replyText, new RegExp(`${COMMAND_PREFIX}in <name> - e\\.g\\. ${COMMAND_PREFIX}in John`));
-  assert.match(replyText, new RegExp(`${COMMAND_PREFIX}out <name> - e\\.g\\. ${COMMAND_PREFIX}out John`));
-  assert.match(replyText, new RegExp(`${COMMAND_PREFIX}paid - marks yourself paid`));
-  // Real request: show the real error message even for a timeout, not just
-  // the friendlier framing above - see formatAiTimeoutReply (index.js).
-  // Preceded by a visual divider, same as formatAiErrorReply.
-  assert.ok(
-    replyText.includes(`${SECTION_DIVIDER}\nError message: The operation was aborted`),
-    `expected a divider directly above "Error message:", got: ${JSON.stringify(replyText)}`
+  // Exactly 3 calls to the (fake) Gemini client: 2 timeouts, then the
+  // success that actually got dispatched - proves it kept retrying rather
+  // than giving up after the first failure.
+  assert.equal(geminiCallCount, 3);
+
+  // Exactly ONE "taking longer" notice, even though it timed out twice -
+  // never one per retry, and never the old "try again"/"not capable of
+  // doing that" wording.
+  const stillWorkingReplies = fakeSockInstance.sentMessages.filter(
+    (m) => /taking longer than usual|still processing/i.test(m.content.text || '')
   );
+  assert.equal(stillWorkingReplies.length, 1, `expected exactly one "still working" notice, got: ${JSON.stringify(fakeSockInstance.sentMessages.map((m) => m.content.text))}`);
+  assert.doesNotMatch(stillWorkingReplies[0].content.text, /try again/i);
+  assert.doesNotMatch(stillWorkingReplies[0].content.text, /not capable of doing that/i);
+
+  // The request that finally succeeded was actually dispatched (jordan
+  // signed up and the list was posted), proving execution picked back up
+  // normally after the retries, not just that the loop exited.
+  const posted = fakeSockInstance.sentMessages.find((m) => /jordan/i.test(m.content.text || ''));
+  assert.ok(posted, 'expected jordan to have been added and the list posted, same as a real !in would');
 });
 
 // Regression coverage for the "last seen" About/status heartbeat

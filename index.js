@@ -830,38 +830,21 @@ function messageMentionsBot(sock, msg, text, groupId) {
 // cases rather than sometimes staying silent.
 const AI_NOT_UNDERSTOOD_REPLY = `Ooh, that one's got me stumped! I'm not capable of doing that (shocking, I know) - try rephrasing, or use ${COMMAND_PREFIX}help (or ${COMMAND_PREFIX}admin) to see the exact commands I understand.`;
 
-// Shown instead of AI_NOT_UNDERSTOOD_REPLY specifically when
-// interpretMessage() (lib/geminiCommand.js) gave up because Gemini didn't
-// respond in time (see its own timedOut doc comment) - a genuinely
-// different situation from "not list-related"/"too uncertain to guess", so
-// it gets a genuinely different reply: this was likely a perfectly
-// understandable request, it just didn't get answered fast enough, and
-// simply trying again (the request itself, not necessarily right this
-// second) is real, actionable advice here in a way it isn't for the other
-// cases. Spells out !in/!out/!paid with real examples directly here
-// (rather than just pointing to !help) since those never touch Gemini at
-// all - a real, immediately usable way around it timing out again, not
-// just "hope it's faster this time," and worth showing rather than making
-// someone run a second command just to go look it up while they're
-// already stuck.
-// `error` (optional) is interpretMessage()'s own `error` detail for this
-// same timed-out/transient-failure call (lib/geminiCommand.js) -
-// `{ message, code, status }`, appended so the sender sees the actual
-// underlying reason (e.g. a real 503 UNAVAILABLE from Gemini itself vs. a
-// plain client-side abort) alongside the friendlier "took too long"
-// framing, same reasoning as formatAiErrorReply below. `status` (Google's
-// own short error code, e.g. "UNAVAILABLE") is only ever present for a
-// real server-side ApiError - a client-side AbortError has no status of
-// its own to show, so that line is only included when there is one.
-// Omitted entirely (falsy `error`) just means interpretMessage() didn't
-// have any detail to give.
-function formatAiTimeoutReply(error) {
-  let detail = '';
-  if (error && error.message) {
-    const statusLine = error.status ? `Gemini status: ${error.status}\n` : '';
-    detail = `\n\n${SECTION_DIVIDER}\n${statusLine}Error message: ${error.message}`;
-  }
-  return `Whoops, daydreamed a bit too long on that one - took too long to process. Try again in a bit, or use these typed commands:\n${COMMAND_PREFIX}in <name> - e.g. ${COMMAND_PREFIX}in John\n${COMMAND_PREFIX}out <name> - e.g. ${COMMAND_PREFIX}out John\n${COMMAND_PREFIX}paid - marks yourself paid (or ${COMMAND_PREFIX}paid John for someone else)${detail}`;
+// Shown once, the FIRST time interpretMessage() (lib/geminiCommand.js)
+// comes back timedOut for a live @-mention - see handleAiMention below,
+// which then keeps silently retrying the SAME request in the background
+// until it actually succeeds (or comes back with some other, non-timedOut
+// outcome - a real error, a usable interpretation, etc.), rather than
+// giving up and asking the sender to resend it. Real request: Gemini can
+// just be slow sometimes, and the sender would rather wait than have to
+// notice the bot gave up, re-read a "try again" reply, and retype the
+// exact same message themselves. Deliberately brief and formal, no error
+// detail dumped here (the real reason is still logged server-side on
+// every individual failed attempt, for whoever's running the bot to
+// notice if it never recovers) - the sender doesn't need the technical
+// detail for something that isn't asking them to do anything.
+function formatAiStillWorkingReply() {
+  return "Still processing your request - this is taking longer than usual. No action needed; I'll post the result once it's done.";
 }
 
 // Shown instead of AI_NOT_UNDERSTOOD_REPLY specifically when
@@ -926,17 +909,18 @@ const UNEXPECTED_ERROR_REPLY = "Uh oh, tripped over my own paws there - somethin
 //    (see formatOffTopicReply below) - rather than the generic "I'm not
 //    capable of doing that", which reads oddly for ordinary small talk.
 //    Neither a question nor an offTopicReply available falls back to the
-//    plain AI_NOT_UNDERSTOOD_REPLY - EXCEPT when interpretMessage() gave up
-//    specifically because Gemini didn't respond in time
-//    (interpretation.timedOut - see that function's own doc comment),
-//    which gets formatAiTimeoutReply() instead: a genuinely different situation
-//    ("might well have understood you, just didn't answer fast enough")
-//    deserves a genuinely different reply, not "I'm not capable of doing
-//    that" - which would wrongly suggest the request itself was the
-//    problem. Being @-mentioned always gets SOME reply now either way -
-//    the sender should never be left wondering whether the bot even saw
-//    their message, the same way an unrecognized "!command" would
-//    previously just vanish with no feedback at all.
+//    plain AI_NOT_UNDERSTOOD_REPLY. Being @-mentioned always gets SOME
+//    reply now either way - the sender should never be left wondering
+//    whether the bot even saw their message, the same way an unrecognized
+//    "!command" would previously just vanish with no feedback at all.
+//    Gemini simply not responding in time (interpretation.timedOut - see
+//    that function's own doc comment) is NOT one of the outcomes judged
+//    here at all - see the retry loop right at the top of handleAiMention
+//    below, which keeps calling interpretMessage() with the SAME request
+//    until it stops timing out, after telling the sender once
+//    (formatAiStillWorkingReply) that it's taking longer than usual. By
+//    the time execution reaches this point, `interpretation` is always
+//    either a genuine, non-timed-out result or a non-transient error.
 //  - Each action with command !== 'none' and confidence 'high' dispatches
 //    straight to the real command handler (commands/list.js or
 //    commands/admin.js/etc.), exactly as if that !command had been typed -
@@ -1054,7 +1038,29 @@ async function buildAiMentionPromptContext({ sock, msg, groupId, text }) {
 
 async function handleAiMention({ sock, msg, groupId, senderId, senderName, text, reply, postList }) {
   const { cleanedText, listText, todayLabel, regularPlayersText, priorBotMessage } = await buildAiMentionPromptContext({ sock, msg, groupId, text });
-  const interpretation = await interpretMessage(cleanedText, { listText, todayLabel, regularPlayersText, priorBotMessage });
+  let interpretation = await interpretMessage(cleanedText, { listText, todayLabel, regularPlayersText, priorBotMessage });
+
+  // Gemini being slow/transiently unavailable (interpretMessage()'s own
+  // `timedOut: true` - see its doc comment in lib/geminiCommand.js) is NOT
+  // treated as a final answer here - real request: the sender would
+  // rather wait than have to notice a "try again" reply and retype the
+  // same message. Tell them ONCE (formatAiStillWorkingReply above) that
+  // it's taking longer than usual and there's nothing for them to do, then
+  // keep calling interpretMessage() with the exact SAME request (same
+  // cleanedText/listText/etc - the state the message was actually sent
+  // against) until it comes back with something OTHER than timedOut: a
+  // genuine error, a usable interpretation, anything - at which point
+  // every path below runs exactly as it always has, "retried a few times
+  // first" being invisible from there on. Each individual attempt already
+  // logs its own failure server-side (see interpretMessage()'s console.error
+  // calls), so a Gemini outage that never recovers is still visible there
+  // even though the sender was only told about it the one time.
+  if (interpretation && interpretation.timedOut) {
+    await reply(formatAiStillWorkingReply());
+    while (interpretation && interpretation.timedOut) {
+      interpretation = await interpretMessage(cleanedText, { listText, todayLabel, regularPlayersText, priorBotMessage });
+    }
+  }
 
   // Real bug report: a live @-mention finished with no visible trace at
   // all in the group - no dispatched change, no reply text, no error -
@@ -1098,9 +1104,7 @@ async function handleAiMention({ sock, msg, groupId, senderId, senderName, text,
   );
 
   if (!dispatchable.length) {
-    if (interpretation && interpretation.timedOut) {
-      await reply(formatAiTimeoutReply(interpretation.error));
-    } else if (interpretation && interpretation.error) {
+    if (interpretation && interpretation.error) {
       await reply(formatAiErrorReply(interpretation.error));
     } else if (needsClarification.length) {
       // Only the first, even if the model returned more than one low-

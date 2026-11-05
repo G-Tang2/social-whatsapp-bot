@@ -1278,14 +1278,14 @@ current state. Every group starts off - each one opts in individually.
     plain "I'm not capable of doing that" reply - an honest "too uncertain
     to act on," not a real failure.
   - A call that specifically took too long to respond (or Gemini itself
-    returning a persistent server error after retries) gets its own, more
-    accurate "took too long to process - try again" reply instead,
-    spelling out `!in`/`!out`/`!paid` with real examples right there
-    (rather than just pointing to `!help`) since those never touch Gemini
-    at all, plus the real underlying error message appended at the end.
-    The request may well have been perfectly understandable, it just
-    didn't get answered in time, so "I'm not capable of doing that" would
-    be misleading there.
+    returning a persistent server error after retries) is NOT treated as a
+    final answer at all - the sender is told once that it's taking longer
+    than usual and there's nothing for them to do, and the bot keeps
+    silently retrying the exact same request in the background until it
+    either succeeds (dispatches normally, posts the updated list, exactly
+    as if it had worked the first time) or comes back with some other,
+    non-timeout outcome. Never asks the sender to try again themselves or
+    retype anything - Gemini being slow isn't their problem to solve.
   - A genuine Gemini call failure (a misconfigured/invalid API key, a
     malformed request, any other non-transient error) gets a reply that
     includes Gemini's own actual error text, rather than either of the
