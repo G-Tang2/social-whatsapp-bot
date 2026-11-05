@@ -1171,6 +1171,15 @@ test('parseCourtCount handles ranges and comma lists, rejects invalid input', ()
   assert.equal(store.parseCourtCount('not courts'), null);
 });
 
+// Real bug report: "@Snoopy update courts to 11 and 12" mapped to argText
+// "11 and 12" (a natural way to say two numbers) - previously rejected
+// outright since only a literal comma was ever treated as a separator.
+test('parseCourtCount accepts the plain-English "and" as a separator, same as a comma', () => {
+  assert.equal(store.parseCourtCount('11 and 12'), 2);
+  assert.equal(store.parseCourtCount('1, 2 and 5-8'), 6);
+  assert.equal(store.parseCourtCount('1, 2, and 5-8'), 6); // Oxford comma
+});
+
 test('getRegularPlayers: an unconfigured group has an empty roster, not an error', () => {
   const groupId = freshGroupId();
   assert.deepEqual(store.getRegularPlayers(groupId), []);

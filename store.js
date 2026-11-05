@@ -171,6 +171,27 @@ const DEFAULT_LIMIT = parseDefaultLimit(process.env.DEFAULT_LIMIT);
 // silently producing a nonsense participant cap.
 const MAX_COURT_COUNT = 100;
 
+// Splits raw court-list text into trimmed, non-empty tokens on commas,
+// first normalizing the plain-English word "and" into a comma (e.g. "11
+// and 12", or "11, 12 and 13") the same way lib/helpers.js's
+// splitCommaList/normalizeAndSeparator does for name lists - duplicated
+// here rather than imported, since lib/helpers.js already requires THIS
+// file (for parseCourtCount), and requiring it back would be circular.
+// Real bug report: "@Snoopy update courts to 11 and 12" mapped to the
+// AI's courts argText verbatim as "11 and 12" (a natural way to say two
+// numbers), which parseCourtCount/expandCourtNumbers below previously
+// only ever split on a literal comma - "11 and 12" was one unparseable
+// token, rejected outright, even though a typed "!courts 11, 12" works
+// fine.
+function splitCourtTokens(raw) {
+  return raw
+    .trim()
+    .replace(/,?\s+and\s+/gi, ', ')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
 // Parses the court numbers an admin typed (e.g. "13-18", "5", or
 // "1, 2, 5-8") into a headcount. Supports comma-separated tokens, each
 // either a plain whole number (counts as 1) or a dash-range "start-end"
@@ -180,11 +201,7 @@ const MAX_COURT_COUNT = 100;
 // courts".
 function parseCourtCount(raw) {
   if (typeof raw !== 'string') return null;
-  const tokens = raw
-    .trim()
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean);
+  const tokens = splitCourtTokens(raw);
   if (!tokens.length) return null;
 
   let count = 0;
@@ -216,11 +233,7 @@ function parseCourtCount(raw) {
 // parseCourtCount does (empty/invalid token/over MAX_COURT_COUNT).
 function expandCourtNumbers(raw) {
   if (typeof raw !== 'string') return null;
-  const tokens = raw
-    .trim()
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean);
+  const tokens = splitCourtTokens(raw);
   if (!tokens.length) return null;
 
   const numbers = new Set();
@@ -1289,13 +1302,17 @@ function setCourts(groupId, raw) {
   if (!all[groupId]) all[groupId] = emptyGroupState();
   const current = all[groupId].current;
   if (!current.waitlist) current.waitlist = [];
-  current.courts = trimmed;
+  // Stores the NORMALIZED (comma-joined) form, not the raw trimmed input
+  // verbatim - so "11 and 12" displays as "Courts 11, 12", matching how
+  // every other court list is shown, rather than preserving the "and"
+  // wording on the posted list.
+  current.courts = splitCourtTokens(trimmed).join(', ');
   current.courtCount = count;
   current.limit = count * PLAYERS_PER_COURT;
   const promoted = promoteFromWaitlist(current);
   const demoted = demoteToWaitlist(current);
   writeAll(all);
-  return { ok: true, courts: trimmed, courtCount: count, limit: current.limit, promoted, demoted };
+  return { ok: true, courts: current.courts, courtCount: count, limit: current.limit, promoted, demoted };
 }
 
 // Adds MORE courts to whatever's already booked, instead of REPLACING them
