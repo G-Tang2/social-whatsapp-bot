@@ -1960,7 +1960,26 @@ stops working days later:
   from its own QR scan. Group commands stay correctly scoped per
   deployment either way (each one's own `ALLOWED_GROUPS`) - the bot never
   replies to a direct message at all (see below), so there's no
-  DM-duplication risk to worry about from sharing a number.
+  DM-duplication risk to worry about from sharing a number. **This is
+  still NOT entirely risk-free, though** - real incident: two deployments
+  sharing one number (separate, independently-QR-scanned `auth_info`
+  folders confirmed, no overlapping processes) still periodically hit the
+  exact same `SessionError: Over 2000 messages into the future`/`Bad MAC`
+  symptoms as the "never share auth_info" problem above, but for a
+  DIFFERENT reason: the account's own self pn<->lid session (the Signal
+  session between the account's phone-number identity and its LID
+  identity - look for the crashing peer's number matching your OWN
+  `botLid`, not a contact's, e.g. visible in a DEBUG-logged
+  `mentionedJid`/stack trace) isn't really per-companion-device the way an
+  ordinary contact session is - each companion independently keeps and
+  ratchets its own local copy of it, and two of them doing that for the
+  SAME account can still drift apart. Unlike the copied-`auth_info` case,
+  this isn't a misconfiguration to fix once and be done with - it's a
+  standing possibility for as long as you run more than one companion on
+  the same number, and the only known remedy when it happens is the same
+  one as any other session desync (see Troubleshooting below): delete
+  that ONE deployment's `auth_info` and re-link it, not a sign anything
+  was set up wrong.
 
 ### Useful ongoing commands (same on both platforms)
 
