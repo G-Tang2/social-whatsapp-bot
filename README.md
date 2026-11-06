@@ -34,7 +34,6 @@ every change.
 | `!spamfilter [on\|off]` | viewing: anyone; changing: group admins only | Turns auto-deletion of stock/crypto spam (see "Spam filtering" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!welcome [on\|off]` | viewing: anyone; changing: group admins only | Turns the "someone just joined" welcome message (see "Welcoming new members" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!ai [on\|off]` | viewing: anyone; changing: group admins only | Turns natural-language command interpretation (see "Natural-language commands" below) on or off for *this* group. OFF by default everywhere, and requires `GEMINI_API_KEY` to be configured. With no argument, shows the current on/off state without changing it |
-| `!courtcanceller [@name]` | viewing: anyone; changing: group admins only | Sets who gets tagged with a reminder to cancel the courts if the list is still well short of people close to the start time (see "Vacancy warnings" below). Must be a real `@`-mention, not a typed name. `!courtcanceller off` turns it off. With no `@`-mention, shows who's currently set without changing it |
 | `!autonewlist [on\|off]` | viewing: anyone; changing: group admins only | Turns automatic "start next week's list once this one's social has ended" (see "Auto-starting next week's list" below) on or off for *this* group. OFF by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!inactivity [on\|off]` | viewing: anyone; changing: group admins only | Turns inactivity reminders (see "Reminding inactive members" below) on or off for *this* group. Off by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!stale` | group admins only | Lists who's currently been warned for inactivity, how long ago, and who's overdue for manual removal (see "Reminding inactive members" below) |
@@ -1086,7 +1085,7 @@ gets interpreted via the
 as if you'd typed it - EVERY command the bot has, no exceptions: an
 everyday command (`!in`, `!out`, `!paid`, `!list`), an admin
 list-management command (`!clear`, `!newlist`, `!limit`, `!spamfilter`,
-`!courtcanceller`, `!autonewlist`, `!update`, ...; see `!admin` for the
+`!autonewlist`, `!update`, ...; see `!admin` for the
 full list), or the help commands (`!help`, `!tips`, `!admin`,
 `!admintips`). It's off by default, unlike spam filtering, because
 it calls an external paid API and can occasionally misread ordinary chat,
@@ -1481,23 +1480,17 @@ does.
 ## Vacancy warnings
 
 If a group's current list is still 6 or more spots short of its limit as
-the social's start time closes in, the bot sends two escalating warnings:
+the social's start time closes in, the bot `@`-mentions the WHOLE group,
+e.g. "6 spots still open! Plenty of room - sign up soon or courts may be
+cancelled tomorrow." - **2 days before the social, at 4pm**. This trigger
+is a fixed date+time - the social's own date minus 2 days, at 4pm -
+computed from the social's DATE alone, not its start time, so it fires at
+the same time of day regardless of whether the social itself starts at
+6pm or 9pm.
 
-- **2 days before the social, at 4pm:** `@`-mentions the WHOLE group, e.g.
-  "6 spots still open! Plenty of room - sign up soon or courts may be
-  cancelled tomorrow." This trigger is a fixed date+time - the social's own
-  date minus 2 days, at 4pm - computed from the social's DATE alone, not
-  its start time, so it fires at the same time of day regardless of
-  whether the social itself starts at 6pm or 9pm.
-- **26 hours before the social's real start time**, if there's *still* 6+
-  spots open: `@`-mentions whoever `!courtcanceller` names (see the command
-  table above), as a direct heads-up to actually go cancel the courts if
-  nobody fills in by then.
-
-Each warning fires **at most once** per list - it won't repeat every time
-the periodic check runs, and a fresh `!newlist` resets both, so a new cycle
-gets its own fresh pair of warnings. If no `!courtcanceller` is set, the
-26-hour warning simply never goes out (the group-wide one still does).
+The warning fires **at most once** per list - it won't repeat every time
+the periodic check runs, and a fresh `!newlist` resets it, so a new cycle
+gets its own fresh warning.
 
 **This needs a real, computable start time**, not just a limit and a date -
 `!time` has always been pure freeform display text (e.g. "8pm - 10pm", "8PM
@@ -1531,12 +1524,6 @@ Configurable in `.env` (see `.env.example`):
   `gifPlayback` flag set). A raw `.gif` file itself won't work as-is -
   Baileys doesn't transcode it for you, so convert one first, e.g.:
   `ffmpeg -i reminder.gif -movflags faststart -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" reminder.mp4`.
-- `VACANCY_CANCEL_WARNING_MEDIA_PATH` - same idea, but for the 26-hour
-  court-canceller heads-up instead - a private nudge to whoever
-  `!courtcanceller` names, not a group broadcast. Independent of
-  `VACANCY_REMINDER_IMAGE_PATH` above (a different message, so a
-  separately optional file) - left unset, that message stays plain text.
-  Same fresh-off-disk-on-every-send/image-vs-video rules as above.
 
 There's no on/off toggle for this feature specifically (unlike spam
 filtering, `!ai`, or the tournament sub-feature) - it only ever does
@@ -2294,7 +2281,7 @@ one giant switch statement. The actual work is split across two folders:
   `!in`/`!out`/`!paid` outcomes into one combined summary - see below), and
   `lastSeenStatus.js` (the WhatsApp About/status heartbeat - see "Last seen
   status heartbeat" above), `vacancyReminder.js` (the low-signup
-  group-wide/26-hour warnings - see "Vacancy warnings" above),
+  group-wide warning - see "Vacancy warnings" above),
   `autoNewlistScheduler.js` (auto-starting next week's list - see
   "Auto-starting next week's list" above), and `inactivityCheck.js` (the
   periodic background sweep for the inactivity-reminders feature - see
