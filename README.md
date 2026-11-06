@@ -1939,15 +1939,29 @@ stops working days later:
   ratchet" that decrypts incoming messages) - two processes touching the
   same one, even briefly, desyncs it in a way that doesn't self-heal.
   You'll see it as a flood of `Bad MAC` / `MessageCounterError: Key used
-  already or never filled` / `Closing open session in favor of incoming
-  prekey bundle` / `SessionError: Over 2000 messages into the future`
-  errors in `pm2 logs ... --err` (the bot's own crash log calls this out
-  directly too, whichever of these it happens to be), and the only fix at
-  that point is deleting `auth_info` and re-linking from scratch (see the
-  Troubleshooting section below). If you ever need to run a deployment
-  manually for any reason (e.g. to re-scan its QR code because the code
-  rendered awkwardly through `pm2 logs`), always `pm2 stop` it first - a
-  manual `node index.js` running alongside its own still-live pm2 copy is
+  already or never filled` / `SessionError: Over 2000 messages into the
+  future` errors in `pm2 logs ... --err`. (A separate `Closing open
+  session in favor of incoming prekey bundle` line is NOT one of these -
+  that's just routine logging when a session gets legitimately replaced,
+  never a thrown error on its own, so it's not something the crash
+  detection below reacts to.)
+  **The bot auto-recovers from a single corrupted session on its own**:
+  on exactly one of the three errors above, it parses the ONE peer's
+  address straight out of the crash's own stack trace and renames that
+  ONE `session-<address>.json` file in `auth_info` before restarting
+  (see `attemptSessionAutoRecovery()`/`sessionDesyncMatch()` in
+  `index.js`) - so the very next reconnect just re-handshakes with that
+  one peer instead of repeating the exact same crash forever. You'll see
+  `[bot] Auto-recovery: renamed corrupted session file ...` in the logs
+  when this happens - nothing further to do. If the SAME crash repeats
+  anyway (auto-recovery couldn't identify a file, or the underlying cause
+  is bigger than one session - e.g. two processes having shared this
+  `auth_info`), the only fix at that point is deleting the WHOLE
+  `auth_info` folder and re-linking from scratch (see the Troubleshooting
+  section below). If you ever need to run a deployment manually for any
+  reason (e.g. to re-scan its QR code because the code rendered awkwardly
+  through `pm2 logs`), always `pm2 stop` it first - a manual
+  `node index.js` running alongside its own still-live pm2 copy is
   exactly this same mistake.
 - **Two deployments CAN share one phone number** (each linked as its own
   companion device, like having WhatsApp Web open in two browsers) without
@@ -2053,17 +2067,26 @@ Check these in order:
    network problem on the host rather than something the bot can fix by
    retrying - check the machine's actual internet connection.
 
-9. **Do `pm2 logs ... --err` show a flood of `Bad MAC`, `MessageCounterError:
-   Key used already or never filled`, repeated `Closing open session in
-   favor of incoming prekey bundle` lines, or a crash with `SessionError:
-   Over 2000 messages into the future`?** (The bot's own crash log
-   recognizes all of these and calls out this exact cause for you, right
-   above the stack trace.) This is a corrupted WhatsApp session (the
-   Signal protocol state has desynced from what the sender's phone
+9. **Do `pm2 logs ... --err` show `Bad MAC`, `MessageCounterError: Key used
+   already or never filled`, or a crash with `SessionError: Over 2000
+   messages into the future`?** (The bot's own crash log recognizes all of
+   these and calls out this exact cause for you, right above the stack
+   trace.) This is a corrupted WhatsApp session for ONE specific peer (the
+   Signal protocol state has desynced from what that sender's phone
    expects), most often caused by two processes having touched the same
-   `auth_info` at once at some point - see "Running more than one
-   deployment" above for how that happens and how to avoid it going
-   forward. Once desynced, it doesn't self-heal - the fix is:
+   `auth_info` at once at some point, or by sharing one phone number across
+   multiple deployments - see "Running more than one deployment" above for
+   both.
+   **Check first whether it already fixed itself**: right above the stack
+   trace, look for `[bot] Auto-recovery: renamed corrupted session file
+   ...` - the bot already identifies the one broken peer from the crash
+   and renames just that session file before pm2 restarts it, so in most
+   cases there's nothing left for you to do; just confirm it reconnected
+   (`pm2 logs <name>` showing a fresh `[bot] Connected to WhatsApp.`) and
+   that the SAME crash doesn't immediately repeat.
+   If instead the log says auto-recovery couldn't identify a file (or the
+   exact same crash keeps repeating even after it ran), the underlying
+   problem is bigger than one session - the fix is the full manual reset:
    ```bash
    pm2 stop <name>
    mv auth_info auth_info.bak   # keep a backup rather than deleting outright
@@ -2075,6 +2098,9 @@ Check these in order:
    through `pm2 logs` (garbled/misaligned ASCII art - `pm2 logs` prefixes
    every line, which can mangle it), `pm2 stop` it and run `node index.js`
    directly in your terminal instead, scan it there, then `pm2 restart`.
+   (Separately, a `Closing open session in favor of incoming prekey
+   bundle` line on its own, with nothing crashing around it, is NOT this
+   problem - that's routine, non-fatal session-replacement logging.)
 
 10. **Was it a real, known command - typed (e.g. `!limit`, `!allow`,
    `!update`) or an `@Snoopy ...` natural-language mention - that just got

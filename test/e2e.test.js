@@ -220,7 +220,13 @@ function getLastGeminiPromptText() {
 // need to fake it, it's never invoked since our fake connection.update
 // flow never emits a qr.
 
-require('../index'); // runs start() -> captures the 'messages.upsert' handler
+// Runs start() -> captures the 'messages.upsert' handler. Also captures
+// sessionDesyncMatch/attemptSessionAutoRecovery (see index.js's
+// process.on('unhandledRejection'/'uncaughtException') handlers) for the
+// session-auto-recovery tests further down - these are exported
+// specifically BECAUSE the real process.on handlers that call them can't
+// be safely triggered from a test (they call process.exit(1)).
+const { sessionDesyncMatch, attemptSessionAutoRecovery } = require('../index');
 const ai = require('../ai'); // same DATA_DIR as index.js, so toggling here is visible to it
 const welcome = require('../welcome'); // same DATA_DIR as index.js, so toggling here is visible to it
 const store = require('../store'); // same DATA_DIR as index.js, so seeding regularPlayers here is visible to it
@@ -2707,4 +2713,65 @@ test('e2e: "add X to the tournament and me to social only" keeps X tournament-fl
   const all = [...ev.entries, ...ev.waitlist];
   assert.equal(all.find((e) => e.name === 'Stella').tournament, true, 'expected Stella to be in the tournament');
   assert.equal(all.find((e) => e.name === 'yam').tournament, false, 'expected the sender to stay social only');
+});
+
+// --- Session auto-recovery (index.js's process.on('unhandledRejection'/
+// 'uncaughtException') handlers) - see sessionDesyncMatch/
+// attemptSessionAutoRecovery's own doc comments in index.js for the full
+// mechanism. Tested directly against the exported functions, never by
+// actually emitting 'unhandledRejection'/'uncaughtException' - those real
+// handlers call process.exit(1), which would kill this test process. ---
+
+// Real bug report: an earlier version of this check matched only
+// `err.message` - which never actually contains a libsignal error
+// subclass's own name (see index.js's own doc comment, verified against
+// node_modules/libsignal/src/errors.js), so this hint had effectively
+// never fired for anything but a bare "Bad MAC".
+test('sessionDesyncMatch: recognizes every real libsignal error shape, matching name+message together (not message alone)', () => {
+  assert.equal(sessionDesyncMatch(new Error('Bad MAC')), true);
+
+  const counterErr = new Error('Key used already or never filled');
+  counterErr.name = 'MessageCounterError';
+  assert.equal(sessionDesyncMatch(counterErr), true, 'expected a MessageCounterError to match even though "MessageCounterError" never appears in .message itself');
+
+  const sessionErr = new Error('Over 2000 messages into the future!');
+  sessionErr.name = 'SessionError';
+  assert.equal(sessionDesyncMatch(sessionErr), true, 'expected a SessionError to match even without a "SessionError: " prefix in .message');
+});
+
+test('sessionDesyncMatch: does not match an unrelated error', () => {
+  assert.equal(sessionDesyncMatch(new Error('ECONNRESET')), false);
+});
+
+test('attemptSessionAutoRecovery: renames the one session file named in the crash\'s own stack trace', () => {
+  const authDir = path.join(tmpDir, 'auth_info');
+  fs.mkdirSync(authDir, { recursive: true });
+  const sessionFile = path.join(authDir, 'session-999888777.0.json');
+  fs.writeFileSync(sessionFile, '{"fake":"session data"}');
+
+  const err = new Error('Over 2000 messages into the future!');
+  err.name = 'SessionError';
+  err.stack = `SessionError: Over 2000 messages into the future!
+    at SessionCipher.fillMessageKeys (/app/node_modules/libsignal/src/session_cipher.js:261:19)
+    at async 999888777.0 [as awaitable] (/app/node_modules/libsignal/src/session_cipher.js:171:28)
+    at async _asyncQueueExecutor (/app/node_modules/libsignal/src/queue_job.js:20:29)`;
+
+  const recovered = attemptSessionAutoRecovery(err);
+
+  assert.equal(recovered, 'session-999888777.0.json');
+  assert.equal(fs.existsSync(sessionFile), false, 'expected the original corrupted file to be moved, not left in place');
+  const backups = fs.readdirSync(authDir).filter((f) => f.startsWith('session-999888777.0.json.auto-recovered-'));
+  assert.equal(backups.length, 1, 'expected exactly one renamed backup file');
+});
+
+test('attemptSessionAutoRecovery: returns null (does nothing) when the stack trace has no matching address', () => {
+  const err = new Error('Bad MAC');
+  err.stack = 'Error: Bad MAC\n    at somewhere (/app/foo.js:1:1)';
+  assert.equal(attemptSessionAutoRecovery(err), null);
+});
+
+test('attemptSessionAutoRecovery: returns null (does nothing, does not throw) when the named session file does not exist on disk', () => {
+  const err = new Error('Bad MAC');
+  err.stack = 'Error: Bad MAC\n    at async 000000000.0 [as awaitable] (/app/node_modules/libsignal/src/session_cipher.js:1:1)';
+  assert.equal(attemptSessionAutoRecovery(err), null);
 });

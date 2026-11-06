@@ -259,6 +259,8 @@ const {
 } = require('@whiskeysockets/baileys');
 const P = require('pino');
 const qrcode = require('qrcode-terminal');
+const fs = require('fs');
+const path = require('path');
 
 const config = require('./lib/config');
 const { getMessageText, formatList, SECTION_DIVIDER, getMentionedJids, getNonBotMentions, getQuotedParticipant, getQuotedMessageText, formatClarifyingQuestion, stripMentionTokens, substituteMentionNames, buildQuotePreviewMsg, normalizeJid, LITERAL_BOT_MENTION_REGEX } = require('./lib/helpers');
@@ -300,24 +302,114 @@ const {
 // trace right before the process exits. Restarting does NOT fix this on
 // its own - the same undecryptable message is simply redelivered on
 // reconnect, so the exact same crash repeats on every restart until pm2's
-// own `max_restarts` gives up and the bot goes down for good. Matched
-// against every known error signature this actually shows up as (not
-// just one exact string - libsignal throws several different messages
-// for the same underlying desync), so whichever one it happens to be,
-// the SAME actionable fix is surfaced right in the crash log itself
-// rather than leaving an operator to go search for it after the fact.
+// own `max_restarts` gives up and the bot goes down for good.
+//
+// Matched against `${err.name} ${err.message}` (NOT just `err.message`
+// alone - see below), against every known error signature this actually
+// shows up as (not just one exact string - libsignal throws several
+// different messages for the same underlying desync):
+//   - `new Error('Bad MAC')` (crypto.js) - a plain Error, message IS the
+//     whole thing, matches `err.message` alone fine.
+//   - `new MessageCounterError('Key used already or never filled')`
+//     (session_cipher.js/errors.js) - `err.message` is just "Key used
+//     already or never filled"; "MessageCounterError" only ever lives in
+//     `err.name` (standard Error-subclass behavior - the class name is
+//     NEVER part of `.message` itself, only what `.toString()`/console
+//     formatting prepends). Verified directly against
+//     node_modules/libsignal/src/errors.js.
+//   - `new SessionError('Over 2000 messages into the future!')`
+//     (session_cipher.js) - same deal: `err.message` has no "SessionError:
+//     " prefix at all, that's purely a display convention, so a pattern
+//     requiring it could never match the real field.
+// A real bug this fixes: matching only `err.message` (an earlier version
+// of this exact check) meant 2 of these 3 patterns could never actually
+// fire against a real thrown error - this hint had effectively never
+// worked for anything but a bare "Bad MAC".
+//
+// Deliberately does NOT include "Closing open session in favor of
+// incoming prekey bundle" (session_builder.js) - verified that's a plain
+// `console.warn`, never a thrown Error at all, so there's no `err` for it
+// to ever match against here; it's routine session-replacement logging,
+// not a crash signal (see the README's "Vacancy warnings"... no, see
+// "Running more than one deployment" for the full explanation of what it
+// does and doesn't mean on its own).
 const SESSION_DESYNC_ERROR_PATTERNS = [
   /Bad MAC/,
   /MessageCounterError/,
-  /Closing open session in favor of incoming prekey bundle/,
-  /SessionError: Over \d+ messages into the future/,
+  /Over \d+ messages into the future/,
 ];
-function logSessionDesyncHintIfMatched(err) {
+
+// Every one of libsignal's `SessionCipher` operations (decrypt, encrypt,
+// session init - see session_cipher.js's `queueJob()` calls) runs through
+// queue_job.js's `_asyncQueueExecutor`, which names its async frame after
+// `this.addr.toString()` - the exact Signal protocol address
+// ("<id>.<deviceId>", e.g. "212004736348198.0") for whichever peer the
+// operation is for. That's why a crash from in here always has a stack
+// frame literally reading `at async <address> [as awaitable]` - and,
+// verified against node_modules/@whiskeysockets/baileys/lib/Signal/
+// libsignal.js and lib/Utils/use-multi-file-auth-state.js, that SAME
+// address string is the exact key Baileys persists the session under:
+// `session-<address>.json` in `auth_info`. So this one regex is enough
+// to go straight from "here's the crash" to "here's the ONE file that's
+// corrupted" - see attemptSessionAutoRecovery() below, which acts on it.
+const SIGNAL_ADDRESS_FROM_STACK = /\bat async ([\w.]+) \[as awaitable\]/;
+
+function sessionDesyncMatch(err) {
+  const name = (err && err.name) || '';
   const message = (err && err.message) || String(err);
-  if (!SESSION_DESYNC_ERROR_PATTERNS.some((pattern) => pattern.test(message))) return;
-  console.error(
-    '[bot] This looks like a corrupted WhatsApp session (Signal protocol state desync) - restarting will NOT fix it on its own, the same crash will repeat. See the README\'s "Running more than one deployment"/Troubleshooting sections: pm2 stop this deployment, rename (don\'t delete outright) its auth_info folder, pm2 restart, then scan the fresh QR code shown in pm2 logs.'
-  );
+  const combined = `${name} ${message}`;
+  return SESSION_DESYNC_ERROR_PATTERNS.some((pattern) => pattern.test(combined));
+}
+
+// Renames (never deletes outright - keeps the evidence, and the rename
+// itself is reversible) just the ONE session file identified from the
+// crash's own stack trace, so the next reconnect starts a fresh Signal
+// handshake with that ONE peer instead of repeating the exact same
+// undecryptable-message crash forever. Previously this required a human
+// to notice the crash, read the Troubleshooting section, and manually
+// `mv` the right file - this does the same targeted fix automatically,
+// right as the crash is being handled, before pm2's restart.
+//
+// Deliberately narrow: only ever touches a file whose name was derived
+// from THIS SPECIFIC crash's own stack trace (see
+// SIGNAL_ADDRESS_FROM_STACK above) - never a blanket "wipe auth_info"
+// action, and a missing/unreadable stack trace (or a file that's already
+// gone) just means nothing happens here, falling back to the plain hint
+// below rather than guessing. Returns the recovered file's basename on
+// success, or null if there was nothing to act on (no address found in
+// the stack, or no matching file on disk).
+function attemptSessionAutoRecovery(err) {
+  const stack = (err && err.stack) || '';
+  const addressMatch = SIGNAL_ADDRESS_FROM_STACK.exec(stack);
+  if (!addressMatch) return null;
+
+  const fileName = `session-${addressMatch[1]}.json`;
+  const filePath = path.join(AUTH_DIR, fileName);
+  if (!fs.existsSync(filePath)) return null;
+
+  const backupPath = `${filePath}.auto-recovered-${Date.now()}`;
+  try {
+    fs.renameSync(filePath, backupPath);
+    console.error(`[bot] Auto-recovery: renamed corrupted session file ${fileName} out of the way (backed up as ${path.basename(backupPath)}) - the next reconnect will start a fresh handshake with this one peer.`);
+    return fileName;
+  } catch (recoveryErr) {
+    console.error(`[bot] Auto-recovery attempt failed for ${fileName} - falling back to the manual fix below:`, recoveryErr.message);
+    return null;
+  }
+}
+
+function logSessionDesyncHintIfMatched(err) {
+  if (!sessionDesyncMatch(err)) return;
+  const recoveredFile = attemptSessionAutoRecovery(err);
+  if (recoveredFile) {
+    console.error(
+      `[bot] This was a corrupted WhatsApp session (Signal protocol state desync) for one specific peer - already auto-recovered by renaming ${recoveredFile}, so the upcoming restart should come back clean. If the exact same crash repeats anyway, see the README's "Running more than one deployment"/Troubleshooting sections for the full manual fix.`
+    );
+  } else {
+    console.error(
+      '[bot] This looks like a corrupted WhatsApp session (Signal protocol state desync) - restarting will NOT fix it on its own, the same crash will repeat. Auto-recovery couldn\'t identify which session file to fix (see the stack trace above) - see the README\'s "Running more than one deployment"/Troubleshooting sections: pm2 stop this deployment, rename (don\'t delete outright) its auth_info folder, pm2 restart, then scan the fresh QR code shown in pm2 logs.'
+    );
+  }
 }
 
 // Last-resort safety net. Without these, a single unexpected rejection or
@@ -1916,3 +2008,13 @@ start().catch((err) => {
   console.error('[bot] Fatal error on startup:', err);
   process.exit(1);
 });
+
+// Exported purely for test/e2e.test.js - these are pure(ish) functions
+// (sessionDesyncMatch/attemptSessionAutoRecovery never call process.exit
+// themselves, unlike the process.on('unhandledRejection'/'uncaughtException')
+// handlers that actually call them, which can't be safely triggered from a
+// test at all without killing the test process).
+module.exports = {
+  sessionDesyncMatch,
+  attemptSessionAutoRecovery,
+};
