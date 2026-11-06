@@ -55,44 +55,17 @@
 // introduce `await` inside these functions without also adding explicit
 // locking; that synchronous atomicity is what keeps this safe today.
 
-const fs = require('fs');
 const path = require('path');
 // Defensive: reads process.env.DATA_DIR at module-load time below, so this
 // file loads .env itself rather than depending on load order relative to
 // lib/config.js or anything else. Safe/idempotent to call more than once.
 require('dotenv').config();
+const { createJsonFileStore } = require('./lib/jsonFileStore');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'activity.json');
 
-function ensureFile() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2));
-  }
-}
-
-function readAll() {
-  ensureFile();
-  const raw = fs.readFileSync(DATA_FILE, 'utf8');
-  try {
-    return JSON.parse(raw || '{}');
-  } catch (err) {
-    console.error('[activity] Corrupt data file, resetting.', err);
-    return {};
-  }
-}
-
-function writeAll(data) {
-  ensureFile();
-  // Atomic-ish write: write to temp file then rename, to avoid corruption
-  // if the process is killed mid-write - same pattern as store.js.
-  const tmpFile = `${DATA_FILE}.tmp`;
-  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2));
-  fs.renameSync(tmpFile, DATA_FILE);
-}
+const { readAll, writeAll } = createJsonFileStore(DATA_FILE, '[activity]');
 
 // Normalizes all[groupId] to the current { enabled, participants } shape,
 // mutating `all` in place and returning the normalized group object. Also

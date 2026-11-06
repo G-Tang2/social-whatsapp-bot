@@ -23,12 +23,12 @@
 // one uninterruptible block), so concurrent callers can't produce a lost
 // update on Node's single-threaded event loop.
 
-const fs = require('fs');
 const path = require('path');
 // Defensive: reads process.env.DATA_DIR at module-load time below, same
 // reasoning as spam.js - loads .env itself rather than
 // depending on require order relative to lib/config.js.
 require('dotenv').config();
+const { createJsonFileStore } = require('./lib/jsonFileStore');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'ai.json');
@@ -38,34 +38,7 @@ const DATA_FILE = path.join(DATA_DIR, 'ai.json');
 // explicit per-group `!ai on`/`!ai off` always wins regardless of this.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
-function ensureFile() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2));
-  }
-}
-
-function readAll() {
-  ensureFile();
-  const raw = fs.readFileSync(DATA_FILE, 'utf8');
-  try {
-    return JSON.parse(raw || '{}');
-  } catch (err) {
-    console.error('[ai] Corrupt data file, resetting.', err);
-    return {};
-  }
-}
-
-function writeAll(data) {
-  ensureFile();
-  // Atomic-ish write: write to temp file then rename - same pattern as
-  // spam.js/store.js.
-  const tmpFile = `${DATA_FILE}.tmp`;
-  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2));
-  fs.renameSync(tmpFile, DATA_FILE);
-}
+const { readAll, writeAll } = createJsonFileStore(DATA_FILE, '[ai]');
 
 // Whether natural-language command interpretation is turned on for
 // `groupId`. A group that's never touched !ai at all (or has no data.json
