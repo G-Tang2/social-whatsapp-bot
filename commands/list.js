@@ -540,7 +540,7 @@ async function handleIn(ctx) {
   // flag still recognized, not a mangled token stuck onto the end of a
   // name.
   const mentionedJids = getMentionedJids(msg);
-  const nonBotMentions = getNonBotMentions(mentionedJids, sock);
+  const nonBotMentions = getNonBotMentions(mentionedJids, sock, groupId);
   const textForParsing = stripMentionTokens(argText, mentionedJids);
 
   // Leading "paid" and/or "tournament" keywords (either order, e.g. "!in
@@ -1027,7 +1027,7 @@ async function handleOut(ctx) {
   // name token. See resolveMentionedName's own doc comment for why each
   // mention here resolves independently, unlike handleIn's tagging.
   const mentionedJids = getMentionedJids(msg);
-  const nonBotMentions = getNonBotMentions(mentionedJids, sock);
+  const nonBotMentions = getNonBotMentions(mentionedJids, sock, groupId);
   const textForParsing = stripMentionTokens(argText, mentionedJids);
   const { rest, paid: paidFlag, tournament: tournamentFlag } = stripLeadingInKeywords(textForParsing);
   if (tournamentFlag) {
@@ -1246,7 +1246,7 @@ async function handlePaid(ctx) {
   // it. See resolveMentionedName's own doc comment for why each mention
   // here resolves independently, unlike handleIn's tagging.
   const mentionedJids = getMentionedJids(msg);
-  const nonBotMentions = getNonBotMentions(mentionedJids, sock);
+  const nonBotMentions = getNonBotMentions(mentionedJids, sock, groupId);
   const textForParsing = stripMentionTokens(argText, mentionedJids);
 
   // "me" (ME_TOKEN, lib/helpers.js) said on its own is the explicit way to

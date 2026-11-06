@@ -25,6 +25,8 @@ const {
   parseNewListDetails,
   getMessageText,
   getQuotedMessageText,
+  getMentionedJids,
+  getNonBotMentions,
   stripMentionTokens,
   buildQuotePreviewMsg,
   formatEventHeader,
@@ -237,6 +239,41 @@ test('stripMentionTokens also strips a literal "@Snoopy" TYPED as plain text, no
 test('stripMentionTokens does not strip "Snoopy" mid-word or without the leading "@" - only a literal "@Snoopy" mention-shaped token', () => {
   assert.equal(stripMentionTokens('is Snoopy around?', []), 'is Snoopy around?');
   assert.equal(stripMentionTokens('@Snoopydog put me down', []), '@Snoopydog put me down');
+});
+
+test('getNonBotMentions excludes the bot\'s own id/lid, and collapses duplicates (first-seen order preserved)', () => {
+  const sock = { user: { id: 'bot:7@s.whatsapp.net', lid: 'bot-lid@lid' } };
+  const result = getNonBotMentions(['bot:7@s.whatsapp.net', 'alice@s.whatsapp.net', 'bot-lid@lid', 'alice@s.whatsapp.net', 'bob@s.whatsapp.net'], sock);
+  assert.deepEqual(result, ['alice@s.whatsapp.net', 'bob@s.whatsapp.net']);
+});
+
+// Real bug: messageMentionsBot() (index.js) already falls back to a
+// self-learned getKnownBotLid(groupId) for a connection where
+// sock.user.lid itself hasn't populated yet (see lib/botIdentity.js's own
+// bug report), but getNonBotMentions() didn't - so in that exact
+// scenario, the bot's own mention could leak through here as if it were
+// a real tagged person (e.g. getting "resolved" and substituted into
+// what the AI sees, or welcome-messaging the bot itself as a
+// "newcomer"). Fixed by accepting the same optional `groupId` and
+// applying the same fallback.
+test('getNonBotMentions also excludes the bot via the self-learned getKnownBotLid() fallback when sock.user.lid hasn\'t populated', () => {
+  const sock = { user: { id: 'bot:7@s.whatsapp.net' } }; // lid NOT populated
+  const groupId = 'helpers-nonbotmentions-lid-test@g.us';
+  botIdentity.recordBotLid(groupId, 'bot-learned-lid@lid');
+
+  const result = getNonBotMentions(['bot-learned-lid@lid', 'alice@s.whatsapp.net'], sock, groupId);
+  assert.deepEqual(result, ['alice@s.whatsapp.net']);
+});
+
+test('getNonBotMentions skips the getKnownBotLid() fallback entirely when no groupId is given', () => {
+  const sock = { user: { id: 'bot:7@s.whatsapp.net' } };
+  const groupId = 'helpers-nonbotmentions-no-groupid-test@g.us';
+  botIdentity.recordBotLid(groupId, 'bot-learned-lid@lid');
+
+  // groupId omitted - the learned lid for THIS group is never consulted,
+  // so it's treated as an ordinary (non-bot) mention.
+  const result = getNonBotMentions(['bot-learned-lid@lid', 'alice@s.whatsapp.net'], sock);
+  assert.deepEqual(result, ['bot-learned-lid@lid', 'alice@s.whatsapp.net']);
 });
 
 // Real bug report: replying to (or tagging someone in) a message that
@@ -815,6 +852,22 @@ test('adminCheck: isGroupAdmin matches an admin whose message arrived via their 
     participantLids: { 'admin@s.whatsapp.net': 'admin-lid@lid' },
   });
   assert.equal(await adminCheck.isGroupAdmin(sock, groupId, 'admin-lid@lid'), true);
+});
+
+// Real bug: normalizeId() (lib/adminCheck.js) used to strip everything
+// from the FIRST ":" onward (`.split(':')[0]`), which for a device-
+// suffixed sender id ("admin:12@s.whatsapp.net") dropped the "@domain"
+// along with the device id (-> "admin"), while groupMetadata's own
+// participant id, which never carries a suffix ("admin@s.whatsapp.net"),
+// passed through unchanged - so the SAME admin's two possible id shapes
+// normalized to two DIFFERENT strings and never matched, same false-
+// negative lockout class as the lid bug just above. Fixed to strip only
+// the ":deviceId" segment (matching lib/helpers.js's normalizeJid), so
+// both shapes converge.
+test('adminCheck: isGroupAdmin matches an admin whose message carries a ":deviceId" suffix the groupMetadata participant id doesn\'t', async () => {
+  const groupId = 'admincheck-test-1c@g.us';
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  assert.equal(await adminCheck.isGroupAdmin(sock, groupId, 'admin:12@s.whatsapp.net'), true);
 });
 
 test('adminCheck: isGroupAdmin fails closed (returns false) if groupMetadata throws', async () => {

@@ -666,10 +666,12 @@ async function handleGroupParticipantsUpdate(sock, update) {
   // The bot's own account shows up in `participants` too, the moment it's
   // first added to a group (it's "joining" right along with everyone
   // else in that same event) - filtered out so it never welcomes itself.
-  // Same both-JID-forms comparison messageMentionsBot() (below) already
-  // needs, for the same classic-JID-vs-LID reason - see its own doc
-  // comment.
-  const botJids = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
+  // Same three-candidate comparison messageMentionsBot() (below) already
+  // needs, for the same classic-JID-vs-LID reason - including the
+  // self-learned getKnownBotLid() fallback, for a connection where
+  // sock.user.lid itself hasn't populated yet - see that function's own
+  // doc comment.
+  const botJids = [sock?.user?.id, sock?.user?.lid, getKnownBotLid(groupId)].filter(Boolean).map(normalizeJid);
   const newcomers = (participants || []).filter((jid) => !botJids.includes(normalizeJid(jid)));
   if (!newcomers.length) return;
 
@@ -1060,8 +1062,13 @@ async function buildAiMentionPromptContext({ sock, msg, groupId, text }) {
   // specifically (not just any reply), pass that message's text through as
   // context - see lib/geminiCommand.js's buildPrompt() `priorBotMessage`
   // doc comment. Computed up here (moved up from further below) since the
-  // tagging substitution just below needs `botJids` too.
-  const botJids = [sock?.user?.id, sock?.user?.lid].filter(Boolean).map(normalizeJid);
+  // tagging substitution just below needs `botJids` too. Includes the
+  // self-learned getKnownBotLid() fallback (same three-candidate list as
+  // messageMentionsBot()) for a connection where sock.user.lid itself
+  // hasn't populated yet - without it, the bot's own mention could leak
+  // into `nonBotMentions` below and get wastefully "resolved" and
+  // substituted as if it were a real tagged person.
+  const botJids = [sock?.user?.id, sock?.user?.lid, getKnownBotLid(groupId)].filter(Boolean).map(normalizeJid);
   const quotedParticipant = getQuotedParticipant(msg);
   const priorBotMessage = quotedParticipant && botJids.includes(normalizeJid(quotedParticipant))
     ? getQuotedMessageText(msg) || undefined
@@ -1085,7 +1092,7 @@ async function buildAiMentionPromptContext({ sock, msg, groupId, text }) {
   // name + one mention" tagging check, same as a typed "!in" would -
   // this substitution only concerns what the MODEL sees, never what
   // actually gets dispatched.
-  const nonBotMentions = getNonBotMentions(mentioned, sock);
+  const nonBotMentions = getNonBotMentions(mentioned, sock, groupId);
   const jidToName = {};
   for (const jid of nonBotMentions) {
     jidToName[jid] = await getParticipantName(sock, groupId, jid);
