@@ -129,7 +129,6 @@
 // mutex/queue at the same time, don't assume the old synchronous safety
 // still applies.
 
-const fs = require('fs');
 const path = require('path');
 // Defensive: also loaded by lib/config.js (and, in the old monolithic
 // index.js, by index.js itself), but this file reads process.env directly
@@ -137,6 +136,7 @@ const path = require('path');
 // it loads .env itself too rather than depending on some other module
 // having required dotenv first. Safe/idempotent to call more than once.
 require('dotenv').config();
+const { createJsonFileStore } = require('./lib/jsonFileStore');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'lists.json');
@@ -273,15 +273,6 @@ function formatCourtNumbers(numbers) {
   return parts.join(', ');
 }
 
-function ensureFile() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2));
-  }
-}
-
 function emptyGroupState() {
   return {
     current: {
@@ -362,14 +353,12 @@ function emptyGroupState() {
       // Persists across !newlist (unlike tournamentWinners above) - rules
       // don't change just because a new cycle started.
       tournamentRules: null,
-      // Whether lib/vacancyReminder.js's two escalating low-signup
-      // warnings have already fired for THIS list cycle - each is a
-      // one-shot per list (not re-sent every time the periodic check
-      // runs), and both reset to false whenever a fresh cycle starts (see
-      // newList() below) - a new list is a fresh chance to fill up, so it
-      // deserves its own fresh warning too.
+      // Whether lib/vacancyReminder.js's low-signup group-wide warning has
+      // already fired for THIS list cycle - one-shot per list (not re-sent
+      // every time the periodic check runs), reset to false whenever a
+      // fresh cycle starts (see newList() below) - a new list is a fresh
+      // chance to fill up, so it deserves its own fresh warning too.
       notifiedVacancy50h: false,
-      notifiedVacancyCancelWarning: false,
       // Whether lib/autoNewlistScheduler.js's !autonewlist feature has
       // already started next week's list for THIS cycle - one-shot per
       // list, same reasoning/lifecycle as notifiedVacancy50h above (reset
@@ -421,16 +410,6 @@ function emptyGroupState() {
     // !newlist. `[]` (not null) so callers never need to null-check before
     // reading its length/iterating.
     tournamentLeaderboard: [],
-    // The specific person to @-mention if the group is still well short of
-    // vacant spots as the social's start time closes in - see
-    // !courtcanceller (commands/admin.js) and lib/vacancyReminder.js's
-    // 26-hours-before check. `{ jid }` or null - same top-level,
-    // persist-until-explicitly-changed lifecycle as regularPlayers/
-    // paymentExempt above (a court-booking contact doesn't change every
-    // list cycle), but a WhatsApp ID rather than a name: only ever set via
-    // a genuine @-mention in the !courtcanceller message itself, never a
-    // typed name - see that handler's own doc comment for why.
-    courtCanceller: null,
     // A single-level "undo the last edit" slot - see getUndoableState/
     // restoreUndoableState/saveUndoSnapshot/getUndoSnapshot below and
     // commands/admin.js's !undo. Also a sibling of `current`/`history`
@@ -545,10 +524,6 @@ function migrateIfNeeded(data) {
         data[groupId].current.notifiedVacancy50h = false;
         migrated = true;
       }
-      if (data[groupId].current.notifiedVacancyCancelWarning === undefined) {
-        data[groupId].current.notifiedVacancyCancelWarning = false;
-        migrated = true;
-      }
       if (data[groupId].current.autoNewlistCreated === undefined) {
         data[groupId].current.autoNewlistCreated = false;
         migrated = true;
@@ -562,31 +537,19 @@ function migrateIfNeeded(data) {
   return migrated;
 }
 
-function readAll() {
-  ensureFile();
-  const raw = fs.readFileSync(DATA_FILE, 'utf8');
-  let data;
-  try {
-    data = JSON.parse(raw || '{}');
-  } catch (err) {
-    console.error('[store] Corrupt data file, resetting.', err);
-    data = {};
-  }
+const jsonStore = createJsonFileStore(DATA_FILE, '[store]');
+const writeAll = jsonStore.writeAll;
 
+// Wraps the shared store's plain readAll() with this file's own
+// migration step (see migrateIfNeeded() above) - the one thing that
+// actually differs from spam.js/activity.js/welcome.js/ai.js's identical
+// otherwise-plain readAll().
+function readAll() {
+  const data = jsonStore.readAll();
   if (migrateIfNeeded(data)) {
     writeAll(data);
   }
-
   return data;
-}
-
-function writeAll(data) {
-  ensureFile();
-  // Atomic-ish write: write to temp file then rename, to avoid corruption
-  // if the process is killed mid-write.
-  const tmpFile = `${DATA_FILE}.tmp`;
-  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2));
-  fs.renameSync(tmpFile, DATA_FILE);
 }
 
 // Zero-width/invisible characters that show up in real WhatsApp text with
@@ -607,10 +570,6 @@ function normalizeName(name) {
 function getCurrentEvent(groupId) {
   const all = readAll();
   return (all[groupId] || emptyGroupState()).current;
-}
-
-function getList(groupId) {
-  return getCurrentEvent(groupId).entries;
 }
 
 function getDuePayments(groupId) {
@@ -1076,47 +1035,17 @@ function leaveTournament(groupId, name) {
   return { ok: true, promoted };
 }
 
-// The group's saved court-cancellation contact - see !courtcanceller
-// (commands/admin.js) and lib/vacancyReminder.js. `|| null` defensively
-// covers a group whose data predates this field, same convention as
-// getRegularPlayers/getPaymentExempt above. Returns `{ jid }` or null.
-function getCourtCanceller(groupId) {
-  const all = readAll();
-  return (all[groupId] || emptyGroupState()).courtCanceller || null;
-}
-
-// Sets (or clears, with `canceller: null`) the group's court-cancellation
-// contact - see !courtcanceller (commands/admin.js), which is also where
-// the @-mention is turned into `{ jid }` in the first place.
-function setCourtCanceller(groupId, canceller) {
-  const all = readAll();
-  if (!all[groupId]) all[groupId] = emptyGroupState();
-  all[groupId].courtCanceller = canceller;
-  writeAll(all);
-  return all[groupId].courtCanceller;
-}
-
 // Marks the CURRENT list's "plenty of spots, sign up or courts may be
 // cancelled" group-wide warning (fires 2 days before the social, at 4pm)
 // as sent - see
 // lib/vacancyReminder.js, which checks this (via getCurrentEvent's
 // notifiedVacancy50h) before sending, so the warning fires AT MOST ONCE
 // per list cycle regardless of how often the periodic check runs. Reset
-// back to false by newList() below, same as
-// markVacancyCancelWarningNotified.
+// back to false by newList() below.
 function markVacancy50hNotified(groupId) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
   all[groupId].current.notifiedVacancy50h = true;
-  writeAll(all);
-}
-
-// Same as markVacancy50hNotified above, for the 26-hours-before
-// court-cancellation warning sent to whoever !courtcanceller designates.
-function markVacancyCancelWarningNotified(groupId) {
-  const all = readAll();
-  if (!all[groupId]) all[groupId] = emptyGroupState();
-  all[groupId].current.notifiedVacancyCancelWarning = true;
   writeAll(all);
 }
 
@@ -1180,13 +1109,12 @@ function getUndoableState(groupId) {
     regularPlayers: state.regularPlayers || [],
     regularPlayersTournament: state.regularPlayersTournament || [],
     paymentExempt: state.paymentExempt || [],
-    courtCanceller: state.courtCanceller || null,
     tournamentLeaderboard: state.tournamentLeaderboard || [],
   };
 }
 
 // Overwrites the group's current/history/regularPlayers/
-// regularPlayersTournament/paymentExempt/courtCanceller/tournamentLeaderboard
+// regularPlayersTournament/paymentExempt/tournamentLeaderboard
 // wholesale from a snapshot
 // previously returned by getUndoableState() - the actual "restore" half
 // of !undo. Leaves `undo` itself untouched - the dispatch wrapper
@@ -1201,7 +1129,6 @@ function restoreUndoableState(groupId, snapshot) {
   all[groupId].regularPlayers = snapshot.regularPlayers;
   all[groupId].regularPlayersTournament = snapshot.regularPlayersTournament !== undefined ? snapshot.regularPlayersTournament : [];
   all[groupId].paymentExempt = snapshot.paymentExempt !== undefined ? snapshot.paymentExempt : [];
-  all[groupId].courtCanceller = snapshot.courtCanceller !== undefined ? snapshot.courtCanceller : null;
   all[groupId].tournamentLeaderboard = snapshot.tournamentLeaderboard !== undefined ? snapshot.tournamentLeaderboard : [];
   writeAll(all);
 }
@@ -1422,6 +1349,27 @@ function promoteFromWaitlist(current) {
 // and so get first claim if the limit rises again. No-op if there's no
 // limit or entries aren't over it. Mutates `current` in place and returns
 // the entries that got demoted, so callers can mention them.
+//
+// Real bug fixed here: a demoted entry that was in the tournament kept
+// `entry.tournament`/`tournamentWaitlisted` untouched even though
+// joinTournament()'s own doc comment establishes that flag only ever
+// lives on `entries`, never `waitlist`. Left as-is, the stale flag would
+// (a) undercount the tournament while they sat on the general waitlist
+// (`entries.filter(e => e.tournament)` never sees them there), and (b)
+// survive straight back onto `entries` on a later promotion with NO
+// re-check against `tournamentLimit` at all - applyTournamentIntent()
+// (used by promoteFromWaitlist() above) is a no-op unless
+// `wantsTournament` is set, which an entry that got its `tournament:
+// true` via joinTournament() (the "!in tournament" upgrade path, as
+// opposed to addEntry's own `wantsTournament` flag) never has - letting
+// the tournament silently exceed its own cap after a demote/promote
+// round trip. Fixed by clearing both flags on demotion (nobody waitlisted
+// is "in" or "queued for" the tournament - they have no confirmed spot of
+// any kind right now) and recording their INTENT via `wantsTournament`
+// instead, so promoteFromWaitlist()'s applyTournamentIntent() re-grants
+// them a real tournament spot - checked fresh against whatever
+// `tournamentLimit` is by then - if/when they're promoted back, exactly
+// like a brand new entry would be.
 function demoteToWaitlist(current) {
   if (!current.waitlist) current.waitlist = [];
   if (current.limit === null || current.limit === undefined) return [];
@@ -1429,6 +1377,13 @@ function demoteToWaitlist(current) {
 
   const excessCount = current.entries.length - current.limit;
   const demoted = current.entries.splice(current.entries.length - excessCount, excessCount);
+  for (const entry of demoted) {
+    if (entry.tournament || entry.tournamentWaitlisted) {
+      entry.wantsTournament = true;
+    }
+    entry.tournament = false;
+    entry.tournamentWaitlisted = false;
+  }
   current.waitlist = [...demoted, ...current.waitlist];
   return demoted;
 }
@@ -1939,8 +1894,33 @@ function applyListUpdate(groupId, parsed, editorId, editorIsAdmin) {
     const normalized = normalizeName(trimmed);
     const hasOwedSince = Object.prototype.hasOwnProperty.call(item, 'owedSince');
     const queue = existingDueByName.get(normalized);
+    let existingEntry = null;
     if (queue && queue.length) {
-      const existingEntry = queue.shift();
+      // Real bug fixed here: when a name has TWO (or more) existing
+      // entries under DIFFERENT owedSince dates, and the pasted text
+      // only lists it under ONE specific date group now (the other
+      // cycle's debt having been paid/forgiven), blind FIFO order could
+      // pop the WRONG one - e.g. intending to forgive week 1 while
+      // keeping week 2 could instead keep a "week 2" entry that's
+      // actually week 1's original object (its addedBy/addedAt survive,
+      // just with owedSince overwritten) while week 2's own entry gets
+      // reported as paidRemoved. The visible due-date set still looks
+      // right either way (that's exactly what made this easy to miss),
+      // but which underlying entry's metadata survives is swapped.
+      // Fixed by preferring an existing entry whose OWN owedSince
+      // matches the pasted date group exactly over positional order -
+      // `|| null` so a "No date" pasted group (owedSince
+      // undefined/null) still matches a "No date" existing entry
+      // exactly, not just by being first in the queue. Only falls back
+      // to plain FIFO (unchanged behavior) when no exact match exists,
+      // or when the paste carries no date-group info at all.
+      if (hasOwedSince) {
+        const matchIdx = queue.findIndex((e) => (e.owedSince || null) === (item.owedSince || null));
+        if (matchIdx !== -1) existingEntry = queue.splice(matchIdx, 1)[0];
+      }
+      if (!existingEntry && queue.length) existingEntry = queue.shift();
+    }
+    if (existingEntry) {
       newDue.push(hasOwedSince ? { ...existingEntry, owedSince: item.owedSince || undefined } : existingEntry);
     } else {
       const newEntry = {
@@ -2225,9 +2205,8 @@ function newList(groupId, date, details = {}) {
     tournamentWinners: null,
     tournamentRules: outgoing.tournamentRules || null,
     // A fresh cycle, a fresh chance to fill up - see
-    // markVacancy50hNotified/markVacancyCancelWarningNotified above.
+    // markVacancy50hNotified above.
     notifiedVacancy50h: false,
-    notifiedVacancyCancelWarning: false,
     // A fresh cycle hasn't had its own auto-newlist fire yet - see
     // markAutoNewlistCreated above.
     autoNewlistCreated: false,
@@ -2245,7 +2224,6 @@ function newList(groupId, date, details = {}) {
 }
 
 module.exports = {
-  getList,
   getCurrentEvent,
   getDuePayments,
   getDuePaymentsLabel,
@@ -2269,10 +2247,7 @@ module.exports = {
   setTournamentRules,
   joinTournament,
   leaveTournament,
-  getCourtCanceller,
-  setCourtCanceller,
   markVacancy50hNotified,
-  markVacancyCancelWarningNotified,
   markAutoNewlistCreated,
   markCancelledResumeCreated,
   getUndoableState,

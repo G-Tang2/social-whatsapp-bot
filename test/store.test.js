@@ -553,6 +553,45 @@ test('applyListUpdate: pasting a name back only ONCE when it had TWO entries cle
   assert.equal(result.paidRemoved.length, 1);
 });
 
+// Real bug: when a name owes under TWO different date groups and the
+// pasted text keeps it under only ONE of them (with an explicit
+// `owedSince` - the shape lib/listParser.js's parseListSections()
+// actually produces, unlike the bare-string test above), blind FIFO
+// order could pop whichever existing entry happened to be queued FIRST -
+// not necessarily the one matching the owedSince the paste actually
+// specified - silently keeping the WRONG debt's metadata (addedBy/
+// addedAt) under the surviving owedSince, while reporting the OTHER
+// week's debt as forgiven (paidRemoved) even though the admin's pasted
+// text said the opposite. The visible due-date set still looks correct
+// either way - that's exactly what made this easy to miss - so this
+// checks WHICH entry actually survives/gets removed, not just the count.
+test('applyListUpdate: keeping a name under only ONE of its two owed date groups removes the OTHER one, by owedSince match - not whichever is first in FIFO order', () => {
+  const groupId = freshGroupId();
+  store.setDate(groupId, '2026-08-13');
+  store.addEntry(groupId, 'Grace', 'oldweek@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace owes for 8/13 (addedBy oldweek@...)
+  store.addEntry(groupId, 'Grace', 'newweek@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-27', {}); // Grace ALSO owes for 8/20 (addedBy newweek@...)
+
+  // Keep Grace under the NEWER date group (8/20) - intending to forgive
+  // the OLDER (8/13) debt, not the newer one, regardless of which entry
+  // happens to be first in the existing-entries array.
+  const result = store.applyListUpdate(
+    groupId,
+    { attendance: [], waitlist: [], duePayments: [{ name: 'Grace', owedSince: '2026-08-20' }] },
+    'editor@s.whatsapp.net',
+    true
+  );
+
+  const due = store.getCurrentEvent(groupId).duePayments;
+  assert.equal(due.length, 1);
+  assert.equal(due[0].owedSince, '2026-08-20');
+  // The SURVIVING entry must be the real 8/20 entry (its own addedBy),
+  // not the 8/13 entry relabeled with 8/20's date.
+  assert.equal(due[0].addedBy, 'newweek@s.whatsapp.net', 'expected the surviving entry to be the real 8/20 debt, not 8/13\'s entry wearing 8/20\'s date');
+  assert.equal(result.paidRemoved.length, 1, 'expected the 8/13 debt to be reported as forgiven');
+});
+
 test('applyListUpdate: a genuinely NEW second occurrence of an existing name (more pasted-back copies than real entries) is added as a fresh no-owedSince entry', () => {
   const groupId = freshGroupId();
   store.setDate(groupId, '2026-08-13');
@@ -629,90 +668,37 @@ test('newList exemption is case/whitespace-insensitive, same normalizeName() mat
   assert.deepEqual(store.getCurrentEvent(groupId).duePayments, []);
 });
 
-// getCourtCanceller/setCourtCanceller persist a per-group court-
-// cancellation contact - see !courtcanceller (commands/admin.js) and
-// lib/vacancyReminder.js's 26-hours-before check.
+// markVacancy50hNotified - the one-shot-per-list-cycle flag
+// lib/vacancyReminder.js checks before sending its group-wide warning.
 
-test('getCourtCanceller starts unset for a brand-new group', () => {
-  const groupId = freshGroupId();
-  assert.equal(store.getCourtCanceller(groupId), null);
-});
-
-test('setCourtCanceller stores the JID and getCourtCanceller reads it back', () => {
-  const groupId = freshGroupId();
-  const result = store.setCourtCanceller(groupId, { jid: 'alex@s.whatsapp.net' });
-  assert.deepEqual(result, { jid: 'alex@s.whatsapp.net' });
-  assert.deepEqual(store.getCourtCanceller(groupId), { jid: 'alex@s.whatsapp.net' });
-});
-
-test('setCourtCanceller(groupId, null) clears a previously-set contact', () => {
-  const groupId = freshGroupId();
-  store.setCourtCanceller(groupId, { jid: 'alex@s.whatsapp.net' });
-  store.setCourtCanceller(groupId, null);
-  assert.equal(store.getCourtCanceller(groupId), null);
-});
-
-test('setCourtCanceller persists across newList/clearList, same lifecycle as regularPlayers/paymentExempt', () => {
-  const groupId = freshGroupId();
-  store.setCourtCanceller(groupId, { jid: 'alex@s.whatsapp.net' });
-  store.newList(groupId, '2026-08-20', {});
-  assert.deepEqual(store.getCourtCanceller(groupId), { jid: 'alex@s.whatsapp.net' });
-  store.clearList(groupId);
-  assert.deepEqual(store.getCourtCanceller(groupId), { jid: 'alex@s.whatsapp.net' });
-});
-
-// markVacancy50hNotified/markVacancyCancelWarningNotified - the one-shot-
-// per-list-cycle flags lib/vacancyReminder.js checks before sending each
-// of its two escalating warnings.
-
-test('a brand-new list has neither vacancy warning marked as sent', () => {
+test('a brand-new list has the vacancy warning not marked as sent', () => {
   const groupId = freshGroupId();
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.notifiedVacancy50h, false);
-  assert.equal(event.notifiedVacancyCancelWarning, false);
 });
 
-test('markVacancy50hNotified/markVacancyCancelWarningNotified flip only their own flag on the current event', () => {
+test('markVacancy50hNotified flips the flag on the current event', () => {
   const groupId = freshGroupId();
   store.markVacancy50hNotified(groupId);
-  let event = store.getCurrentEvent(groupId);
+  const event = store.getCurrentEvent(groupId);
   assert.equal(event.notifiedVacancy50h, true);
-  assert.equal(event.notifiedVacancyCancelWarning, false);
-
-  store.markVacancyCancelWarningNotified(groupId);
-  event = store.getCurrentEvent(groupId);
-  assert.equal(event.notifiedVacancy50h, true);
-  assert.equal(event.notifiedVacancyCancelWarning, true);
 });
 
-test('newList resets both vacancy-notified flags for the fresh cycle', () => {
+test('newList resets the vacancy-notified flag for the fresh cycle', () => {
   const groupId = freshGroupId();
   store.markVacancy50hNotified(groupId);
-  store.markVacancyCancelWarningNotified(groupId);
   store.newList(groupId, '2026-08-20', {});
 
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.notifiedVacancy50h, false);
-  assert.equal(event.notifiedVacancyCancelWarning, false);
 });
 
-test('clearList does NOT reset the vacancy-notified flags - same list cycle, still only warn once', () => {
+test('clearList does NOT reset the vacancy-notified flag - same list cycle, still only warn once', () => {
   const groupId = freshGroupId();
   store.markVacancy50hNotified(groupId);
   store.clearList(groupId);
 
   assert.equal(store.getCurrentEvent(groupId).notifiedVacancy50h, true);
-});
-
-test('getUndoableState/restoreUndoableState round-trip courtCanceller alongside regularPlayers/paymentExempt', () => {
-  const groupId = freshGroupId();
-  store.setCourtCanceller(groupId, { jid: 'alex@s.whatsapp.net' });
-  const snapshot = store.getUndoableState(groupId);
-  assert.deepEqual(snapshot.courtCanceller, { jid: 'alex@s.whatsapp.net' });
-
-  store.setCourtCanceller(groupId, { jid: 'sam@s.whatsapp.net' });
-  store.restoreUndoableState(groupId, snapshot);
-  assert.deepEqual(store.getCourtCanceller(groupId), { jid: 'alex@s.whatsapp.net' });
 });
 
 test('setDate corrects the current list\'s date in place, without touching entries/waitlist/location/courts/time/limit/duePayments', () => {
@@ -1638,6 +1624,56 @@ test('joinTournament: only looks at entries, not the waitlist - a waitlisted per
   store.addEntry(groupId, 'Frank', 'bao@s.whatsapp.net', false, true); // waitlisted
 
   assert.deepEqual(store.joinTournament(groupId, 'Frank'), { ok: false, reason: 'not_found' });
+});
+
+// Real bug: demoting a tournament member off the GENERAL list (via
+// setLimit/setCourts, unrelated to the tournament itself) used to leave
+// `entry.tournament` untouched while they sat on the general waitlist -
+// contradicting joinTournament()'s own stated invariant that the flag
+// only ever lives on `entries`. Worse, on promotion back,
+// applyTournamentIntent() is a no-op unless `wantsTournament` is set,
+// which an entry that joined via joinTournament() (the "!in tournament"
+// upgrade path, as opposed to addEntry's own wantsTournament flag) never
+// has - so the stale flag survived the round trip with NO re-check
+// against tournamentLimit, letting someone ELSE who legitimately filled
+// the cap while the first person was demoted end up sharing a cap of 1
+// between two people once the first person returned.
+test('demoting a tournament member off the general list and promoting them back does not let the tournament exceed its own cap', () => {
+  const groupId = freshGroupId();
+  store.setTournamentEnabled(groupId, true);
+  store.setTournamentLimit(groupId, 1);
+  store.setLimit(groupId, 10);
+  store.addEntry(groupId, 'Carla', 'carla@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Derek', 'derek@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Bao', 'bao@s.whatsapp.net', false, true);
+  store.joinTournament(groupId, 'Bao'); // takes the 1 tournament slot
+
+  // Lowering the GENERAL limit (nothing to do with the tournament)
+  // demotes Bao (the most recently added) to the general waitlist.
+  store.setLimit(groupId, 2);
+  let event = store.getCurrentEvent(groupId);
+  assert.equal(event.entries.find((e) => e.name === 'Bao'), undefined, 'expected Bao to be demoted off entries');
+  const demotedBao = event.waitlist.find((e) => e.name === 'Bao');
+  assert.equal(demotedBao.tournament, false, 'expected the tournament flag cleared while waitlisted');
+  assert.equal(demotedBao.tournamentWaitlisted, false);
+  assert.equal(demotedBao.wantsTournament, true, 'expected the intent preserved for re-evaluation on promotion');
+
+  // While Bao is demoted, Derek legitimately takes the now-vacant 1-person
+  // tournament slot.
+  const derekResult = store.joinTournament(groupId, 'Derek');
+  assert.equal(derekResult.ok, true);
+
+  // Raising the general limit back promotes Bao. Bao must NOT silently
+  // reclaim a tournament spot on top of Derek's - the cap is 1, so Bao
+  // should be queued (🏆 WL), not granted.
+  store.setLimit(groupId, 10);
+  event = store.getCurrentEvent(groupId);
+  const tournamentMembers = event.entries.filter((e) => e.tournament);
+  assert.equal(tournamentMembers.length, 1, `expected exactly 1 tournament member, got: ${JSON.stringify(tournamentMembers.map((e) => e.name))}`);
+  assert.equal(tournamentMembers[0].name, 'Derek', "expected Derek to keep the spot he legitimately earned while Bao was demoted");
+  const bao = event.entries.find((e) => e.name === 'Bao');
+  assert.equal(bao.tournament, false);
+  assert.equal(bao.tournamentWaitlisted, true, 'expected Bao queued (🏆 WL) for the next opening, not silently dropped');
 });
 
 test('leaveTournament: no matching entry at all', () => {
