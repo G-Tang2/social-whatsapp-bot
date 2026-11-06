@@ -185,6 +185,52 @@ test('bufferCatchUpResult logs (without throwing) and keeps the batch buffered f
   assert.match(sent[0].content.text, /added Grace/);
 });
 
+// Real bug: both sends used to be in ONE try block with no tracking of
+// which had already succeeded - if the summary send succeeded but the
+// SECOND send (the list repost) then failed, the whole buffer stayed
+// un-cleared, so the next successful retry re-sent the summary a second
+// time too (a visible duplicate "Caught up on..." notification), even
+// though it had already gone out. Fixed via buf.summarySent, making the
+// summary send itself idempotent across retries.
+test('a send failure AFTER the summary already went out does not re-send the summary on the next retry - only the still-missing list repost', async () => {
+  const groupId = freshGroupId();
+  const sent = [];
+  let failListRepost = true;
+  const fakeSock = {
+    sendMessage: async (jid, content) => {
+      if (failListRepost && sent.length === 1) {
+        // The summary (first send) already succeeded and is sitting in
+        // `sent`; this is the list-repost (second send) failing.
+        throw new Error('simulated transient failure');
+      }
+      sent.push({ jid, content });
+      return { key: {} };
+    },
+  };
+  const getSock = () => fakeSock;
+
+  const originalError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(' '));
+  try {
+    bufferCatchUpResult(groupId, getSock, { command: 'in', senderName: 'alex', added: ['Grace'], waitlisted: [], rejected: [] });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(sent.length, 1, 'expected only the summary to have gone out before the failure');
+    assert.ok(logged.some((line) => /will retry once reconnected/.test(line)));
+
+    // Retry, now with the list repost succeeding.
+    failListRepost = false;
+    resumePendingFlushes(getSock);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(sent.length, 2, `expected exactly 2 messages total (1 summary + 1 list repost), not a duplicated summary: ${JSON.stringify(sent.map((s) => s.content.text))}`);
+  const summaryMessages = sent.filter((s) => /Caught up on/.test(s.content.text));
+  assert.equal(summaryMessages.length, 1, 'expected the summary to have been sent exactly once, not resent on retry');
+});
+
 // Regression coverage for a real incident: WhatsApp redelivered an offline
 // backlog across two separate bursts with a gap longer than the (5s
 // default, 0.15s in this file) quiet-period delay - so the OLD
