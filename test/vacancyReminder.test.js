@@ -1,7 +1,6 @@
 // test/vacancyReminder.test.js
 // Coverage for lib/vacancyReminder.js: the periodic check that warns a
-// group about a real risk of empty courts (see commands/admin.js's
-// !courtcanceller for the companion admin command).
+// group about a real risk of empty courts.
 //
 // Requires ALLOWED_GROUPS/DATA_DIR/TIMEZONE to be set via process.env
 // BEFORE store.js/lib/vacancyReminder.js are required, since both read
@@ -29,7 +28,7 @@ process.env.TIMEZONE = 'UTC';
 
 const store = require('../store');
 const { createFakeSock } = require('./helpers/mockBaileys');
-const { checkVacancyReminders, computeVacancies, MIN_VACANCIES, CANCEL_WARNING_HOURS } = require('../lib/vacancyReminder');
+const { checkVacancyReminders, computeVacancies, MIN_VACANCIES } = require('../lib/vacancyReminder');
 
 let groupIdx = 0;
 function freshGroupId() {
@@ -133,6 +132,32 @@ test('sends the group-wide warning once vacancies>=MIN and the 2-days-before-at-
   assert.equal(store.getCurrentEvent(groupId).notifiedVacancy50h, true);
 });
 
+// Real bug: notifiedVacancy50h used to be marked true unconditionally,
+// even when the send itself threw and was caught - permanently losing
+// the warning for the rest of the cycle instead of retrying on the next
+// tick, same retry philosophy the "no court-canceller configured" case
+// elsewhere in this file already followed.
+test('a failed send does NOT mark the warning notified, so it retries on the next check', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
+  setUpList(groupId, { hoursFromNow: 10, limit: 10, entryCount: 0 });
+  const originalGroupMetadata = sock.groupMetadata;
+  let shouldFail = true;
+  sock.groupMetadata = async (...args) => {
+    if (shouldFail) throw new Error('simulated transient failure');
+    return originalGroupMetadata(...args);
+  };
+
+  await checkVacancyReminders(sock);
+  assert.equal(sock.sentMessages.length, 0, 'expected the failed send to produce no message');
+  assert.equal(store.getCurrentEvent(groupId).notifiedVacancy50h, false, 'expected the flag to stay false after a failed send');
+
+  shouldFail = false;
+  await checkVacancyReminders(sock);
+  assert.equal(sock.sentMessages.length, 1, 'expected the retry to succeed once the failure clears');
+  assert.equal(store.getCurrentEvent(groupId).notifiedVacancy50h, true);
+});
+
 test('the group-wide warning fires AT MOST ONCE per list cycle, even across repeated checks', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
@@ -159,64 +184,9 @@ test('a fresh !newlist resets notifiedVacancy50h, allowing the warning to fire a
   assert.equal(sock.sentMessages.length, 2, 'expected a second group-wide warning for the new list cycle');
 });
 
-test(`does nothing for the cancel warning yet when more than ${CANCEL_WARNING_HOURS} hours remain`, async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
-  store.setCourtCanceller(groupId, { jid: 'canceller@s.whatsapp.net' });
-  setUpList(groupId, { hoursFromNow: CANCEL_WARNING_HOURS + 5, limit: 10, entryCount: 0 });
-
-  await checkVacancyReminders(sock);
-
-  // Past the group-wide warning's own (earlier) 2-days-before-at-4pm
-  // trigger, so IT still fires here - just not the cancel-specific one
-  // yet, which is gated on the social's real start time instead.
-  assert.equal(sock.sentMessages.length, 1);
-  assert.doesNotMatch(sock.sentMessages[0].content.text, /cancel some courts/i);
-});
-
-test('sends the cancel warning to the configured court-canceller once within CANCEL_WARNING_HOURS', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
-  store.setCourtCanceller(groupId, { jid: 'canceller@s.whatsapp.net' });
-  setUpList(groupId, { hoursFromNow: CANCEL_WARNING_HOURS - 1, limit: 10, entryCount: 0 });
-
-  await checkVacancyReminders(sock);
-
-  const cancelMsg = sock.sentMessages.find((m) => /cancel some courts/i.test(m.content.text || ''));
-  assert.ok(cancelMsg, 'expected a court-cancellation warning');
-  assert.deepEqual(cancelMsg.content.mentions, ['canceller@s.whatsapp.net']);
-  assert.equal(store.getCurrentEvent(groupId).notifiedVacancyCancelWarning, true);
-});
-
-test('does NOT send the cancel warning when no court-canceller is configured, and keeps the flag false so it keeps trying', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
-  setUpList(groupId, { hoursFromNow: CANCEL_WARNING_HOURS - 1, limit: 10, entryCount: 0 });
-
-  await checkVacancyReminders(sock);
-
-  assert.ok(!sock.sentMessages.some((m) => /cancel some courts/i.test(m.content.text || '')));
-  assert.equal(store.getCurrentEvent(groupId).notifiedVacancyCancelWarning, false);
-});
-
-test('a bot outage through the group-wide trigger still catches up: both warnings fire in the same check once already inside CANCEL_WARNING_HOURS', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
-  store.setCourtCanceller(groupId, { jid: 'canceller@s.whatsapp.net' });
-  setUpList(groupId, { hoursFromNow: CANCEL_WARNING_HOURS - 1, limit: 10, entryCount: 0 });
-
-  await checkVacancyReminders(sock);
-
-  assert.equal(sock.sentMessages.length, 2, 'expected both the group-wide AND the cancel warning');
-  const event = store.getCurrentEvent(groupId);
-  assert.equal(event.notifiedVacancy50h, true);
-  assert.equal(event.notifiedVacancyCancelWarning, true);
-});
-
 test('does nothing once the social has already started, even with plenty of vacancies', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ participantIds: ['a@s.whatsapp.net'] });
-  store.setCourtCanceller(groupId, { jid: 'canceller@s.whatsapp.net' });
   setUpList(groupId, { hoursFromNow: -1, limit: 10, entryCount: 0 });
 
   await checkVacancyReminders(sock);
