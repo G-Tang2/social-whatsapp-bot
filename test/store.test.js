@@ -693,6 +693,61 @@ test('newList resets the vacancy-notified flag for the fresh cycle', () => {
   assert.equal(event.notifiedVacancy50h, false);
 });
 
+// markDuePaymentsReminded - see lib/paymentReminder.js, which calls this
+// right after sending a reminder so the SAME debt's 7-day repeat clock
+// restarts from the reminder rather than the original owedSince.
+test('markDuePaymentsReminded stamps remindedAt on the matching entry (by name+owedSince+addedAt), leaving others untouched', () => {
+  const groupId = freshGroupId();
+  store.setDate(groupId, '2026-08-13');
+  store.addEntry(groupId, 'Grace', 'grace@s.whatsapp.net', false);
+  store.addEntry(groupId, 'Henry', 'henry@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace and Henry both now owe for 8/13
+
+  const before = store.getCurrentEvent(groupId).duePayments;
+  const graceEntry = before.find((e) => e.name === 'Grace');
+  assert.equal(graceEntry.remindedAt, undefined, 'expected no remindedAt before the first reminder');
+
+  store.markDuePaymentsReminded(groupId, [graceEntry]);
+
+  const after = store.getCurrentEvent(groupId).duePayments;
+  const graceAfter = after.find((e) => e.name === 'Grace');
+  const henryAfter = after.find((e) => e.name === 'Henry');
+  assert.ok(graceAfter.remindedAt, 'expected remindedAt to be set on the targeted entry');
+  assert.ok(!Number.isNaN(new Date(graceAfter.remindedAt).getTime()), 'expected remindedAt to be a real parseable timestamp');
+  assert.equal(henryAfter.remindedAt, undefined, 'expected the untargeted entry to be left alone');
+});
+
+test('markDuePaymentsReminded only touches the entry matching ALL of name+owedSince+addedAt, not just name - disambiguating two debts for the same person', () => {
+  const groupId = freshGroupId();
+  store.setDate(groupId, '2026-08-13');
+  store.addEntry(groupId, 'Grace', 'grace@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {}); // Grace owes for 8/13
+  store.addEntry(groupId, 'Grace', 'grace@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-27', {}); // Grace ALSO owes for 8/20 - two separate debts now
+
+  const before = store.getCurrentEvent(groupId).duePayments;
+  assert.equal(before.length, 2);
+  const aug13Entry = before.find((e) => e.owedSince === '2026-08-13');
+
+  store.markDuePaymentsReminded(groupId, [aug13Entry]);
+
+  const after = store.getCurrentEvent(groupId).duePayments;
+  const aug13After = after.find((e) => e.owedSince === '2026-08-13');
+  const aug20After = after.find((e) => e.owedSince === '2026-08-20');
+  assert.ok(aug13After.remindedAt, 'expected the targeted 8/13 debt to be stamped');
+  assert.equal(aug20After.remindedAt, undefined, 'expected the OTHER debt for the same name to be left alone');
+});
+
+test('markDuePaymentsReminded silently skips an entry that\'s already gone (paid/removed in the meantime), without throwing', () => {
+  const groupId = freshGroupId();
+  store.setDate(groupId, '2026-08-13');
+  store.addEntry(groupId, 'Grace', 'grace@s.whatsapp.net', false);
+  store.newList(groupId, '2026-08-20', {});
+
+  const ghostEntry = { name: 'Nobody', owedSince: '2020-01-01', addedAt: '2020-01-01T00:00:00.000Z' };
+  assert.doesNotThrow(() => store.markDuePaymentsReminded(groupId, [ghostEntry]));
+});
+
 test('clearList does NOT reset the vacancy-notified flag - same list cycle, still only warn once', () => {
   const groupId = freshGroupId();
   store.markVacancy50hNotified(groupId);

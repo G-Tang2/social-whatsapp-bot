@@ -1752,6 +1752,26 @@ test('handleNewlist: rejects an invalid date, accepts a valid one and applies de
   assert.equal(event.time, '8PM start');
 });
 
+// Integration check that the actual wiring (not just lib/paymentReminder.js
+// in isolation - see test/paymentReminder.test.js for its own thorough
+// coverage) really fires after a typed/AI-mapped !newlist, same hook
+// lib/scheduledListAdvance.js's advanceToFreshList() uses for the
+// auto-newlist/cancelled-resume schedulers.
+test('handleNewlist: also checks/sends the outstanding-payment reminder for a debt that\'s aged 7+ days', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  const oldDate = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+  const oldOwedSince = `${oldDate.getUTCFullYear()}-${String(oldDate.getUTCMonth() + 1).padStart(2, '0')}-${String(oldDate.getUTCDate()).padStart(2, '0')}`;
+  store.applyListUpdate(groupId, { attendance: [], waitlist: [], duePayments: [{ name: 'Grace', owedSince: oldOwedSince }] }, 'editor@s.whatsapp.net', true);
+
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '20/08 EBC | 13-18 | 8PM start' });
+  await adminCommands.handleNewlist(ctx);
+
+  const reminder = sock.sentMessages.find((m) => /still waiting on payment/i.test(m.content.text || ''));
+  assert.ok(reminder, 'expected the outstanding-payment reminder to have been sent after !newlist');
+  assert.match(reminder.content.text, /Grace/);
+});
+
 test('handleNewlist: "same" (in place of a date) reuses the current list\'s day of the week', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });

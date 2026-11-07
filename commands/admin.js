@@ -60,6 +60,7 @@ const { isGroupAdmin } = require('../lib/adminCheck');
 const { checkEntry } = require('../moderation');
 const ai = require('../ai');
 const { parseListSections, parseHeaderFields } = require('../lib/listParser');
+const { checkPaymentReminders } = require('../lib/paymentReminder');
 const {
   COMMAND_PREFIX,
   MAX_LABEL_LENGTH,
@@ -331,6 +332,14 @@ async function handleNewlist(ctx) {
   }
 
   await postList();
+
+  // Every fresh !newlist is also a natural checkpoint for
+  // lib/paymentReminder.js's 7-day outstanding-payment reminder - same
+  // hook lib/scheduledListAdvance.js's advanceToFreshList() uses for the
+  // auto-newlist/cancelled-resume schedulers. See that file's own doc
+  // comment for why it's tied to newList() rather than a separate
+  // periodic timer.
+  await checkPaymentReminders(sock, groupId);
 }
 
 // Corrects the CURRENT list's date without starting a new one - unlike

@@ -1562,6 +1562,26 @@ Configurable in `.env` (see `.env.example`):
 - Checked on the same `VACANCY_REMINDER_INTERVAL_MINUTES` cadence as
   vacancy warnings above - no separate interval setting.
 
+## Payment reminders
+
+Anyone who's still owed on `!paid`'s due-payments list after 7+ days gets
+`@`-mentioned with a reminder, and the SAME debt is reminded again every 7
+days after that for as long as it stays unpaid - not just once.
+
+Unlike vacancy warnings/auto-starting next week's list above, this isn't
+checked on a periodic timer at all - it's checked right after every fresh
+`!newlist` (typed, AI-mapped, or either auto-advance feature above), since
+a group's list cycle is already roughly weekly on its own; piggybacking on
+that is simpler than adding a second always-running interval for what
+would really be the same cadence anyway.
+
+A debt with no recorded date at all (predates this feature, or was added
+manually via a pasted `!update` with no date attached) is never reminded -
+there's no age to measure a 7-day threshold against. No on/off toggle for
+this one either, same reasoning as vacancy warnings: it only ever does
+anything for a debt that's actually old enough, so there's nothing to
+needlessly turn off for a group that settles up quickly.
+
 ## Reminding inactive members
 
 This is a separate feature from the signup list above - it's about general
@@ -2283,9 +2303,12 @@ one giant switch statement. The actual work is split across two folders:
   status heartbeat" above), `vacancyReminder.js` (the low-signup
   group-wide warning - see "Vacancy warnings" above),
   `autoNewlistScheduler.js` (auto-starting next week's list - see
-  "Auto-starting next week's list" above), and `inactivityCheck.js` (the
-  periodic background sweep for the inactivity-reminders feature - see
-  "Reminding inactive members" above).
+  "Auto-starting next week's list" above), `paymentReminder.js` (the
+  7-day repeating outstanding-payment reminder, checked right after
+  every fresh list rather than on its own timer - see "Payment
+  reminders" above), and `inactivityCheck.js` (the periodic background
+  sweep for the inactivity-reminders feature - see "Reminding inactive
+  members" above).
 - `commands/` - one file per group of related commands (`list.js` for
   `!in`/`!out`/`!list`/`!paid`, `admin.js` for the list-management
   commands, `inactivity.js`, `spamfilter.js`, `autokick.js`, `welcome.js`,

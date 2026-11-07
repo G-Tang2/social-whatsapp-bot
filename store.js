@@ -18,6 +18,12 @@
 // for), merged with anyone already unpaid from before them so a debt never
 // silently disappears just because another !newlist happened before they
 // paid. !paid <name> removes someone from duePayments once they've paid.
+// Each entry also optionally tracks `remindedAt` (an ISO timestamp,
+// undefined until the first reminder fires) - see
+// lib/paymentReminder.js, which @-mentions anyone still owing after
+// `owedSince` (or their own last `remindedAt`, once set) is 7+ days old,
+// checked right after every fresh !newlist - and store.js's
+// markDuePaymentsReminded() below, which stamps it.
 //
 // `current.duePaymentsLabel` is the header shown above that section (e.g.
 // "$18 please"). Admins can change it with !paymentlabel; it carries forward to
@@ -1046,6 +1052,32 @@ function markVacancy50hNotified(groupId) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
   all[groupId].current.notifiedVacancy50h = true;
+  writeAll(all);
+}
+
+// Stamps each of `remindedEntries` (as read straight off a prior
+// getCurrentEvent(groupId).duePayments - see lib/paymentReminder.js,
+// which calls this right after sending a reminder) with a fresh
+// `remindedAt`, so its own 7-day repeat clock restarts from THIS
+// reminder rather than the original `owedSince` - see that file's own
+// doc comment for why. Matched by name+owedSince+addedAt (there's no
+// separate unique id per duePayments entry) rather than by object
+// reference, since `remindedEntries` was read via a SEPARATE readAll()
+// than the one this function does - same "always re-reads the file"
+// reasoning as every other store.js mutator. An entry no longer found
+// (already paid/removed in the moment between the check and this call -
+// a narrow, harmless race) is silently skipped rather than erroring.
+function markDuePaymentsReminded(groupId, remindedEntries) {
+  const all = readAll();
+  if (!all[groupId]) return;
+  const current = all[groupId].current;
+  const now = new Date().toISOString();
+  for (const target of remindedEntries) {
+    const match = current.duePayments.find(
+      (e) => e.name === target.name && e.owedSince === target.owedSince && e.addedAt === target.addedAt
+    );
+    if (match) match.remindedAt = now;
+  }
   writeAll(all);
 }
 
@@ -2248,6 +2280,7 @@ module.exports = {
   joinTournament,
   leaveTournament,
   markVacancy50hNotified,
+  markDuePaymentsReminded,
   markAutoNewlistCreated,
   markCancelledResumeCreated,
   getUndoableState,
