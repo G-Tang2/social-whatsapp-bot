@@ -26,7 +26,7 @@ every change.
 | `!paymentlabel [text]` | viewing: anyone; changing: group admins only | Sets the payment-due section's header (e.g. `!paymentlabel $20 please`). With no text, shows the current header without changing it |
 | `!regulars [name1, name2, ...]` | viewing: anyone; `add`/`remove`: anyone; replacing the whole list, `tournament`/`social`, and `clear`: group admins only | Manages a saved roster of "regular players" (see "Regular players" below), reusable later via the word `regular players` in place of names in `!in`/`!newlist`. `!regulars add <names>`/`!regulars remove <names>` tweak the roster and are open to anyone; a plain name list *replaces* the whole roster instead (admins only); `!regulars tournament <names>`/`!regulars social <names>` opt specific regulars into the tournament (or undo that, back to the social-only default) for every future `!newlist` (admins only); `!regulars clear` empties it (admins only). With no text, shows the current roster without changing it |
 | `!exempt [name1, name2, ...]` | viewing: anyone; changing: group admins only | Manages a saved roster of names who never need to pay (see "Tracking who owes payment" below) - the organizer, a sponsor, a coach, whoever. Same `add`/`remove`/`clear`/replace shape as `!regulars`. With no text, shows the current roster without changing it |
-| `!settournament [on\|off\|rules <text>]` | viewing: anyone; changing: group admins only | Turns the tournament sub-feature (see "Tournament" below) on or off for *this* group, and sets the rules text `!tournament` (below) shows. On by default everywhere. With no argument, shows who's currently opted in instead of changing anything. `!settournament rules <text>` sets the rules text (e.g. `!settournament rules Best of 3, single elimination`); `!settournament rules` with no text shows the current rules |
+| `!settournament [on\|off\|rules <text>]` | viewing: anyone; changing: group admins only | Turns the tournament sub-feature (see "Tournament" below) on or off for *this* group, and sets the rules text `!tournament` (below) shows. ON by default everywhere. With no argument, shows who's currently opted in instead of changing anything. `!settournament rules <text>` sets the rules text (e.g. `!settournament rules Best of 3, single elimination`); `!settournament rules` with no text shows the current rules |
 | `!tournament` | anyone | Shows the tournament rules text set via `!settournament rules <text>` (see "Tournament" below) - does not show who's opted in (that's `!settournament`) |
 | `!tournamentlimit [number]` | viewing: anyone; changing: group admins only | Caps how many people can be opted into the tournament - separate from the main `!limit`. With no number, shows the current tournament limit without changing it. `!tournamentlimit off` removes the cap |
 | `!tournamentwinners [Name1, Name2]` | viewing: anyone; changing: group admins only | Sets the two-name "Congrats to Name1 and Name2 for winning last week's tournament" banner shown above the list while the tournament is on. With no text, shows the currently set winners without changing them. Also adds one win each to `!leaderboard` |
@@ -35,8 +35,7 @@ every change.
 | `!welcome [on\|off]` | viewing: anyone; changing: group admins only | Turns the "someone just joined" welcome message (see "Welcoming new members" below) on or off for *this* group. ON by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!ai [on\|off]` | viewing: anyone; changing: group admins only | Turns natural-language command interpretation (see "Natural-language commands" below) on or off for *this* group. OFF by default everywhere, and requires `GEMINI_API_KEY` to be configured. With no argument, shows the current on/off state without changing it |
 | `!autonewlist [on\|off]` | viewing: anyone; changing: group admins only | Turns automatic "start next week's list once this one's social has ended" (see "Auto-starting next week's list" below) on or off for *this* group. OFF by default everywhere. With no argument, shows the current on/off state without changing it |
-| `!inactivity [on\|off]` | viewing: anyone; changing: group admins only | Turns inactivity reminders (see "Reminding inactive members" below) on or off for *this* group. Off by default everywhere. With no argument, shows the current on/off state without changing it |
-| `!stale` | group admins only | Lists who's currently been warned for inactivity, how long ago, and who's overdue for manual removal (see "Reminding inactive members" below) |
+| `!inactivity [on\|off]` | viewing: anyone; changing: group admins only | Turns inactivity auto-kick (see "Reminding inactive members" below) on or off for *this* group. OFF by default everywhere. With no argument, shows the current on/off state without changing it |
 | `!update <paste the list, edited>` | group admins only | Bulk-edits Attendance/Waitlist/Payment by re-reading a copy-pasted, hand-edited list (see "Bulk-editing the roster" below) |
 | `!undo` | group admins only | Reverses the single most recent change made in the group, whatever command caused it (see "Undoing the last change" below) |
 | `!help` | anyone | Shows help for the everyday commands (`!in`, `!out`, `!list`, `!paid`) |
@@ -1598,34 +1597,30 @@ or off for that group, and `!inactivity off` to turn it back off.
 
 Once on, the bot tracks the last time each group member sent *any*
 message - regular chat, images, stickers, voice notes, all count, not just
-bot commands. Once a day at 8pm (in the configured `TIMEZONE`), anyone who's gone quiet for
-`INACTIVITY_WARN_AFTER_DAYS` (default 1) gets tagged in the group with a
-one-time reminder that they'll be considered for removal if they stay
-quiet for another `INACTIVITY_REMOVE_AFTER_DAYS` (default 1). Sending any
-message - even just replying "here!" - clears the warning and resets their
-clock, exactly like the reminder promises. Those two timing settings
-live in `.env` (see `.env.example`), accept fractional values if you want
-finer control (e.g. `0.5` for 12 hours), and apply to every group that has
-the feature turned on - they're global tuning knobs, only the on/off
-switch itself is per group. The daily check itself always runs at 8pm, in
-the configured `TIMEZONE`.
+bot commands. Once a day at 8pm (in the configured `TIMEZONE`), anyone
+who's gone quiet for `INACTIVITY_KICK_AFTER_DAYS` (default 270, ~9 months)
+is automatically removed from the group - no warning first. Sending any
+message - even just a single emoji - resets their clock for good, for as
+long as it keeps happening at least once every `INACTIVITY_KICK_AFTER_DAYS`.
+This setting lives in `.env` (see `.env.example`), accepts fractional
+values if you want finer control (e.g. `0.5` for 12 hours - useful for
+testing), and applies to every group that has the feature turned on -
+it's a global tuning knob, only the on/off switch itself is per group. The
+daily check itself always runs at 8pm, in the configured `TIMEZONE`.
 
 A few things worth knowing about how this works:
 
-- **Warn-only, no auto-kick.** The bot never removes anyone itself, even
-  once someone's overdue. It just surfaces who's overdue via `!stale`
-  (group admins only) - actually removing someone from the group is a
-  manual step an admin takes from WhatsApp's own "Remove participant" UI,
-  same as always. This was a deliberate choice: getting flagged as
-  inactive and actually getting removed are different enough in
-  consequence that the second one should stay a human decision, not
-  something a script does unattended.
-- **Group admins are exempt.** They're never warned or counted as
-  candidates for removal, regardless of how long they've been quiet.
+- **Auto-kick, no warning.** Unlike vacancy/payment reminders, this isn't
+  informational - the bot removes the member itself the moment they cross
+  the threshold, the same day's 8pm sweep that notices them. There's no
+  `!stale`-style preview and no grace period; the threshold itself (9
+  months by default) is the only safety margin.
+- **Group admins are exempt.** They're never counted as candidates for
+  removal, regardless of how long they've been quiet.
 - **No history before the bot started watching.** The bot can only track
   activity from the moment a group ran `!inactivity on` (or the moment it
   first sees a given member, if they join later) - there's no way to see
-  someone's message history from before that. So nobody is flagged purely
+  someone's message history from before that. So nobody is removed purely
   because the bot doesn't know their past; everyone starts with a clean
   "just seen" baseline the moment the feature is turned on for their group.
   Turning it off and back on later re-baselines everyone again, so time
@@ -1636,21 +1631,19 @@ A few things worth knowing about how this works:
   if you run it in an unconfigured group, but the periodic check never
   reaches a group that isn't in `ALLOWED_GROUPS`, so nothing will actually
   happen there.
-- **`!stale`** shows everyone currently warned, sorted most-overdue first,
-  tagged so it's obvious at a glance who needs a decision - and marks
-  anyone past `INACTIVITY_REMOVE_AFTER_DAYS` since their warning as
-  `OVERDUE`. It's admin-only and view-only; running it doesn't warn or
-  remove anyone by itself. If the feature is off for that group, it says so
-  instead of an empty report.
+- **Requires the bot's own account to be a group admin.** Removing a
+  participant needs the same WhatsApp group-admin permission as
+  `!autokick`'s spam removal. If the bot isn't a group admin, candidates
+  are still detected and logged every sweep, but nobody is actually
+  removed until it is one.
 - **Every sweep logs a one-line summary**, e.g. `[bot] Inactivity sweep for
-  1234...@g.us: 14 participant(s) tracked, 1 candidate(s) due for a
-  warning.`, printed unconditionally (not just with `DEBUG=true`) so a
-  "why didn't so-and-so get warned" question can be answered straight from
+  1234...@g.us: 14 participant(s) tracked, 1 candidate(s) due for
+  auto-kick.`, printed unconditionally (not just with `DEBUG=true`) so a
+  "why wasn't so-and-so removed" question can be answered straight from
   the logs (`pm2 logs`, or your terminal if running it directly) instead of
-  guessing - check for these lines around when a warning was expected. A
-  sweep that never logs at all for a group usually means that group isn't
-  in `ALLOWED_GROUPS`, or the bot's socket was disconnected right at that
-  tick (it just tries again on the next one).
+  guessing. A sweep that never logs at all for a group usually means that
+  group isn't in `ALLOWED_GROUPS`, or the bot's socket was disconnected
+  right at that tick (it just tries again on the next one).
 - **Resilient to a flaky/incomplete `groupMetadata()` response.** Each
   sweep re-fetches the group's member list from WhatsApp to refresh
   tracking. A fetch that comes back completely empty (0 participants,
@@ -1665,8 +1658,8 @@ A few things worth knowing about how this works:
   the old immediate-drop behavior would silently reseed a fresh "just seen"
   baseline for anyone wrongly dropped this way on their very next
   appearance - quietly resetting their inactivity clock and making a
-  genuinely-long quiet period (even many hours) never actually trigger a
-  warning, with nothing wrong-looking in `!stale` to point at afterward.
+  genuinely-long quiet period (even many months) never actually trigger
+  removal.
 
 ## Important: how this connects to WhatsApp, and the risk involved
 
@@ -2250,11 +2243,11 @@ few seconds around a reconnect) - nothing to back up here, since it's
 transient by nature and never holds the list data itself, only the
 not-yet-sent notification about it.
 
-There's a fourth JSON file, `data/activity.json`, for the inactivity-
-reminders feature (see "Reminding inactive members" above) - a per-group
+There's a fourth JSON file, `data/activity.json`, for the inactivity
+auto-kick feature (see "Reminding inactive members" above) - a per-group
 on/off flag plus, once turned on, each tracked participant's last-seen
-timestamp and warning state. A group that's never run `!inactivity on`
-has no entry here at all.
+timestamp. A group that's never run `!inactivity on` has no entry here at
+all.
 
 There's a fifth JSON file, `data/welcome.json`, for the new-member welcome
 message (see "Welcoming new members" above) - just a per-group on/off flag,
@@ -2307,7 +2300,7 @@ one giant switch statement. The actual work is split across two folders:
   7-day repeating outstanding-payment reminder, checked right after
   every fresh list rather than on its own timer - see "Payment
   reminders" above), and `inactivityCheck.js` (the periodic background
-  sweep for the inactivity-reminders feature - see "Reminding inactive
+  sweep for the inactivity auto-kick feature - see "Reminding inactive
   members" above).
 - `commands/` - one file per group of related commands (`list.js` for
   `!in`/`!out`/`!list`/`!paid`, `admin.js` for the list-management

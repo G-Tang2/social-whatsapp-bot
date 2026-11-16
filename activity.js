@@ -1,8 +1,8 @@
 // activity.js
 // Tracks when each group participant last sent ANY message (not just bot
 // commands - regular chat, images, stickers, voice notes, all count), so
-// !stale can warn people who've gone quiet for a while and going-forward
-// removal can be a human admin's call. Deliberately a separate concern
+// lib/inactivityCheck.js's daily sweep can automatically remove anyone
+// who's gone quiet for a very long time. Deliberately a separate concern
 // (and a separate JSON file) from store.js's signup list - this is about
 // general chat presence, not list membership, and applies to every group
 // participant regardless of whether they've ever run !in.
@@ -30,7 +30,6 @@
 //     "participants": {
 //       "<participantJid>": {
 //         "lastSeen": "2026-08-13T10:00:00.000Z",
-//         "warnedAt": "2026-08-14T10:05:00.000Z" | null,
 //         "missingSince": "2026-08-14T10:05:00.000Z"  // present only mid-debounce, see pruneParticipants()
 //       },
 //       ...
@@ -38,14 +37,6 @@
 //   },
 //   ...
 // }
-//
-// `warnedAt` is null until the periodic check sends someone their "you've
-// gone quiet" reminder, at which point it's set to that moment - this both
-// starts their removal-grace clock (see index.js's
-// INACTIVITY_REMOVE_AFTER_DAYS) and prevents them being warned again
-// every check cycle. Any activity from them (recordActivity) clears it
-// back to null - sending a message "resets the clock" exactly as the
-// warning message promises.
 
 // Concurrency note: every exported function below is fully synchronous (no
 // async/await) and does a fresh readAll() -> mutate -> writeAll() in one
@@ -115,14 +106,14 @@ function setEnabled(groupId, enabled) {
 }
 
 // Records that `participantId` was just seen in `groupId` - sets lastSeen
-// to now and clears any pending warning, since being active again means
-// the inactivity clock resets. Call this for every message a participant
-// sends, regardless of its content (text, caption, sticker, voice note,
-// reaction, whatever) - presence is what's being tracked, not typing.
+// to now, since being active again means the inactivity clock resets. Call
+// this for every message a participant sends, regardless of its content
+// (text, caption, sticker, voice note, reaction, whatever) - presence is
+// what's being tracked, not typing.
 function recordActivity(groupId, participantId) {
   const all = readAll();
   const group = ensureGroup(all, groupId);
-  group.participants[participantId] = { lastSeen: new Date().toISOString(), warnedAt: null };
+  group.participants[participantId] = { lastSeen: new Date().toISOString() };
   writeAll(all);
 }
 
@@ -137,7 +128,7 @@ function seedParticipants(groupId, participantIds) {
   let changed = false;
   for (const id of participantIds) {
     if (!group.participants[id]) {
-      group.participants[id] = { lastSeen: new Date().toISOString(), warnedAt: null };
+      group.participants[id] = { lastSeen: new Date().toISOString() };
       changed = true;
     }
   }
@@ -145,17 +136,17 @@ function seedParticipants(groupId, participantIds) {
 }
 
 // Overwrites (not just fills in) a clean "just seen" baseline for every id
-// in `participantIds`, discarding any stale lastSeen/warnedAt left over
-// from a previous stint of being enabled (or from the old flat schema).
-// Call this when an admin runs !inactivity on, so nobody gets an instant
-// flood of warnings because of time that passed while the feature was off.
+// in `participantIds`, discarding any stale lastSeen left over from a
+// previous stint of being enabled (or from the old flat schema). Call this
+// when an admin runs !inactivity on, so nobody gets instantly auto-kicked
+// because of time that passed while the feature was off.
 function resetBaseline(groupId, participantIds) {
   const all = readAll();
   const group = ensureGroup(all, groupId);
   const now = new Date().toISOString();
   group.participants = {};
   for (const id of participantIds) {
-    group.participants[id] = { lastSeen: now, warnedAt: null };
+    group.participants[id] = { lastSeen: now };
   }
   writeAll(all);
 }
@@ -206,45 +197,40 @@ function pruneParticipants(groupId, participantIds) {
 }
 
 // Returns { id, lastSeen }[] for every tracked participant in `groupId`
-// whose lastSeen is at least `inactiveMs` old and who hasn't already been
-// warned (warnedAt === null) - i.e. people due a first reminder. Doesn't
-// filter by admin status; callers do that themselves since it needs an
-// async WhatsApp API call this module doesn't have access to. Callers are
-// expected to only call this for a group where isEnabled() is true.
-function getInactiveCandidates(groupId, inactiveMs) {
+// whose lastSeen is at least `inactiveMs` old - i.e. people due to be
+// auto-kicked. Doesn't filter by admin status; callers do that themselves
+// since it needs an async WhatsApp API call this module doesn't have
+// access to. Callers are expected to only call this for a group where
+// isEnabled() is true.
+function getKickCandidates(groupId, inactiveMs) {
   const all = readAll();
   const participants = getParticipants(all, groupId);
   const cutoff = Date.now() - inactiveMs;
   return Object.entries(participants)
-    .filter(([, rec]) => rec.warnedAt === null && new Date(rec.lastSeen).getTime() <= cutoff)
+    .filter(([, rec]) => new Date(rec.lastSeen).getTime() <= cutoff)
     .map(([id, rec]) => ({ id, lastSeen: rec.lastSeen }));
 }
 
-// Marks every id in `participantIds` as warned right now - starts their
-// removal-grace clock. Called right after the periodic check sends them
-// their reminder.
-function markWarned(groupId, participantIds) {
+// Immediately drops tracking for every id in `participantIds` - unlike
+// pruneParticipants() (which debounces across two sweeps to guard against a
+// transient/incomplete groupMetadata() snapshot), this is called right
+// after the bot itself has just removed these people for inactivity, so
+// there's no ambiguity about whether they're really gone. Keeps
+// activity.json from holding a stale lastSeen that could otherwise make a
+// later rejoin look instantly overdue for another auto-kick.
+function clearParticipants(groupId, participantIds) {
   const all = readAll();
-  const group = ensureGroup(all, groupId);
-  const now = new Date().toISOString();
-  for (const id of participantIds) {
-    if (!group.participants[id]) group.participants[id] = { lastSeen: null };
-    group.participants[id].warnedAt = now;
-  }
-  writeAll(all);
-}
-
-// Returns { id, lastSeen, warnedAt }[] for every participant in `groupId`
-// currently warned (warnedAt !== null) - i.e. everyone !stale should
-// report on, whether they're still within the grace period or already
-// overdue. Sorted oldest-warned first, so the most overdue show up top.
-function getWarned(groupId) {
-  const all = readAll();
+  const group = all[groupId];
+  if (!group) return;
   const participants = getParticipants(all, groupId);
-  return Object.entries(participants)
-    .filter(([, rec]) => rec.warnedAt !== null && rec.warnedAt !== undefined)
-    .map(([id, rec]) => ({ id, lastSeen: rec.lastSeen, warnedAt: rec.warnedAt }))
-    .sort((a, b) => new Date(a.warnedAt).getTime() - new Date(b.warnedAt).getTime());
+  let changed = false;
+  for (const id of participantIds) {
+    if (participants[id]) {
+      delete participants[id];
+      changed = true;
+    }
+  }
+  if (changed) writeAll(all);
 }
 
 module.exports = {
@@ -254,7 +240,6 @@ module.exports = {
   seedParticipants,
   resetBaseline,
   pruneParticipants,
-  getInactiveCandidates,
-  markWarned,
-  getWarned,
+  getKickCandidates,
+  clearParticipants,
 };

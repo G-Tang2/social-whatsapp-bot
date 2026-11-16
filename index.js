@@ -1749,8 +1749,8 @@ async function handleMessage(sock, msg, upsertType, responseCollector) {
   }
 
   // Record activity for EVERY real message in a moderated group - not just
-  // bot commands - since the inactivity check (and !stale) needs to see
-  // general chat presence, not just list interactions. If this message
+  // bot commands - since the inactivity check needs to see general chat
+  // presence, not just list interactions. If this message
   // turned out to be spam and got deleted above, this line already
   // returned above too, so a deleted message correctly doesn't count as
   // activity. Gated on the group having inactivity checking turned on (see
@@ -1990,14 +1990,14 @@ if (typeof cancelledSocialResumeTimer.unref === 'function') cancelledSocialResum
 // Same "single module-scope interval, read currentSock fresh each tick"
 // pattern as the timers above - see lib/inactivityCheck.js for what this
 // actually checks (each configured group with !inactivity on, for members
-// who've gone quiet) and why it's unconditional (the per-group
-// !inactivity toggle - default off - already gates all the real work).
-// Runs once a day at INACTIVITY_CHECK_HOUR (8pm, in TIMEZONE) - a fixed
-// wall-clock time rather than a fixed interval from process start, so the
-// reminder lands at the same time every evening. Reschedules itself after
-// each run. If the socket happens to be down at that exact moment, retries
-// every few minutes until it's back, so a brief disconnect at 8pm doesn't
-// silently skip the whole day's reminder.
+// who've gone quiet long enough to be auto-kicked) and why it's
+// unconditional (the per-group !inactivity toggle - default off - already
+// gates all the real work). Runs once a day at INACTIVITY_CHECK_HOUR (8pm,
+// in TIMEZONE) - a fixed wall-clock time rather than a fixed interval from
+// process start, so the sweep lands at the same time every evening.
+// Reschedules itself after each run. If the socket happens to be down at
+// that exact moment, retries every few minutes until it's back, so a
+// brief disconnect at 8pm doesn't silently skip the whole day's sweep.
 function scheduleDailyInactivityCheck(delayMs) {
   const timer = setTimeout(() => {
     if (!currentSock) {

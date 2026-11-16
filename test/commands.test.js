@@ -35,7 +35,7 @@ const { handleAutokick } = require('../commands/autokick');
 const { handleWelcome } = require('../commands/welcome');
 const { handleAi } = require('../commands/ai');
 const { handleAutonewlist } = require('../commands/autonewlist');
-const { handleInactivityToggle, handleStale } = require('../commands/inactivity');
+const { handleInactivityToggle } = require('../commands/inactivity');
 const { handleHelp, handleTips, handleAdminHelp, handleAdminTips } = require('../commands/help');
 const { commands } = require('../commands'); // the real, undo-tracking-wrapped dispatch table - see the "!undo" tests below
 const { createFakeSock, makeTextMessage } = require('./helpers/mockBaileys');
@@ -3773,33 +3773,6 @@ test('handleInactivityToggle: off by default, off/on toggle requires admin and a
   await handleInactivityToggle(adminTurnOff.ctx);
   assert.equal(activity.isEnabled(groupId), false);
   assert.match(adminTurnOff.replies[0], /turned \*off\*/);
-});
-
-test('handleStale: admin-only, refuses when off, reports nobody-warned, then reports a real warned entry tagged', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
-
-  const nonAdminTry = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: '' });
-  await handleStale(nonAdminTry.ctx);
-  assert.match(nonAdminTry.replies[0], /Only a group admin/);
-
-  const offTry = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '' });
-  await handleStale(offTry.ctx);
-  assert.match(offTry.replies[0], /off for this group/);
-
-  activity.setEnabled(groupId, true);
-  const noneWarnedTry = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '' });
-  await handleStale(noneWarnedTry.ctx);
-  assert.match(noneWarnedTry.replies[0], /Nobody is currently warned/);
-
-  activity.markWarned(groupId, ['quiet@s.whatsapp.net']);
-  sock.sentMessages.length = 0;
-  const warnedTry = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: '' });
-  await handleStale(warnedTry.ctx);
-  assert.equal(warnedTry.replies.length, 0, 'handleStale sends directly via sock (for mentions), not via reply()');
-  assert.equal(sock.sentMessages.length, 1);
-  assert.match(sock.sentMessages[0].content.text, /@quiet/);
-  assert.deepEqual(sock.sentMessages[0].content.mentions, ['quiet@s.whatsapp.net']);
 });
 
 test('adminCheck cache does not leak admin status across different groups', async () => {

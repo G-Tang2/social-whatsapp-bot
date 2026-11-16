@@ -20,8 +20,7 @@ const {
   PAYMENT_LABEL,
   MAX_NAMES_PER_COMMAND,
   AUTO_NEWLIST_DELAY_HOURS,
-  INACTIVITY_WARN_AFTER_DAYS,
-  INACTIVITY_REMOVE_AFTER_DAYS,
+  INACTIVITY_KICK_AFTER_DAYS,
 } = require('../lib/config');
 const { isGroupAdmin } = require('../lib/adminCheck');
 
@@ -137,8 +136,7 @@ const ADMIN_HELP_TEXT = [
   `• *${COMMAND_PREFIX}welcome [on|off]* - greet new members, explain how to join, and show the current list, ON by default (admins to change)`,
   `• *${COMMAND_PREFIX}ai [on|off]* - let people @-mention me with a plain-English request instead of exact commands, OFF by default until set up (admins to change)`,
   `• *${COMMAND_PREFIX}autonewlist [on|off]* - automatically starts next week's list once this one's social has ended, OFF by default (admins to change - see ${COMMAND_PREFIX}admintips for how "ended" is worked out)`,
-  `• *${COMMAND_PREFIX}inactivity [on|off]* - inactivity reminders for this group, OFF by default (admins to change - see ${COMMAND_PREFIX}admintips for the full behavior)`,
-  `• *${COMMAND_PREFIX}stale* - who's been warned for inactivity, and who's overdue`,
+  `• *${COMMAND_PREFIX}inactivity [on|off]* - auto-remove members quiet in chat for ${INACTIVITY_KICK_AFTER_DAYS}d+, OFF by default (admins to change - see ${COMMAND_PREFIX}admintips for the full behavior)`,
   '',
   '*Other*',
   `• *${COMMAND_PREFIX}update <paste the list, edited>* - bulk-edit Attendance/Waitlist/Payment by pasting the list back with changes`,
@@ -190,7 +188,7 @@ const ADMIN_TIPS_TEXT = [
   '',
   `_• Payment reminders: anyone still owed on ${COMMAND_PREFIX}paid's due-payments list for 7+ days gets @-mentioned, and the SAME debt is reminded again every 7 days after that for as long as it stays unpaid. Checked right after every fresh ${COMMAND_PREFIX}newlist (typed, AI-mapped, or either auto-advance feature above) rather than on its own timer - no on/off toggle, same "only ever does something when it's actually relevant" reasoning as vacancy warnings_`,
   '',
-  `_• ${COMMAND_PREFIX}inactivity is per-group, OFF by default - once on, I track when each member last sent ANY message here (not just commands), and each day at 8pm tag everyone quiet for ${INACTIVITY_WARN_AFTER_DAYS}d+ in one message with a one-time reminder (admins exempt). ${COMMAND_PREFIX}stale (admins only) lists everyone currently warned, flagging anyone past ${INACTIVITY_REMOVE_AFTER_DAYS}d since their warning as OVERDUE. I never remove anyone myself - that's always a human admin's call from WhatsApp's own group UI. Any message from someone clears their warning and resets the clock. Turning it on (re)seeds everyone with a fresh "just seen" baseline, so nobody's flagged for quiet time from before it was on_`,
+  `_• ${COMMAND_PREFIX}inactivity is per-group, OFF by default - once on, I track when each member last sent ANY message here (not just commands), and each day at 8pm automatically remove anyone quiet for ${INACTIVITY_KICK_AFTER_DAYS}d+ (admins exempt) - no warning first. Any message from someone resets their clock. Turning it on (re)seeds everyone with a fresh "just seen" baseline, so nobody's removed for quiet time from before it was on. Removing a member needs Snoopy's own WhatsApp account to be a group admin here - if it isn't, candidates are still detected but left in the group_`,
   '',
   '*Other*',
   `_• ${COMMAND_PREFIX}update reads back a copy-pasted, edited list: type ${COMMAND_PREFIX}update on its own line, then paste the list with your edits underneath. Keep the date/location/courts/time block above *Attendance* to edit those too - any field left out of it gets cleared; leave the whole block out to leave them untouched. The payment header itself is never read this way - use ${COMMAND_PREFIX}paymentlabel. Moving a name between "🏆 Tournament"/"Social only" or Attendance/Waitlist updates their status accordingly_`,

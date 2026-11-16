@@ -14,7 +14,7 @@ const { handleAutokick } = require('./autokick');
 const { handleWelcome } = require('./welcome');
 const { handleAi } = require('./ai');
 const { handleAutonewlist } = require('./autonewlist');
-const { handleInactivityToggle, handleStale } = require('./inactivity');
+const { handleInactivityToggle } = require('./inactivity');
 const { handleHelp, handleTips, handleAdminHelp, handleAdminTips } = require('./help');
 
 // Wraps every command handler so that ANY command which actually mutates
@@ -86,7 +86,6 @@ const rawCommands = {
   [`${COMMAND_PREFIX}ai`]: handleAi,
   [`${COMMAND_PREFIX}autonewlist`]: handleAutonewlist,
   [`${COMMAND_PREFIX}inactivity`]: handleInactivityToggle,
-  [`${COMMAND_PREFIX}stale`]: handleStale,
 
   [`${COMMAND_PREFIX}help`]: handleHelp,
   [`${COMMAND_PREFIX}tips`]: handleTips,

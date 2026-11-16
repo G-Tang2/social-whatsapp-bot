@@ -31,7 +31,6 @@ const {
   buildQuotePreviewMsg,
   formatEventHeader,
   formatCount,
-  formatElapsed,
   formatPromotedMessage,
   formatTournamentPromotedMessage,
   formatCancelledSocialMessage,
@@ -699,13 +698,6 @@ test('resolveAttendanceOrWaitlistNumber returns null for a number outside both l
   const event = store.getCurrentEvent(groupId);
   assert.equal(resolveAttendanceOrWaitlistNumber(event, 99), null);
   assert.equal(resolveAttendanceOrWaitlistNumber(event, 0), null);
-});
-
-test('formatElapsed renders compact day/hour/minute durations', () => {
-  assert.equal(formatElapsed(0), '0m');
-  assert.equal(formatElapsed(5 * 60000), '5m');
-  assert.equal(formatElapsed(90 * 60000), '1h 30m');
-  assert.equal(formatElapsed((25 * 60 + 30) * 60000), '1d 1h');
 });
 
 test('formatPromotedMessage builds a tagged notice and returns null for an empty list', () => {
