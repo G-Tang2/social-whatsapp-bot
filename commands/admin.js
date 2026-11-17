@@ -57,6 +57,7 @@ const {
   getListDefaults,
   setListDefaultCourts,
   setListDefaultTime,
+  setListDefaultLimit,
   setListDefaultTournamentLimit,
   clearListDefaults,
 } = require('../store');
@@ -560,24 +561,25 @@ async function handleLimit(ctx) {
   await postList();
 }
 
-// Manages standing courts/time/tournament-limit DEFAULTS for the group -
-// distinct from !courts/!time/!tournamentlimit themselves, which only ever
-// touch the CURRENT list. Once a default is set for a field, every future
-// !newlist that doesn't explicitly respecify that field in the same
-// command falls back to the default instead of just carrying forward
-// whatever the previous cycle happened to have (see store.js's newList()
-// doc comment) - handy so a one-off change (an extra court booked for a
-// single week, say) doesn't quietly become the new normal forever.
-// Doesn't touch the current list at all, so - unlike !courts/!time/!limit,
-// which stay quiet on success and let the reposted list speak for itself -
-// this always replies, even on success, since there's nothing else that
-// would show the change took effect.
+// Manages standing courts/time/limit/tournament-limit DEFAULTS for the
+// group - distinct from !courts/!time/!limit/!tournamentlimit themselves,
+// which only ever touch the CURRENT list. Once a default is set for a
+// field, every future !newlist that doesn't explicitly respecify that
+// field in the same command falls back to the default instead of just
+// carrying forward whatever the previous cycle happened to have (see
+// store.js's newList() doc comment) - handy so a one-off change (an extra
+// court booked for a single week, say) doesn't quietly become the new
+// normal forever. Doesn't touch the current list at all, so - unlike
+// !courts/!time/!limit/!tournamentlimit, which stay quiet on success and
+// let the reposted list speak for itself - this always replies, even on
+// success, since there's nothing else that would show the change took
+// effect.
 //
-// Bare !defaults shows all three. Sub-forms: "courts <numbers>|off",
-// "time <text>|off", "limit <number>|off" (the tournament limit - the main
-// !limit has no default of its own, since it already auto-scales from
-// courts), and "clear" (resets all three at once). Same admins-only gate
-// as !courts/!time/!tournamentlimit.
+// Bare !defaults shows all four. Sub-forms: "courts <numbers>|off",
+// "time <text>|off", "limit <number>|off" (the main attendance limit -
+// separate from "tournamentlimit <number>|off", the tournament's own cap),
+// and "clear" (resets all four at once). Same admins-only gate as
+// !courts/!time/!limit/!tournamentlimit.
 async function handleDefaults(ctx) {
   const { sock, groupId, senderId, argText, reply } = ctx;
   const trimmedArg = (argText || '').trim();
@@ -588,10 +590,11 @@ async function handleDefaults(ctx) {
     const lines = [
       `Default courts: ${defaults.courts || 'not set'}`,
       `Default time: ${defaults.time || 'not set'}`,
+      `Default limit: ${defaults.limit || 'not set'}`,
       `Default tournament limit: ${defaults.tournamentLimit || 'not set'}`,
     ];
     await reply(
-      `${lines.join('\n')}\n\nThese are what a fresh ${COMMAND_PREFIX}newlist falls back to for any of the three it isn't explicitly told otherwise. To change them (admins only): ${COMMAND_PREFIX}defaults courts <numbers>, ${COMMAND_PREFIX}defaults time <text>, ${COMMAND_PREFIX}defaults limit <number> - or "off" instead of a value to clear just that one, or ${COMMAND_PREFIX}defaults clear to clear all three`
+      `${lines.join('\n')}\n\nThese are what a fresh ${COMMAND_PREFIX}newlist falls back to for any of the four it isn't explicitly told otherwise. To change them (admins only): ${COMMAND_PREFIX}defaults courts <numbers>, ${COMMAND_PREFIX}defaults time <text>, ${COMMAND_PREFIX}defaults limit <number>, ${COMMAND_PREFIX}defaults tournamentlimit <number> - or "off" instead of a value to clear just that one, or ${COMMAND_PREFIX}defaults clear to clear all four`
     );
     return;
   }
@@ -604,7 +607,7 @@ async function handleDefaults(ctx) {
 
   if (normalizedArg === 'clear') {
     clearListDefaults(groupId);
-    await reply('All three list defaults cleared - fresh lists go back to plain carry-forward.');
+    await reply('All four list defaults cleared - fresh lists go back to plain carry-forward.');
     return;
   }
 
@@ -647,13 +650,34 @@ async function handleDefaults(ctx) {
   if (normalizedArg === 'limit' || normalizedArg.startsWith('limit ')) {
     const rest = trimmedArg.slice('limit'.length).trim();
     if (['off', 'none', 'clear', 'unlimited', '0'].includes(rest.toLowerCase())) {
+      setListDefaultLimit(groupId, null);
+      await reply('Default limit cleared.');
+      return;
+    }
+    const parsed = Number(rest);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      await reply(`Nope, "${rest}" isn't a valid limit - use a whole number, e.g. ${COMMAND_PREFIX}defaults limit 20, or ${COMMAND_PREFIX}defaults limit off to clear it`);
+      return;
+    }
+    if (parsed > MAX_LIMIT) {
+      await reply(`Whoa, easy there - that limit is too high (max ${MAX_LIMIT}).`);
+      return;
+    }
+    setListDefaultLimit(groupId, parsed);
+    await reply(`Default limit set to ${parsed} - every fresh ${COMMAND_PREFIX}newlist will start there from now on, overriding whatever the courts would otherwise auto-scale it to.`);
+    return;
+  }
+
+  if (normalizedArg === 'tournamentlimit' || normalizedArg.startsWith('tournamentlimit ')) {
+    const rest = trimmedArg.slice('tournamentlimit'.length).trim();
+    if (['off', 'none', 'clear', 'unlimited', '0'].includes(rest.toLowerCase())) {
       setListDefaultTournamentLimit(groupId, null);
       await reply('Default tournament limit cleared.');
       return;
     }
     const parsed = Number(rest);
     if (!Number.isInteger(parsed) || parsed <= 0) {
-      await reply(`Nope, "${rest}" isn't a valid limit - use a whole number, e.g. ${COMMAND_PREFIX}defaults limit 16, or ${COMMAND_PREFIX}defaults limit off to clear it`);
+      await reply(`Nope, "${rest}" isn't a valid limit - use a whole number, e.g. ${COMMAND_PREFIX}defaults tournamentlimit 16, or ${COMMAND_PREFIX}defaults tournamentlimit off to clear it`);
       return;
     }
     if (parsed > MAX_LIMIT) {
@@ -666,7 +690,7 @@ async function handleDefaults(ctx) {
   }
 
   await reply(
-    `Usage: ${COMMAND_PREFIX}defaults courts <numbers>|off, ${COMMAND_PREFIX}defaults time <text>|off, ${COMMAND_PREFIX}defaults limit <number>|off, or ${COMMAND_PREFIX}defaults clear\n(No argument shows the current defaults without changing anything.)`
+    `Usage: ${COMMAND_PREFIX}defaults courts <numbers>|off, ${COMMAND_PREFIX}defaults time <text>|off, ${COMMAND_PREFIX}defaults limit <number>|off, ${COMMAND_PREFIX}defaults tournamentlimit <number>|off, or ${COMMAND_PREFIX}defaults clear\n(No argument shows the current defaults without changing anything.)`
   );
 }
 

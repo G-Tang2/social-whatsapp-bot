@@ -1664,7 +1664,7 @@ test('handleDefaults: sets and clears the default time', async () => {
   assert.equal(store.getListDefaults(groupId).time, null);
 });
 
-test('handleDefaults: sets and clears the default tournament limit, rejecting a non-positive-integer value', async () => {
+test('handleDefaults: sets and clears the default attendance limit, rejecting a non-positive-integer value', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
@@ -1672,22 +1672,42 @@ test('handleDefaults: sets and clears the default tournament limit, rejecting a 
   await adminCommands.handleDefaults(invalid.ctx);
   assert.match(invalid.replies[0], /isn't a valid limit/);
 
-  const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'limit 16' });
+  const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'limit 20' });
+  await adminCommands.handleDefaults(set.ctx);
+  assert.match(set.replies[0], /Default limit set to 20/);
+  assert.equal(store.getListDefaults(groupId).limit, 20);
+
+  const cleared = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'limit off' });
+  await adminCommands.handleDefaults(cleared.ctx);
+  assert.match(cleared.replies[0], /Default limit cleared/);
+  assert.equal(store.getListDefaults(groupId).limit, null);
+});
+
+test('handleDefaults: sets and clears the default tournament limit, rejecting a non-positive-integer value', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  const invalid = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'tournamentlimit abc' });
+  await adminCommands.handleDefaults(invalid.ctx);
+  assert.match(invalid.replies[0], /isn't a valid limit/);
+
+  const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'tournamentlimit 16' });
   await adminCommands.handleDefaults(set.ctx);
   assert.match(set.replies[0], /Default tournament limit set to 16/);
   assert.equal(store.getListDefaults(groupId).tournamentLimit, 16);
 
-  const cleared = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'limit off' });
+  const cleared = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'tournamentlimit off' });
   await adminCommands.handleDefaults(cleared.ctx);
   assert.match(cleared.replies[0], /Default tournament limit cleared/);
   assert.equal(store.getListDefaults(groupId).tournamentLimit, null);
 });
 
-test('handleDefaults: "clear" resets all three defaults at once, and a fresh !newlist stops using them', async () => {
+test('handleDefaults: "clear" resets all four defaults at once, and a fresh !newlist stops using them', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
   store.setListDefaultCourts(groupId, '13-18');
   store.setListDefaultTime(groupId, '8PM start');
+  store.setListDefaultLimit(groupId, 20);
   store.setListDefaultTournamentLimit(groupId, 16);
   store.setCourts(groupId, '1, 2');
   store.setTime(groupId, '6PM start');
@@ -1699,6 +1719,7 @@ test('handleDefaults: "clear" resets all three defaults at once, and a fresh !ne
     courts: null,
     courtCount: null,
     time: null,
+    limit: null,
     tournamentLimit: null,
   });
 
@@ -1706,6 +1727,7 @@ test('handleDefaults: "clear" resets all three defaults at once, and a fresh !ne
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.courts, '1, 2'); // carried forward, no default to override it
   assert.equal(event.time, '6PM start');
+  assert.equal(event.limit, 2 * store.PLAYERS_PER_COURT); // auto-scaled from courts, no limit default to override it
 });
 
 test('handleCourts: plain "!courts 13-18" replaces the whole court list (rejects non-admins first)', async () => {

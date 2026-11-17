@@ -22,7 +22,7 @@ every change.
 | `!courts [add\|extra] [numbers]` | viewing: anyone; changing: group admins only | Sets which courts are booked (e.g. `!courts 13-18`, or `!courts 1, 2, 5-8`) - the headcount is calculated automatically, and the participant limit auto-scales to match (6 people per court by default). Lead with `add` or `extra` (e.g. `!courts add 1`) to ADD to the courts already booked instead of replacing them. With no text, shows the current courts without changing them |
 | `!time [text]` | viewing: anyone; changing: group admins only | Sets the start time text (e.g. `!time 8PM start`). With no text, shows the current time without changing it |
 | `!limit [number]` | viewing: anyone; changing: group admins only | Caps the max number of people on the list. Before any courts are set, defaults to 6; once `!courts` is set, auto-scales to courts × 6 instead (admins can still override with `!limit`). Lowering it below the current headcount moves the excess (most recently added, in order) onto the waitlist. `!limit off` removes the cap. With no number, shows the current limit without changing it |
-| `!defaults [courts/time/limit <value>\|off, or clear]` | viewing: anyone; changing: group admins only | Sets standing defaults for courts/time/tournament limit (see "Setting list defaults" below) that a fresh `!newlist` falls back to for whichever of the three it isn't told otherwise, instead of just carrying forward the previous cycle's. `!defaults courts 13-18`/`!defaults time 8PM start`/`!defaults limit 16` set one; add `off` instead of a value to clear just that one, or `!defaults clear` to clear all three. With no text, shows the current defaults without changing them |
+| `!defaults [courts/time/limit/tournamentlimit <value>\|off, or clear]` | viewing: anyone; changing: group admins only | Sets standing defaults for courts/time/limit/tournament limit (see "Setting list defaults" below) that a fresh `!newlist` falls back to for whichever of the four it isn't told otherwise, instead of just carrying forward (or, for `limit`, auto-scaling from courts). `!defaults courts 13-18`/`!defaults time 8PM start`/`!defaults limit 20`/`!defaults tournamentlimit 16` set one; add `off` instead of a value to clear just that one, or `!defaults clear` to clear all four. With no text, shows the current defaults without changing them |
 | `!allow <count>` | group admins only | Lets `count` extra people in from the front of the waitlist right now (e.g. `!allow 2`), bypassing the limit for that batch. The limit itself doesn't change, so attendance can end up over it until it naturally drains back down |
 | `!paymentlabel [text]` | viewing: anyone; changing: group admins only | Sets the payment-due section's header (e.g. `!paymentlabel $20 please`). With no text, shows the current header without changing it |
 | `!regulars [name1, name2, ...]` | viewing: anyone; `add`/`remove`: anyone; replacing the whole list, `tournament`/`social`, and `clear`: group admins only | Manages a saved roster of "regular players" (see "Regular players" below), reusable later via the word `regular players` in place of names in `!in`/`!newlist`. `!regulars add <names>`/`!regulars remove <names>` tweak the roster and are open to anyone; a plain name list *replaces* the whole roster instead (admins only); `!regulars tournament <names>`/`!regulars social <names>` opt specific regulars into the tournament (or undo that, back to the social-only default) for every future `!newlist` (admins only); `!regulars clear` empties it (admins only). With no text, shows the current roster without changing it |
@@ -291,18 +291,27 @@ capacity in the same step.
 **Setting list defaults:** the carry-forward above means a one-off change
 sticks around forever by default - book an extra court for a single week,
 and every future list keeps it unless someone remembers to change it back.
-`!defaults` fixes that for courts/time/tournament limit specifically: set
-`!defaults courts 13-18`, `!defaults time 8PM start`, and/or `!defaults
-limit 16` once, and every *future* `!newlist` that doesn't explicitly
-respecify one of those three falls back to the default instead of plain
-carry-forward - so the one-off stays one-off. An explicit value typed into
+`!defaults` fixes that for courts/time/limit/tournament limit: set
+`!defaults courts 13-18`, `!defaults time 8PM start`, `!defaults limit 20`,
+and/or `!defaults tournamentlimit 16` once, and every *future* `!newlist`
+that doesn't explicitly respecify one of those falls back to the default
+instead of plain carry-forward - so the one-off stays one-off. `courts`/
+`time` work the same way described above: an explicit value typed into
 that same `!newlist` call still always wins over the default, same as it
-already wins over carry-forward. Add `off` instead of a value (e.g.
-`!defaults courts off`) to clear just that one default, or `!defaults
-clear` to clear all three at once and go back to plain carry-forward. Bare
-`!defaults` shows the current ones. There's no default for location (it's
-expected to actually change week to week) or the main `!limit` (it already
-auto-scales from courts).
+already wins over carry-forward. `limit`/`tournamentlimit` are a bit
+different, since neither one has any inline `!newlist` syntax of its own
+to respecify in the first place - a configured default for either simply
+wins outright on every fresh list, same as it always has for
+`tournamentlimit`'s plain carry-forward. In particular, a default `limit`
+OVERRIDES the usual courts-based auto-scaling (see "Changing location,
+courts, or time without starting a new list" above) - handy for a venue
+where the booked courts don't tell the whole story (e.g. deliberately
+capping attendance below full court capacity). Add `off` instead of a
+value (e.g. `!defaults courts off`) to clear just that one default, or
+`!defaults clear` to clear all four at once and go back to plain
+carry-forward/auto-scaling. Bare `!defaults` shows the current ones.
+There's no default for location - it's expected to actually change week to
+week.
 
 **Changing location, courts, or time without starting a new list:** the
 `!newlist` fields are optional and only matter when you're discarding the
@@ -2242,7 +2251,7 @@ above), `duePaymentsLabel` set by `!paymentlabel`, and `tournamentEnabled`/
 `!settournament`/`!tournamentlimit`/`!tournamentwinners`/`!settournament
 rules` - see "Tournament" above). A sibling `listDefaults` field (set by
 `!defaults`, see "Setting list defaults" above) holds the standing courts/
-time/tournament-limit defaults, independent of `current` - it survives
+time/limit/tournament-limit defaults, independent of `current` - it survives
 every `!newlist`/`!clear` rather than being reset alongside the active
 list. Only the current list is ever kept -
 `!newlist` doesn't archive the list it replaces anywhere, it's simply

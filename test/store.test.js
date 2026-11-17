@@ -348,8 +348,8 @@ test('newList carries forward location/courts/time and merges unpaid debt across
   assert.deepEqual(names, ['Grace', 'Henry']);
 });
 
-// --- List defaults (!defaults) - courts/time/tournamentLimit fallback for
-// newList(), independent of plain carry-forward --------------------------
+// --- List defaults (!defaults) - courts/time/limit/tournamentLimit
+// fallback for newList(), independent of plain carry-forward -------------
 
 test('getListDefaults starts all-null for a brand new group', () => {
   const groupId = freshGroupId();
@@ -357,6 +357,7 @@ test('getListDefaults starts all-null for a brand new group', () => {
     courts: null,
     courtCount: null,
     time: null,
+    limit: null,
     tournamentLimit: null,
   });
 });
@@ -387,6 +388,14 @@ test('setListDefaultTime sets or (with empty input) clears the default time', ()
   assert.equal(store.getListDefaults(groupId).time, null);
 });
 
+test('setListDefaultLimit sets or (with null) clears the default attendance limit', () => {
+  const groupId = freshGroupId();
+  store.setListDefaultLimit(groupId, 20);
+  assert.equal(store.getListDefaults(groupId).limit, 20);
+  store.setListDefaultLimit(groupId, null);
+  assert.equal(store.getListDefaults(groupId).limit, null);
+});
+
 test('setListDefaultTournamentLimit sets or (with null) clears the default tournament limit', () => {
   const groupId = freshGroupId();
   store.setListDefaultTournamentLimit(groupId, 16);
@@ -395,16 +404,18 @@ test('setListDefaultTournamentLimit sets or (with null) clears the default tourn
   assert.equal(store.getListDefaults(groupId).tournamentLimit, null);
 });
 
-test('clearListDefaults resets all three defaults at once', () => {
+test('clearListDefaults resets all four defaults at once', () => {
   const groupId = freshGroupId();
   store.setListDefaultCourts(groupId, '13-18');
   store.setListDefaultTime(groupId, '8PM start');
+  store.setListDefaultLimit(groupId, 20);
   store.setListDefaultTournamentLimit(groupId, 16);
   store.clearListDefaults(groupId);
   assert.deepEqual(store.getListDefaults(groupId), {
     courts: null,
     courtCount: null,
     time: null,
+    limit: null,
     tournamentLimit: null,
   });
 });
@@ -451,6 +462,25 @@ test('newList() with no courts/time default configured falls back to plain carry
   const event = store.getCurrentEvent(groupId);
   assert.equal(event.courts, '1, 2');
   assert.equal(event.time, '6PM start');
+});
+
+test('newList() falls back to a configured limit default, overriding the usual courts-based auto-scaling', () => {
+  const groupId = freshGroupId();
+  store.setListDefaultLimit(groupId, 20);
+
+  store.newList(groupId, '2026-08-20', { courts: { raw: '13-18', count: 6 } });
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.courtCount, 6); // courts themselves are unaffected
+  assert.equal(event.limit, 20); // but the limit default wins over 6 * PLAYERS_PER_COURT
+});
+
+test('newList() with no limit default configured still auto-scales from courts, unchanged from before', () => {
+  const groupId = freshGroupId();
+
+  store.newList(groupId, '2026-08-20', { courts: { raw: '13-18', count: 6 } });
+
+  assert.equal(store.getCurrentEvent(groupId).limit, 6 * store.PLAYERS_PER_COURT);
 });
 
 test('newList() falls back to a configured tournamentLimit default, overriding plain carry-forward', () => {

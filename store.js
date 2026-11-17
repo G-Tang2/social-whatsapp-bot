@@ -405,25 +405,26 @@ function emptyGroupState() {
     // remove any debt they already owe from before - see newList()'s own
     // doc comment for why.
     paymentExempt: [],
-    // Standing defaults for courts/time/tournamentLimit, set via !defaults
-    // (commands/admin.js's handleDefaults) - see getListDefaults/
-    // setListDefaultCourts/setListDefaultTime/setListDefaultTournamentLimit/
-    // clearListDefaults below. Same top-level, survives-every-!newlist
-    // lifecycle as regularPlayers/paymentExempt above: these are a standing
-    // "what normal looks like" admins set once, not scoped to one cycle.
+    // Standing defaults for courts/time/limit/tournamentLimit, set via
+    // !defaults (commands/admin.js's handleDefaults) - see
+    // getListDefaults/setListDefaultCourts/setListDefaultTime/
+    // setListDefaultLimit/setListDefaultTournamentLimit/clearListDefaults
+    // below. Same top-level, survives-every-!newlist lifecycle as
+    // regularPlayers/paymentExempt above: these are a standing "what normal
+    // looks like" admins set once, not scoped to one cycle.
     // Consulted by newList() below ONLY for whichever of courts/time it
     // wasn't explicitly told to (re)set that call - a default here is a
     // fallback for "nothing said either way," never an override of
-    // something the admin actually typed in that same !newlist. null in
-    // any of these three fields just means "no default configured," in
-    // which case newList() falls back to its ordinary carry-forward
-    // behavior for that field, same as before this feature existed.
-    listDefaults: {
-      courts: null,
-      courtCount: null,
-      time: null,
-      tournamentLimit: null,
-    },
+    // something the admin actually typed in that same !newlist. `limit`/
+    // `tournamentLimit` are different: !newlist has no inline syntax to
+    // respecify either of those at all, so a configured default for either
+    // always wins outright over the ordinary auto-scaled-from-courts/
+    // carried-forward value - see newList() below. null in any of these
+    // four fields just means "no default configured," in which case
+    // newList() falls back to its ordinary carry-forward (or, for `limit`,
+    // auto-scaled-from-courts) behavior for that field, same as before
+    // this feature existed.
+    listDefaults: emptyListDefaults(),
     // Cumulative tournament win counts, one entry per player who's ever
     // won - see getTournamentLeaderboard/recordTournamentWin below and
     // commands/admin.js's !leaderboard. Same top-level, survives-every-
@@ -2075,6 +2076,13 @@ function clearDuePayments(groupId) {
   return all[groupId].current.duePayments;
 }
 
+// Shared all-null shape, used both as emptyGroupState()'s own
+// `listDefaults` and as the fallback/reset value below - a single spot to
+// update if another default field is ever added.
+function emptyListDefaults() {
+  return { courts: null, courtCount: null, time: null, limit: null, tournamentLimit: null };
+}
+
 // Reads the group's standing list-detail defaults (see the `listDefaults`
 // doc comment on emptyGroupState() above) - falls back to the same
 // all-null shape a brand-new group would have if the group (or this field
@@ -2082,8 +2090,7 @@ function clearDuePayments(groupId) {
 // getPaymentExempt.
 function getListDefaults(groupId) {
   const all = readAll();
-  return (all[groupId] || emptyGroupState()).listDefaults
-    || { courts: null, courtCount: null, time: null, tournamentLimit: null };
+  return (all[groupId] || emptyGroupState()).listDefaults || emptyListDefaults();
 }
 
 // Sets (or, with empty/null `raw`, clears) the DEFAULT courts an admin-less
@@ -2096,9 +2103,7 @@ function setListDefaultCourts(groupId, raw) {
   const trimmed = (raw || '').trim();
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
-  if (!all[groupId].listDefaults) {
-    all[groupId].listDefaults = { courts: null, courtCount: null, time: null, tournamentLimit: null };
-  }
+  if (!all[groupId].listDefaults) all[groupId].listDefaults = emptyListDefaults();
   const defaults = all[groupId].listDefaults;
 
   if (!trimmed) {
@@ -2124,12 +2129,28 @@ function setListDefaultTime(groupId, time) {
   const trimmed = (time || '').trim();
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
-  if (!all[groupId].listDefaults) {
-    all[groupId].listDefaults = { courts: null, courtCount: null, time: null, tournamentLimit: null };
-  }
+  if (!all[groupId].listDefaults) all[groupId].listDefaults = emptyListDefaults();
   all[groupId].listDefaults.time = trimmed || null;
   writeAll(all);
   return all[groupId].listDefaults.time;
+}
+
+// Sets (or, with `limit` null, clears) the DEFAULT attendance limit (the
+// main !limit, separate from the tournament's own cap just below) a fresh
+// !newlist should fall back to - unlike courts, !newlist has no inline
+// syntax for respecifying the attendance limit directly at all (it's only
+// ever a side effect of the courts segment, auto-scaled to
+// courtCount * PLAYERS_PER_COURT), so when this default IS configured, it
+// wins outright over that auto-scaled/carried-forward value - see
+// newList() below - the same "always wins, nothing to prefer it over"
+// treatment as setListDefaultTournamentLimit.
+function setListDefaultLimit(groupId, limit) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  if (!all[groupId].listDefaults) all[groupId].listDefaults = emptyListDefaults();
+  all[groupId].listDefaults.limit = limit;
+  writeAll(all);
+  return all[groupId].listDefaults.limit;
 }
 
 // Sets (or, with `limit` null, clears) the DEFAULT tournament limit a
@@ -2142,21 +2163,19 @@ function setListDefaultTime(groupId, time) {
 function setListDefaultTournamentLimit(groupId, limit) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
-  if (!all[groupId].listDefaults) {
-    all[groupId].listDefaults = { courts: null, courtCount: null, time: null, tournamentLimit: null };
-  }
+  if (!all[groupId].listDefaults) all[groupId].listDefaults = emptyListDefaults();
   all[groupId].listDefaults.tournamentLimit = limit;
   writeAll(all);
   return all[groupId].listDefaults.tournamentLimit;
 }
 
-// Clears all three list-detail defaults at once (!defaults clear) - the
-// bulk equivalent of calling each of the three setters above with their
-// own "clear" value.
+// Clears all four list-detail defaults at once (!defaults clear) - the
+// bulk equivalent of calling each of the setters above with their own
+// "clear" value.
 function clearListDefaults(groupId) {
   const all = readAll();
   if (!all[groupId]) all[groupId] = emptyGroupState();
-  all[groupId].listDefaults = { courts: null, courtCount: null, time: null, tournamentLimit: null };
+  all[groupId].listDefaults = emptyListDefaults();
   writeAll(all);
   return all[groupId].listDefaults;
 }
@@ -2279,14 +2298,16 @@ function newList(groupId, date, details = {}) {
 
   const location = details.location !== undefined ? details.location : outgoing.location;
   const outgoingLimit = outgoing.limit === undefined ? DEFAULT_LIMIT : outgoing.limit;
-  // Standing courts/time/tournamentLimit defaults (see getListDefaults()
-  // above and !defaults in commands/admin.js) - consulted below ONLY where
-  // this call didn't explicitly respecify the field itself (details.courts/
-  // details.time === undefined). An admin actually typing courts/time into
-  // THIS !newlist always wins over a standing default, same as it already
-  // wins over plain carry-forward.
-  const defaults = state.listDefaults
-    || { courts: null, courtCount: null, time: null, tournamentLimit: null };
+  // Standing courts/time/limit/tournamentLimit defaults (see
+  // getListDefaults() above and !defaults in commands/admin.js) -
+  // courts/time are consulted below ONLY where this call didn't explicitly
+  // respecify the field itself (details.courts/details.time === undefined):
+  // an admin actually typing courts/time into THIS !newlist always wins
+  // over a standing default, same as it already wins over plain
+  // carry-forward. `limit` has no such inline override to lose to (see
+  // setListDefaultLimit's doc comment), so a configured default for it
+  // applies unconditionally, below.
+  const defaults = state.listDefaults || emptyListDefaults();
   let courts;
   let courtCount;
   let limit;
@@ -2328,6 +2349,13 @@ function newList(groupId, date, details = {}) {
     courts = details.courts.raw;
     courtCount = details.courts.count;
     limit = courtCount * PLAYERS_PER_COURT;
+  }
+  // A configured default attendance limit always wins outright over
+  // whatever was just worked out above (auto-scaled-from-courts or
+  // carried-forward alike) - same "nothing to prefer it over" treatment as
+  // tournamentLimit's default just below.
+  if (defaults.limit !== null) {
+    limit = defaults.limit;
   }
   const time = details.time !== undefined
     ? details.time
@@ -2440,6 +2468,7 @@ module.exports = {
   getListDefaults,
   setListDefaultCourts,
   setListDefaultTime,
+  setListDefaultLimit,
   setListDefaultTournamentLimit,
   clearListDefaults,
 };
