@@ -1615,6 +1615,99 @@ test('handleLimit: raising the limit promotes people off the waitlist with a tag
   assert.equal(store.getCurrentEvent(groupId).entries.length, 2);
 });
 
+test('handleDefaults: bare command shows all-unset defaults, and respects the admin gate', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  const status = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
+  await adminCommands.handleDefaults(status.ctx);
+  assert.match(status.replies[0], /not set/);
+
+  const nonAdmin = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: 'courts 13-18' });
+  await adminCommands.handleDefaults(nonAdmin.ctx);
+  assert.match(nonAdmin.replies[0], /Only a group admin/);
+  assert.equal(store.getListDefaults(groupId).courts, null);
+});
+
+test('handleDefaults: sets and clears the default courts', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  const invalid = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'courts not courts' });
+  await adminCommands.handleDefaults(invalid.ctx);
+  assert.match(invalid.replies[0], /isn't a valid court list/);
+
+  const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'courts 13-18' });
+  await adminCommands.handleDefaults(set.ctx);
+  assert.match(set.replies[0], /Default courts set to 13-18/);
+  assert.equal(store.getListDefaults(groupId).courts, '13-18');
+  assert.equal(store.getListDefaults(groupId).courtCount, 6);
+
+  const cleared = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'courts off' });
+  await adminCommands.handleDefaults(cleared.ctx);
+  assert.match(cleared.replies[0], /Default courts cleared/);
+  assert.equal(store.getListDefaults(groupId).courts, null);
+});
+
+test('handleDefaults: sets and clears the default time', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'time 8PM start' });
+  await adminCommands.handleDefaults(set.ctx);
+  assert.match(set.replies[0], /Default time set to "8PM start"/);
+  assert.equal(store.getListDefaults(groupId).time, '8PM start');
+
+  const cleared = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'time off' });
+  await adminCommands.handleDefaults(cleared.ctx);
+  assert.match(cleared.replies[0], /Default time cleared/);
+  assert.equal(store.getListDefaults(groupId).time, null);
+});
+
+test('handleDefaults: sets and clears the default tournament limit, rejecting a non-positive-integer value', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+
+  const invalid = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'limit abc' });
+  await adminCommands.handleDefaults(invalid.ctx);
+  assert.match(invalid.replies[0], /isn't a valid limit/);
+
+  const set = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'limit 16' });
+  await adminCommands.handleDefaults(set.ctx);
+  assert.match(set.replies[0], /Default tournament limit set to 16/);
+  assert.equal(store.getListDefaults(groupId).tournamentLimit, 16);
+
+  const cleared = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'limit off' });
+  await adminCommands.handleDefaults(cleared.ctx);
+  assert.match(cleared.replies[0], /Default tournament limit cleared/);
+  assert.equal(store.getListDefaults(groupId).tournamentLimit, null);
+});
+
+test('handleDefaults: "clear" resets all three defaults at once, and a fresh !newlist stops using them', async () => {
+  const groupId = freshGroupId();
+  const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
+  store.setListDefaultCourts(groupId, '13-18');
+  store.setListDefaultTime(groupId, '8PM start');
+  store.setListDefaultTournamentLimit(groupId, 16);
+  store.setCourts(groupId, '1, 2');
+  store.setTime(groupId, '6PM start');
+
+  const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'clear' });
+  await adminCommands.handleDefaults(ctx);
+  assert.match(replies[0], /cleared/);
+  assert.deepEqual(store.getListDefaults(groupId), {
+    courts: null,
+    courtCount: null,
+    time: null,
+    tournamentLimit: null,
+  });
+
+  store.newList(groupId, '2026-08-20', {});
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.courts, '1, 2'); // carried forward, no default to override it
+  assert.equal(event.time, '6PM start');
+});
+
 test('handleCourts: plain "!courts 13-18" replaces the whole court list (rejects non-admins first)', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
@@ -3715,34 +3808,34 @@ test('handleAi: on by default once a GEMINI_API_KEY is configured (unlike the ol
   assert.match(adminTurnOn.replies[0], /turned \*on\*/);
 });
 
-test('handleAutonewlist: off by default, off/on toggle requires admin and always replies', async () => {
+test('handleAutonewlist: on by default, off/on toggle requires admin and always replies', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({ admins: ['admin@s.whatsapp.net'] });
 
-  // A fresh group - never touched !autonewlist - is off.
+  // A fresh group - never touched !autonewlist - already has it on.
   const status = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
   await handleAutonewlist(status.ctx);
-  assert.match(status.replies[0], /OFF/);
-  assert.equal(autoNewlist.isEnabled(groupId), false);
+  assert.match(status.replies[0], /ON/);
+  assert.equal(autoNewlist.isEnabled(groupId), true);
 
-  const nonAdminTry = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: 'on' });
+  const nonAdminTry = makeCtx({ sock, groupId, senderId: 'nobody@s.whatsapp.net', argText: 'off' });
   await handleAutonewlist(nonAdminTry.ctx);
   assert.match(nonAdminTry.replies[0], /Only a group admin/);
-  assert.equal(autoNewlist.isEnabled(groupId), false);
-
-  const adminTurnOn = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'on' });
-  await handleAutonewlist(adminTurnOn.ctx);
   assert.equal(autoNewlist.isEnabled(groupId), true);
-  assert.match(adminTurnOn.replies[0], /turned \*on\*/);
-
-  const alreadyOn = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'on' });
-  await handleAutonewlist(alreadyOn.ctx);
-  assert.match(alreadyOn.replies[0], /already on/);
 
   const adminTurnOff = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'off' });
   await handleAutonewlist(adminTurnOff.ctx);
   assert.equal(autoNewlist.isEnabled(groupId), false);
   assert.match(adminTurnOff.replies[0], /turned \*off\*/);
+
+  const alreadyOff = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'off' });
+  await handleAutonewlist(alreadyOff.ctx);
+  assert.match(alreadyOff.replies[0], /already off/);
+
+  const adminTurnOn = makeCtx({ sock, groupId, senderId: 'admin@s.whatsapp.net', argText: 'on' });
+  await handleAutonewlist(adminTurnOn.ctx);
+  assert.equal(autoNewlist.isEnabled(groupId), true);
+  assert.match(adminTurnOn.replies[0], /turned \*on\*/);
 });
 
 test('handleInactivityToggle: off by default, off/on toggle requires admin and always replies', async () => {

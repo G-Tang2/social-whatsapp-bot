@@ -65,13 +65,23 @@ test('does nothing for a group with no date set at all, even with the toggle on'
   assert.equal(sock.sentMessages.length, 0);
 });
 
-test('does nothing while the toggle is off (the default), no matter how long ago the social started', async () => {
+test('does nothing while the toggle is explicitly off, no matter how long ago the social started', async () => {
   const groupId = freshGroupId();
+  autoNewlist.setEnabled(groupId, false);
   setUpList(groupId, { hoursAgo: AUTO_NEWLIST_DELAY_HOURS + 10 });
   const sock = createFakeSock({});
   await checkAutoNewlist(sock);
   assert.equal(sock.sentMessages.length, 0);
   assert.equal(store.getCurrentEvent(groupId).autoNewlistCreated, false);
+});
+
+test('starts next week\'s list even without ever touching !autonewlist, since it\'s on by default', async () => {
+  const groupId = freshGroupId();
+  const originalDate = setUpList(groupId, { hoursAgo: AUTO_NEWLIST_DELAY_HOURS + 10 });
+  const sock = createFakeSock({});
+  await checkAutoNewlist(sock);
+  assert.equal(sock.sentMessages.length, 1);
+  assert.notEqual(store.getCurrentEvent(groupId).date, originalDate);
 });
 
 test('does nothing before the assumed end time (start + delay) has passed', async () => {

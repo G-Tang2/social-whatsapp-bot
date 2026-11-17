@@ -348,6 +348,130 @@ test('newList carries forward location/courts/time and merges unpaid debt across
   assert.deepEqual(names, ['Grace', 'Henry']);
 });
 
+// --- List defaults (!defaults) - courts/time/tournamentLimit fallback for
+// newList(), independent of plain carry-forward --------------------------
+
+test('getListDefaults starts all-null for a brand new group', () => {
+  const groupId = freshGroupId();
+  assert.deepEqual(store.getListDefaults(groupId), {
+    courts: null,
+    courtCount: null,
+    time: null,
+    tournamentLimit: null,
+  });
+});
+
+test('setListDefaultCourts validates and sets both courts/courtCount, or clears both with empty input', () => {
+  const groupId = freshGroupId();
+  const invalid = store.setListDefaultCourts(groupId, 'not courts');
+  assert.equal(invalid.ok, false);
+
+  const set = store.setListDefaultCourts(groupId, '13-18');
+  assert.equal(set.ok, true);
+  assert.equal(set.courts, '13-18');
+  assert.equal(set.courtCount, 6);
+  assert.deepEqual(store.getListDefaults(groupId).courts, '13-18');
+  assert.equal(store.getListDefaults(groupId).courtCount, 6);
+
+  const cleared = store.setListDefaultCourts(groupId, '');
+  assert.equal(cleared.ok, true);
+  assert.equal(store.getListDefaults(groupId).courts, null);
+  assert.equal(store.getListDefaults(groupId).courtCount, null);
+});
+
+test('setListDefaultTime sets or (with empty input) clears the default time', () => {
+  const groupId = freshGroupId();
+  store.setListDefaultTime(groupId, '8PM start');
+  assert.equal(store.getListDefaults(groupId).time, '8PM start');
+  store.setListDefaultTime(groupId, '');
+  assert.equal(store.getListDefaults(groupId).time, null);
+});
+
+test('setListDefaultTournamentLimit sets or (with null) clears the default tournament limit', () => {
+  const groupId = freshGroupId();
+  store.setListDefaultTournamentLimit(groupId, 16);
+  assert.equal(store.getListDefaults(groupId).tournamentLimit, 16);
+  store.setListDefaultTournamentLimit(groupId, null);
+  assert.equal(store.getListDefaults(groupId).tournamentLimit, null);
+});
+
+test('clearListDefaults resets all three defaults at once', () => {
+  const groupId = freshGroupId();
+  store.setListDefaultCourts(groupId, '13-18');
+  store.setListDefaultTime(groupId, '8PM start');
+  store.setListDefaultTournamentLimit(groupId, 16);
+  store.clearListDefaults(groupId);
+  assert.deepEqual(store.getListDefaults(groupId), {
+    courts: null,
+    courtCount: null,
+    time: null,
+    tournamentLimit: null,
+  });
+});
+
+test('newList() falls back to a configured courts/time default when not respecified, instead of plain carry-forward', () => {
+  const groupId = freshGroupId();
+  store.setCourts(groupId, '1, 2'); // a one-off 2-court booking on the outgoing list
+  store.setTime(groupId, 'one-off 6PM start');
+  store.setListDefaultCourts(groupId, '13-18');
+  store.setListDefaultTime(groupId, '8PM start');
+
+  store.newList(groupId, '2026-08-20', {}); // courts/time not respecified this call
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.courts, '13-18');
+  assert.equal(event.courtCount, 6);
+  assert.equal(event.limit, 6 * store.PLAYERS_PER_COURT);
+  assert.equal(event.time, '8PM start');
+});
+
+test('newList() still prefers an explicitly respecified courts/time over a configured default', () => {
+  const groupId = freshGroupId();
+  store.setListDefaultCourts(groupId, '13-18');
+  store.setListDefaultTime(groupId, '8PM start');
+
+  store.newList(groupId, '2026-08-20', {
+    courts: { raw: '1, 2', count: 2 },
+    time: '6PM start',
+  });
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.courts, '1, 2');
+  assert.equal(event.courtCount, 2);
+  assert.equal(event.time, '6PM start');
+});
+
+test('newList() with no courts/time default configured falls back to plain carry-forward, unchanged from before', () => {
+  const groupId = freshGroupId();
+  store.setCourts(groupId, '1, 2');
+  store.setTime(groupId, '6PM start');
+
+  store.newList(groupId, '2026-08-20', {});
+
+  const event = store.getCurrentEvent(groupId);
+  assert.equal(event.courts, '1, 2');
+  assert.equal(event.time, '6PM start');
+});
+
+test('newList() falls back to a configured tournamentLimit default, overriding plain carry-forward', () => {
+  const groupId = freshGroupId();
+  store.setTournamentLimit(groupId, 8); // a one-off override on the outgoing list
+  store.setListDefaultTournamentLimit(groupId, 16);
+
+  store.newList(groupId, '2026-08-20', {});
+
+  assert.equal(store.getCurrentEvent(groupId).tournamentLimit, 16);
+});
+
+test('newList() with no tournamentLimit default configured carries the outgoing value forward, unchanged from before', () => {
+  const groupId = freshGroupId();
+  store.setTournamentLimit(groupId, 8);
+
+  store.newList(groupId, '2026-08-20', {});
+
+  assert.equal(store.getCurrentEvent(groupId).tournamentLimit, 8);
+});
+
 // --- newList()'s owedSince tagging ----------------------------------------
 // A duePayments entry now remembers which OLD list it's actually owed for
 // (entry.owedSince, an ISO date) - see newList()'s own doc comment. Covers

@@ -1,8 +1,8 @@
 // commands/admin.js
 // Admin-gated list-management commands: !clear, !clearpayments,
-// !cancelsocial, !newlist, !location, !courts, !time, !limit, !allow,
-// !paymentlabel, !regulars, !exempt, !settournament, !tournamentlimit,
-// !tournamentwinners, !undo, !update.
+// !cancelsocial, !newlist, !location, !courts, !time, !limit, !defaults,
+// !allow, !paymentlabel, !regulars, !exempt, !settournament,
+// !tournamentlimit, !tournamentwinners, !undo, !update.
 // (!tournament and !leaderboard themselves - both view-only - live here
 // too, but are NOT admin-gated; see their own doc comments below for why
 // they're in this file anyway.)
@@ -54,6 +54,11 @@ const {
   getUndoSnapshot,
   restoreUndoableState,
   normalizeName,
+  getListDefaults,
+  setListDefaultCourts,
+  setListDefaultTime,
+  setListDefaultTournamentLimit,
+  clearListDefaults,
 } = require('../store');
 const { parseTypedDate, formatDisplayDate, nextOccurrenceOfSameWeekday, addWeeks } = require('../dates');
 const { isGroupAdmin } = require('../lib/adminCheck');
@@ -553,6 +558,116 @@ async function handleLimit(ctx) {
     await reply(`New limit is below the current headcount - shuffled to the waitlist, in order:\n${demoted.map((e) => e.name).join('\n')}`);
   }
   await postList();
+}
+
+// Manages standing courts/time/tournament-limit DEFAULTS for the group -
+// distinct from !courts/!time/!tournamentlimit themselves, which only ever
+// touch the CURRENT list. Once a default is set for a field, every future
+// !newlist that doesn't explicitly respecify that field in the same
+// command falls back to the default instead of just carrying forward
+// whatever the previous cycle happened to have (see store.js's newList()
+// doc comment) - handy so a one-off change (an extra court booked for a
+// single week, say) doesn't quietly become the new normal forever.
+// Doesn't touch the current list at all, so - unlike !courts/!time/!limit,
+// which stay quiet on success and let the reposted list speak for itself -
+// this always replies, even on success, since there's nothing else that
+// would show the change took effect.
+//
+// Bare !defaults shows all three. Sub-forms: "courts <numbers>|off",
+// "time <text>|off", "limit <number>|off" (the tournament limit - the main
+// !limit has no default of its own, since it already auto-scales from
+// courts), and "clear" (resets all three at once). Same admins-only gate
+// as !courts/!time/!tournamentlimit.
+async function handleDefaults(ctx) {
+  const { sock, groupId, senderId, argText, reply } = ctx;
+  const trimmedArg = (argText || '').trim();
+  const normalizedArg = trimmedArg.toLowerCase();
+
+  if (!normalizedArg) {
+    const defaults = getListDefaults(groupId);
+    const lines = [
+      `Default courts: ${defaults.courts || 'not set'}`,
+      `Default time: ${defaults.time || 'not set'}`,
+      `Default tournament limit: ${defaults.tournamentLimit || 'not set'}`,
+    ];
+    await reply(
+      `${lines.join('\n')}\n\nThese are what a fresh ${COMMAND_PREFIX}newlist falls back to for any of the three it isn't explicitly told otherwise. To change them (admins only): ${COMMAND_PREFIX}defaults courts <numbers>, ${COMMAND_PREFIX}defaults time <text>, ${COMMAND_PREFIX}defaults limit <number> - or "off" instead of a value to clear just that one, or ${COMMAND_PREFIX}defaults clear to clear all three`
+    );
+    return;
+  }
+
+  const admin = await isGroupAdmin(sock, groupId, senderId);
+  if (!admin) {
+    await reply('Only a group admin can change the list defaults - I promise it\'s not personal.');
+    return;
+  }
+
+  if (normalizedArg === 'clear') {
+    clearListDefaults(groupId);
+    await reply('All three list defaults cleared - fresh lists go back to plain carry-forward.');
+    return;
+  }
+
+  if (normalizedArg === 'courts' || normalizedArg.startsWith('courts ')) {
+    const rest = trimmedArg.slice('courts'.length).trim();
+    if (['off', 'none', 'clear'].includes(rest.toLowerCase())) {
+      setListDefaultCourts(groupId, '');
+      await reply('Default courts cleared.');
+      return;
+    }
+    if (rest.length > MAX_COURTS_LENGTH) {
+      await reply(`Whoa, that's too long (max ${MAX_COURTS_LENGTH} characters) - keep it snappy!`);
+      return;
+    }
+    const result = setListDefaultCourts(groupId, rest);
+    if (!result.ok) {
+      await reply(`Nope, "${rest}" isn't a valid court list - use numbers and/or ranges separated by commas, e.g. ${COMMAND_PREFIX}defaults courts 13-18 or ${COMMAND_PREFIX}defaults courts 1, 2, 5-8`);
+      return;
+    }
+    await reply(`Default courts set to ${result.courts} - every fresh ${COMMAND_PREFIX}newlist that doesn't say otherwise will use this from now on.`);
+    return;
+  }
+
+  if (normalizedArg === 'time' || normalizedArg.startsWith('time ')) {
+    const rest = trimmedArg.slice('time'.length).trim();
+    if (['off', 'none', 'clear'].includes(rest.toLowerCase())) {
+      setListDefaultTime(groupId, '');
+      await reply('Default time cleared.');
+      return;
+    }
+    if (rest.length > MAX_TIME_LENGTH) {
+      await reply(`Whoa, that's too long (max ${MAX_TIME_LENGTH} characters) - keep it snappy!`);
+      return;
+    }
+    const newDefault = setListDefaultTime(groupId, rest);
+    await reply(`Default time set to "${newDefault}" - every fresh ${COMMAND_PREFIX}newlist that doesn't say otherwise will use this from now on.`);
+    return;
+  }
+
+  if (normalizedArg === 'limit' || normalizedArg.startsWith('limit ')) {
+    const rest = trimmedArg.slice('limit'.length).trim();
+    if (['off', 'none', 'clear', 'unlimited', '0'].includes(rest.toLowerCase())) {
+      setListDefaultTournamentLimit(groupId, null);
+      await reply('Default tournament limit cleared.');
+      return;
+    }
+    const parsed = Number(rest);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      await reply(`Nope, "${rest}" isn't a valid limit - use a whole number, e.g. ${COMMAND_PREFIX}defaults limit 16, or ${COMMAND_PREFIX}defaults limit off to clear it`);
+      return;
+    }
+    if (parsed > MAX_LIMIT) {
+      await reply(`Whoa, easy there - that limit is too high (max ${MAX_LIMIT}).`);
+      return;
+    }
+    setListDefaultTournamentLimit(groupId, parsed);
+    await reply(`Default tournament limit set to ${parsed} - every fresh ${COMMAND_PREFIX}newlist will start there from now on.`);
+    return;
+  }
+
+  await reply(
+    `Usage: ${COMMAND_PREFIX}defaults courts <numbers>|off, ${COMMAND_PREFIX}defaults time <text>|off, ${COMMAND_PREFIX}defaults limit <number>|off, or ${COMMAND_PREFIX}defaults clear\n(No argument shows the current defaults without changing anything.)`
+  );
 }
 
 async function handleAllow(ctx) {
@@ -1494,6 +1609,7 @@ module.exports = {
   handleCourts,
   handleTime,
   handleLimit,
+  handleDefaults,
   handleAllow,
   handlePaymentlabel,
   handleRegulars,

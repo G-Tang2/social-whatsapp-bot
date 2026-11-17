@@ -68,6 +68,7 @@ const rawCommands = {
   [`${COMMAND_PREFIX}courts`]: adminCommands.handleCourts,
   [`${COMMAND_PREFIX}time`]: adminCommands.handleTime,
   [`${COMMAND_PREFIX}limit`]: adminCommands.handleLimit,
+  [`${COMMAND_PREFIX}defaults`]: adminCommands.handleDefaults,
   [`${COMMAND_PREFIX}allow`]: adminCommands.handleAllow,
   [`${COMMAND_PREFIX}paymentlabel`]: adminCommands.handlePaymentlabel,
   [`${COMMAND_PREFIX}regulars`]: adminCommands.handleRegulars,

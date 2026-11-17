@@ -2,8 +2,8 @@
 // !autonewlist [on|off] - turns automatic "start next week's list once this
 // one's social has ended" on/off for THIS group (see
 // lib/autoNewlistScheduler.js for what that actually does). Modeled on
-// commands/ai.js (same "always replies" on/off-toggle shape, OFF by
-// default).
+// commands/ai.js's "always replies" on/off-toggle shape, but ON by default
+// (see autoNewlist.js's isEnabled doc comment for why).
 
 const autoNewlist = require('../autoNewlist');
 const { isGroupAdmin } = require('../lib/adminCheck');

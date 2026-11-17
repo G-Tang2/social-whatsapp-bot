@@ -405,6 +405,25 @@ function emptyGroupState() {
     // remove any debt they already owe from before - see newList()'s own
     // doc comment for why.
     paymentExempt: [],
+    // Standing defaults for courts/time/tournamentLimit, set via !defaults
+    // (commands/admin.js's handleDefaults) - see getListDefaults/
+    // setListDefaultCourts/setListDefaultTime/setListDefaultTournamentLimit/
+    // clearListDefaults below. Same top-level, survives-every-!newlist
+    // lifecycle as regularPlayers/paymentExempt above: these are a standing
+    // "what normal looks like" admins set once, not scoped to one cycle.
+    // Consulted by newList() below ONLY for whichever of courts/time it
+    // wasn't explicitly told to (re)set that call - a default here is a
+    // fallback for "nothing said either way," never an override of
+    // something the admin actually typed in that same !newlist. null in
+    // any of these three fields just means "no default configured," in
+    // which case newList() falls back to its ordinary carry-forward
+    // behavior for that field, same as before this feature existed.
+    listDefaults: {
+      courts: null,
+      courtCount: null,
+      time: null,
+      tournamentLimit: null,
+    },
     // Cumulative tournament win counts, one entry per player who's ever
     // won - see getTournamentLeaderboard/recordTournamentWin below and
     // commands/admin.js's !leaderboard. Same top-level, survives-every-
@@ -2056,6 +2075,92 @@ function clearDuePayments(groupId) {
   return all[groupId].current.duePayments;
 }
 
+// Reads the group's standing list-detail defaults (see the `listDefaults`
+// doc comment on emptyGroupState() above) - falls back to the same
+// all-null shape a brand-new group would have if the group (or this field
+// on it) predates the feature, same pattern as getRegularPlayers/
+// getPaymentExempt.
+function getListDefaults(groupId) {
+  const all = readAll();
+  return (all[groupId] || emptyGroupState()).listDefaults
+    || { courts: null, courtCount: null, time: null, tournamentLimit: null };
+}
+
+// Sets (or, with empty/null `raw`, clears) the DEFAULT courts an admin-less
+// !newlist should fall back to - validated the same way setCourts() is
+// (via parseCourtCount()), but otherwise independent of it: this never
+// touches `current` at all, only the standing default newList() reads
+// later. Returns { ok: false } if `raw` doesn't parse as a valid court
+// list (an empty string is valid - it clears the default).
+function setListDefaultCourts(groupId, raw) {
+  const trimmed = (raw || '').trim();
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  if (!all[groupId].listDefaults) {
+    all[groupId].listDefaults = { courts: null, courtCount: null, time: null, tournamentLimit: null };
+  }
+  const defaults = all[groupId].listDefaults;
+
+  if (!trimmed) {
+    defaults.courts = null;
+    defaults.courtCount = null;
+    writeAll(all);
+    return { ok: true, courts: null, courtCount: null };
+  }
+
+  const count = parseCourtCount(trimmed);
+  if (count === null) return { ok: false };
+
+  defaults.courts = splitCourtTokens(trimmed).join(', ');
+  defaults.courtCount = count;
+  writeAll(all);
+  return { ok: true, courts: defaults.courts, courtCount: count };
+}
+
+// Sets (or, with empty/null `time`, clears) the DEFAULT time text an
+// admin-less !newlist should fall back to. Same shape as
+// setListDefaultCourts above.
+function setListDefaultTime(groupId, time) {
+  const trimmed = (time || '').trim();
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  if (!all[groupId].listDefaults) {
+    all[groupId].listDefaults = { courts: null, courtCount: null, time: null, tournamentLimit: null };
+  }
+  all[groupId].listDefaults.time = trimmed || null;
+  writeAll(all);
+  return all[groupId].listDefaults.time;
+}
+
+// Sets (or, with `limit` null, clears) the DEFAULT tournament limit a
+// fresh !newlist should fall back to - unlike courts/time, !newlist itself
+// has no inline syntax for respecifying tournamentLimit at all (see its
+// own doc comment above - that field just always carries forward from the
+// outgoing list), so this default is the ONLY way to make a fresh cycle
+// start at anything other than whatever the previous cycle's tournament
+// limit happened to be.
+function setListDefaultTournamentLimit(groupId, limit) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  if (!all[groupId].listDefaults) {
+    all[groupId].listDefaults = { courts: null, courtCount: null, time: null, tournamentLimit: null };
+  }
+  all[groupId].listDefaults.tournamentLimit = limit;
+  writeAll(all);
+  return all[groupId].listDefaults.tournamentLimit;
+}
+
+// Clears all three list-detail defaults at once (!defaults clear) - the
+// bulk equivalent of calling each of the three setters above with their
+// own "clear" value.
+function clearListDefaults(groupId) {
+  const all = readAll();
+  if (!all[groupId]) all[groupId] = emptyGroupState();
+  all[groupId].listDefaults = { courts: null, courtCount: null, time: null, tournamentLimit: null };
+  writeAll(all);
+  return all[groupId].listDefaults;
+}
+
 /**
  * Marks someone as paid, removing them from the current duePayments list.
  * No ownership restriction - anyone in the group can mark anyone paid
@@ -2174,25 +2279,43 @@ function newList(groupId, date, details = {}) {
 
   const location = details.location !== undefined ? details.location : outgoing.location;
   const outgoingLimit = outgoing.limit === undefined ? DEFAULT_LIMIT : outgoing.limit;
+  // Standing courts/time/tournamentLimit defaults (see getListDefaults()
+  // above and !defaults in commands/admin.js) - consulted below ONLY where
+  // this call didn't explicitly respecify the field itself (details.courts/
+  // details.time === undefined). An admin actually typing courts/time into
+  // THIS !newlist always wins over a standing default, same as it already
+  // wins over plain carry-forward.
+  const defaults = state.listDefaults
+    || { courts: null, courtCount: null, time: null, tournamentLimit: null };
   let courts;
   let courtCount;
   let limit;
   if (details.courts === undefined) {
-    // Courts not respecified this call - carry `courts`/`courtCount`
-    // forward unchanged, same as location/time/duePaymentsLabel. `limit`
-    // is a different story, though: if a real court count is known, it's
-    // still recomputed to match (courtCount * PLAYERS_PER_COURT) rather
-    // than blindly carried forward as whatever it happened to be - same
-    // as setCourts() unconditionally does when you retype the very same
-    // courts outside of !newlist (see setCourts() above). A fresh list
-    // should reflect the venue's actual capacity, not silently inherit a
-    // one-off manual !limit override (or a stale !limit off) left over
-    // from a previous cycle. Only when no real court count is known at
-    // all (courtCount null) does the limit have nothing to scale against,
-    // so it carries forward as-is.
-    courts = outgoing.courts;
-    courtCount = outgoing.courtCount;
-    limit = courtCount ? courtCount * PLAYERS_PER_COURT : outgoingLimit;
+    if (defaults.courtCount) {
+      // A default is configured - use it instead of carrying the outgoing
+      // list's courts forward, same auto-scaled-limit treatment as a
+      // freshly (re)specified value below.
+      courts = defaults.courts;
+      courtCount = defaults.courtCount;
+      limit = courtCount * PLAYERS_PER_COURT;
+    } else {
+      // No default configured - courts not respecified this call either,
+      // so carry `courts`/`courtCount` forward unchanged, same as
+      // location/time/duePaymentsLabel. `limit` is a different story,
+      // though: if a real court count is known, it's still recomputed to
+      // match (courtCount * PLAYERS_PER_COURT) rather than blindly carried
+      // forward as whatever it happened to be - same as setCourts()
+      // unconditionally does when you retype the very same courts outside
+      // of !newlist (see setCourts() above). A fresh list should reflect
+      // the venue's actual capacity, not silently inherit a one-off manual
+      // !limit override (or a stale !limit off) left over from a previous
+      // cycle. Only when no real court count is known at all (courtCount
+      // null) does the limit have nothing to scale against, so it carries
+      // forward as-is.
+      courts = outgoing.courts;
+      courtCount = outgoing.courtCount;
+      limit = courtCount ? courtCount * PLAYERS_PER_COURT : outgoingLimit;
+    }
   } else if (details.courts === null) {
     // Explicitly cleared - no court count to scale a limit from, so the
     // limit itself is left alone rather than reset.
@@ -2206,7 +2329,9 @@ function newList(groupId, date, details = {}) {
     courtCount = details.courts.count;
     limit = courtCount * PLAYERS_PER_COURT;
   }
-  const time = details.time !== undefined ? details.time : outgoing.time;
+  const time = details.time !== undefined
+    ? details.time
+    : (defaults.time !== null ? defaults.time : outgoing.time);
 
   state.current = {
     date,
@@ -2224,7 +2349,13 @@ function newList(groupId, date, details = {}) {
     // `entries` (and therefore who's opted in) DOES reset, same as the
     // rest of the list - see emptyGroupState()'s doc comment.
     tournamentEnabled: !!outgoing.tournamentEnabled,
-    tournamentLimit: outgoing.tournamentLimit === undefined ? null : outgoing.tournamentLimit,
+    // Unlike courts/time just above, !newlist has no inline syntax to
+    // respecify this at all - so a configured default always wins outright
+    // (there's no "this call's own value" to prefer it over); only without
+    // one does this fall back to the ordinary carry-forward.
+    tournamentLimit: defaults.tournamentLimit !== null
+      ? defaults.tournamentLimit
+      : (outgoing.tournamentLimit === undefined ? null : outgoing.tournamentLimit),
     // Unlike tournamentRules just below, winners are deliberately NOT
     // carried forward - "Congrats to X and Y" is an announcement about the
     // cycle that just ended, not a standing fact about the group, so it
@@ -2306,4 +2437,9 @@ module.exports = {
   markPaid,
   newList,
   normalizeName,
+  getListDefaults,
+  setListDefaultCourts,
+  setListDefaultTime,
+  setListDefaultTournamentLimit,
+  clearListDefaults,
 };

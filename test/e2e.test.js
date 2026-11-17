@@ -229,6 +229,7 @@ function getLastGeminiPromptText() {
 const { sessionDesyncMatch, attemptSessionAutoRecovery } = require('../index');
 const ai = require('../ai'); // same DATA_DIR as index.js, so toggling here is visible to it
 const welcome = require('../welcome'); // same DATA_DIR as index.js, so toggling here is visible to it
+const autoNewlist = require('../autoNewlist'); // same DATA_DIR as index.js, so toggling here is visible to it
 const store = require('../store'); // same DATA_DIR as index.js, so seeding regularPlayers here is visible to it
 const adminCheck = require('../lib/adminCheck'); // invalidate() - see the tagging tests below, which need a fresh groupMetadata() fetch to see a just-registered participant name
 // Same module-cache instance index.js itself dispatches through - mutating
@@ -1532,6 +1533,10 @@ test('e2e: "@bot any admin tips" dispatches to the real !admintips handler, refu
 
 test('e2e: an admin @-mentioning "turn on auto-newlist" dispatches to the real !autonewlist handler', async () => {
   ai.setEnabled(GROUP_ID, true);
+  // On by default - switch it off first so the AI-driven "on" below has an
+  // actual change to make (and therefore the real "turned *on*" reply),
+  // same as explicitly setting up any other toggle's starting state.
+  autoNewlist.setEnabled(GROUP_ID, false);
   setNextGeminiResponse({ command: 'autonewlist', argText: 'on', confidence: 'high' });
   fakeSockInstance.sentMessages.length = 0;
 

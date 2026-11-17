@@ -3,12 +3,13 @@
 // soon as the current social has "ended" - turned on/off with
 // !autonewlist on / !autonewlist off (admins only, see
 // commands/autonewlist.js). See lib/autoNewlistScheduler.js for the
-// periodic check that actually acts on this. OFF by default for every
-// group, same reasoning as ai.js: this is a brand new automatic behavior
-// nobody's used before, and it depends on !time being set to something
-// parseable (see dates.js's parseTimeOfDay) - an explicit opt-in avoids
-// surprising a group that's never touched it. Same on-disk shape/pattern
-// as spam.js/ai.js (data/autonewlist.json):
+// periodic check that actually acts on this. ON by default for every
+// group, same "automatic convenience" reasoning as spam.js/welcome.js -
+// lib/autoNewlistScheduler.js already no-ops harmlessly for a group with
+// no parseable !time set (see its own doc comment), so there's nothing
+// unsafe about it running before an admin's ever touched !autonewlist.
+// Only an explicit !autonewlist off persists `enabled: false`. Same
+// on-disk shape/pattern as spam.js/ai.js (data/autonewlist.json):
 // {
 //   "<groupId>": { "enabled": true | false },
 //   ...
@@ -58,14 +59,15 @@ function writeAll(data) {
   fs.renameSync(tmpFile, DATA_FILE);
 }
 
-// Whether auto-creating next week's list is turned on for `groupId`. OFF
+// Whether auto-creating next week's list is turned on for `groupId`. ON
 // by default - a group that's never touched !autonewlist at all (or has no
-// data.json entry yet) keeps today's manual !newlist behavior unchanged.
-// Only an explicit !autonewlist on (which persists `enabled: true`) turns
-// it on; any other stored value, or no stored value at all, means off.
+// data.json entry yet) gets it automatically, same as a freshly-added
+// group with no data.json entry yet. Only an explicit !autonewlist off
+// (which persists `enabled: false`) turns it off; any other stored value,
+// or no stored value at all, means on.
 function isEnabled(groupId) {
   const all = readAll();
-  if (!all[groupId] || all[groupId].enabled === undefined) return false;
+  if (!all[groupId] || all[groupId].enabled === undefined) return true;
   return !!all[groupId].enabled;
 }
 
