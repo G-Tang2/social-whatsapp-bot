@@ -23,8 +23,6 @@ const ai = require('../ai');
 const { COMMAND_PREFIX, MAX_NAMES_PER_COMMAND } = require('../lib/config');
 const {
   parseNames,
-  splitCommaList,
-  PLUS_N_TOKEN,
   ME_TOKEN,
   expandRegularPlayersToken,
   maxNamesReply,
@@ -199,75 +197,6 @@ function isOnCurrentAttendance(event, senderId, name) {
   if (senderId && all.some((e) => e.addedBy === senderId && e.self !== false)) return true;
   if (name) return all.some((e) => normalizeName(e.name) === normalizeName(name));
   return false;
-}
-
-// Matches "me, +N"/"+N, me", or the "and"-separated equivalent "me and +N"/
-// "+N and me" (splitCommaList, lib/helpers.js, normalizes "and" into a
-// comma first - see its own doc comment) as the ENTIRE `rest` of an !in
-// command - the sender explicitly asking to be added alongside N unnamed
-// guests, in either order. Returns the guest count N, or null if `rest`
-// isn't exactly this two-token combo (e.g. "me, Henry, +2" falls through to
-// the generic parseNames path instead, same as any other multi-name list).
-function matchMeAndPlusN(rest) {
-  const tokens = splitCommaList(rest);
-  if (tokens.length !== 2) return null;
-  const [a, b] = tokens;
-  if (ME_TOKEN.test(a) && PLUS_N_TOKEN.test(b)) return Number(b.match(PLUS_N_TOKEN)[1]);
-  if (ME_TOKEN.test(b) && PLUS_N_TOKEN.test(a)) return Number(a.match(PLUS_N_TOKEN)[1]);
-  return null;
-}
-
-// Resolves "!in +N" / "!in me, +N" (see PLUS_N_TOKEN/ME_TOKEN in
-// lib/helpers.js) into the actual names to add, ADDITIVELY on top of
-// whatever the sender already has on the list right now - unlike
-// parseNames()' own (context-free) "+N" expansion, which always starts
-// guest numbering at +1 and would just collide with (and be rejected as
-// duplicates of) guests already added by an earlier "+N". E.g. the sender
-// already has "Preston+1, Preston+2, Preston+3" on the list (from an
-// earlier "!in +3") and says "add 3 more friends" (-> another "+3"): this
-// returns ["Preston+4", "Preston+5", "Preston+6"], continuing the
-// numbering, not a second "Preston+1, Preston+2, Preston+3" that would
-// all be rejected as already-on-the-list duplicates.
-//
-// `includeSelf` distinguishes bare "+N" (guests only, sender excluded -
-// pass false) from "me, +N" (sender explicitly included alongside the
-// guests - pass true). Only actually adds the sender when they don't
-// already have a self entry (see `ownSelfEntries` below) - "me, +2" said
-// AFTER already being on the list just adds 2 more guests, same as bare
-// "+2" would, since the sender is already there.
-//
-// Only ever called for handleIn's ADD path - !out/!paid's own "+N"/"me"
-// handling (via parseNames, unchanged) stays literal/non-cumulative,
-// since "remove/mark paid N of my entries" doesn't have the same
-// "on top of what's there" semantics as adding more does.
-//
-// Anchors both the self-entry name and the existing-guest-count check to
-// the sender's ALREADY-RECORDED self entry (found the same robust way as
-// every other bare-self lookup in this file: `addedBy === senderId &&
-// self !== false`) rather than blindly trusting today's `senderName` -
-// so this keeps working correctly even if the sender's WhatsApp push name
-// has changed since they first added themselves (their existing
-// "OldName+1..3" guests are still found and continued from, rather than
-// starting a second, disconnected "NewName+1" chain).
-function resolveAdditiveGuestNames(groupId, senderId, senderName, guestCount, includeSelf) {
-  const event = getCurrentEvent(groupId);
-  const allSenderEntries = [...event.entries, ...(event.waitlist || [])].filter((e) => e.addedBy === senderId);
-  const ownSelfEntries = allSenderEntries.filter((e) => e.self !== false);
-  const baseName = ownSelfEntries.length ? ownSelfEntries[0].name : senderName;
-
-  const prefix = `${baseName}+`;
-  let existingMax = 0;
-  for (const e of allSenderEntries) {
-    if (!e.name.startsWith(prefix)) continue;
-    const suffix = e.name.slice(prefix.length);
-    if (/^\d+$/.test(suffix)) existingMax = Math.max(existingMax, Number(suffix));
-  }
-
-  const names = includeSelf && !ownSelfEntries.length ? [baseName] : [];
-  for (let i = 1; i <= guestCount; i += 1) {
-    names.push(`${baseName}+${existingMax + i}`);
-  }
-  return names;
 }
 
 // Widest a single "N-M" range token is ever expanded to (see
@@ -552,8 +481,7 @@ async function handleIn(ctx) {
   const { rest, paid: paidFlag, tournament: tournamentFlag } = stripLeadingInKeywords(textForParsing);
 
   // "me" (ME_TOKEN, lib/helpers.js) said on its own is the explicit way to
-  // add yourself - treated exactly like no argText at all. Distinct from
-  // "me, +N" below, which ALSO adds N unnamed guests alongside yourself.
+  // add yourself - treated exactly like no argText at all.
   const isBareRest = !rest || ME_TOKEN.test(rest.trim());
 
   // A bare mention with NOTHING else said ("!in @Grace") clearly means
@@ -637,38 +565,7 @@ async function handleIn(ctx) {
   // sender." Any explicitly-typed name (even the sender's own, even
   // alongside other names) is NOT marked self - see store.js's addEntry
   // doc comment for why that distinction matters.
-  //
-  // "!in +2" adds 2 unnamed guests WITHOUT the sender (PLUS_N_TOKEN, see
-  // lib/helpers.js) - say "!in me, +2" (or the AI mapping "add me and 2
-  // friends" to argText "me, +2" - see lib/geminiCommand.js) to ALSO sign
-  // the sender up alongside those guests. Either way, only the bare self
-  // entry (if newly added, see resolveAdditiveGuestNames) is really "the
-  // sender" for `self` purposes; the +1/+2 entries are separate people,
-  // same as if the sender had typed "Henry, Henry+1" for someone else.
-  // Only applies when the ENTIRE argText is just "+N" or "me, +N"/"+N, me"
-  // - "Alice, +2" is treated as an explicit multi-name list instead, same
-  // as any other combination of names, with no entry marked self.
-  const bareGuestMatch = isBareSelfAdd ? null : rest.trim().match(PLUS_N_TOKEN);
-  const meAndGuestCount = isBareSelfAdd ? null : matchMeAndPlusN(rest);
-  const isAdditiveGuestAdd = Boolean(bareGuestMatch) || meAndGuestCount != null;
-  const additiveIncludesSelf = meAndGuestCount != null;
-  // "+N"/"me, +N" additively resolves against what the sender already has
-  // on the list (see resolveAdditiveGuestNames's doc comment) rather than
-  // parseNames()' simpler, always-starts-at-+1 expansion, so a repeat
-  // "add N more friends" continues the numbering instead of colliding
-  // with (and being rejected as duplicates of) guests already added by an
-  // earlier "+N".
-  let names = bareMentionName
-    ? [bareMentionName]
-    : isAdditiveGuestAdd
-      ? resolveAdditiveGuestNames(
-          groupId,
-          senderId,
-          senderName,
-          bareGuestMatch ? Number(bareGuestMatch[1]) : meAndGuestCount,
-          additiveIncludesSelf
-        )
-      : parseNames(rest, senderName);
+  let names = bareMentionName ? [bareMentionName] : parseNames(rest, senderName);
 
   // "regular players" (see REGULAR_PLAYERS_TOKEN/expandRegularPlayersToken in
   // lib/helpers.js, and commands/admin.js's !regulars for how the roster
@@ -729,7 +626,7 @@ async function handleIn(ctx) {
       rejected.push(`${name} - ${modResult.reason}`);
       continue;
     }
-    const isSelfEntry = taggedJid ? true : isBareSelfAdd || (additiveIncludesSelf && name === senderName);
+    const isSelfEntry = taggedJid ? true : isBareSelfAdd;
     if (tournamentFlag && !tournamentEnabled) tournamentRequestedButDisabled = true;
     const result = addEntry(groupId, name, taggedJid || senderId, senderIsAdmin, isSelfEntry, tournamentFlag);
     if (!result.ok) {
@@ -1036,11 +933,10 @@ async function handleOut(ctx) {
   let names;
 
   // "me" (ME_TOKEN, lib/helpers.js) said on its own is the explicit way to
-  // remove yourself - treated exactly like no argText at all. A bare "+N"
-  // (no "me") only removes N of your own unnamed guest entries, NOT you -
-  // see PLUS_N_TOKEN's doc comment. Guarded by `nonBotMentions.length ===
-  // 0` - a bare "!out @Grace" (nothing left after stripping the mention)
-  // means remove GRACE, not the sender themselves.
+  // remove yourself - treated exactly like no argText at all. Guarded by
+  // `nonBotMentions.length === 0` - a bare "!out @Grace" (nothing left
+  // after stripping the mention) means remove GRACE, not the sender
+  // themselves.
   if ((!rest || ME_TOKEN.test(rest.trim())) && nonBotMentions.length === 0) {
     // No name given - remove "myself." Match by WhatsApp ID rather than
     // display name: your push name doesn't always match whatever text

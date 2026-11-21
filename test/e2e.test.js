@@ -851,31 +851,22 @@ test('e2e: replying to someone OTHER than the bot does not trigger AI interpreta
   assert.equal(fakeSockInstance.sentMessages.length, 0);
 });
 
-test('e2e: "@bot add me and 2 friends" (mapped to argText "me, +2") adds the sender plus 2 guest entries via the real handler', async () => {
+test('e2e: "@bot add me and Alice, Alice+1" (named guests spelled out) adds the sender plus both literally-named entries via the real handler', async () => {
   ai.setEnabled(GROUP_ID, true);
-  setNextGeminiResponse({ command: 'in', argText: 'me, +2', confidence: 'high' });
+  setNextGeminiResponse({
+    actions: [
+      { command: 'in', argText: '', confidence: 'high' },
+      { command: 'in', argText: 'Alice, Alice+1', confidence: 'high' },
+    ],
+  });
   fakeSockInstance.sentMessages.length = 0;
 
-  await deliver('add me and 2 friends', { from: 'casey@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
+  await deliver('add me and Alice plus a guest', { from: 'casey@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
 
-  const posted = fakeSockInstance.sentMessages.find((m) => /casey\+2/i.test(m.content.text || ''));
-  assert.ok(posted, 'expected the posted list to show casey, casey+1, and casey+2');
-});
-
-test('e2e: "@bot add 2 friends" (mapped to argText "+2", no "me") adds ONLY 2 guest entries, WITHOUT the sender', async () => {
-  ai.setEnabled(GROUP_ID, true);
-  setNextGeminiResponse({ command: 'in', argText: '+2', confidence: 'high' });
-  fakeSockInstance.sentMessages.length = 0;
-
-  // A sender not used anywhere else in this file - this suite shares ONE
-  // running list/GROUP_ID across tests (see GROUP_ID above), so reusing
-  // "casey" here would collide with that other test's leftover "casey,
-  // casey+1, casey+2" entries and make this assertion meaningless.
-  await deliver('add 2 friends', { from: 'wesley@s.whatsapp.net', type: 'notify', mentions: [BOT_JID] });
-
-  const posted = fakeSockInstance.sentMessages.find((m) => /wesley\+2/i.test(m.content.text || ''));
-  assert.ok(posted, 'expected the posted list to show wesley+1 and wesley+2');
-  assert.ok(!/\bwesley\b(?!\+)/i.test(posted.content.text), 'the sender "wesley" alone should NOT be on the list');
+  const posted = fakeSockInstance.sentMessages.find((m) => /Alice\+1/i.test(m.content.text || ''));
+  assert.ok(posted, 'expected the posted list to show casey, Alice, and Alice+1');
+  assert.match(posted.content.text, /casey/i);
+  assert.match(posted.content.text, /\bAlice\b/i);
 });
 
 test('e2e: the prompt sent to Gemini includes the current (numbered) list, so position references like "remove 1-3" can be resolved', async () => {
@@ -1935,10 +1926,9 @@ test('e2e: editing the SAME message twice correctly undoes the PREVIOUS edit eac
     ['omar']
   );
 
-  // First edit: bare "+2" adds 2 unnamed guests WITHOUT omar himself (see
-  // PLUS_N_TOKEN/ME_TOKEN in lib/helpers.js) - the original bare "!in"
-  // (which added omar) should be undone first.
-  await deliverEdit(original, `${COMMAND_PREFIX}in +2`);
+  // First edit: 2 literally-named guests WITHOUT omar himself - the
+  // original bare "!in" (which added omar) should be undone first.
+  await deliverEdit(original, `${COMMAND_PREFIX}in omar+1, omar+2`);
   assert.deepEqual(
     store.getCurrentEvent(GROUP_ID).entries.filter((e) => e.addedBy === 'omar@s.whatsapp.net').map((e) => e.name),
     ['omar+1', 'omar+2']
@@ -1947,7 +1937,7 @@ test('e2e: editing the SAME message twice correctly undoes the PREVIOUS edit eac
   // Second edit of the SAME original message (WhatsApp edits always target
   // the original message's id) - should undo the first EDIT's effect
   // (omar+1/omar+2), not the long-gone original bare add.
-  await deliverEdit(original, `${COMMAND_PREFIX}in me, +1`);
+  await deliverEdit(original, `${COMMAND_PREFIX}in me, omar+1`);
   assert.deepEqual(
     store.getCurrentEvent(GROUP_ID).entries.filter((e) => e.addedBy === 'omar@s.whatsapp.net').map((e) => e.name),
     ['omar', 'omar+1']

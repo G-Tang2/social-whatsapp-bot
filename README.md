@@ -40,7 +40,7 @@ every change.
 | `!update <paste the list, edited>` | group admins only | Bulk-edits Attendance/Waitlist/Payment by re-reading a copy-pasted, hand-edited list (see "Bulk-editing the roster" below) |
 | `!undo` | group admins only | Reverses the single most recent change made in the group, whatever command caused it (see "Undoing the last change" below) |
 | `!help` | anyone | Shows help for the everyday commands (`!in`, `!out`, `!list`, `!paid`) |
-| `!tips` | anyone | Tips and caveats for the everyday commands (comma lists, `+N` guests, tournament opt-in, and more) - split out of `!help` so it stays a quick reference |
+| `!tips` | anyone | Tips and caveats for the everyday commands (comma lists, tournament opt-in, and more) - split out of `!help` so it stays a quick reference |
 | `!admin` | group admins only | Shows help for the admin-only commands |
 | `!admintips` | group admins only | Tips and caveats for the admin commands (`!update`'s header block, `!settournament`, and more) - split out of `!admin` the same way |
 
@@ -153,19 +153,12 @@ vocal on denial" rule as everywhere else - see above), and one list repost
 right after showing the cumulative result of the whole batch, plus one
 ✅/❌ on the message itself (❌ if any line failed).
 
-**Bringing unnamed friends:** `!in +N` (e.g. `!in +2`) adds `N` guests you
-haven't named individually, as "you+1", "you+2", ... - shorthand for typing
-out `!in <your name>+1, <your name>+2` yourself. On its own, `+N` does NOT
-add you - only the `N` guests. To also sign yourself up alongside them,
-add `me` as its own comma-separated item, e.g. `!in me, +2` (or `+2, me` -
-order doesn't matter). Works the same way for `!out +N`/`!out me, +N`
-(removes just the `N` guest entries, or you plus all `N`, respectively)
-and `!paid +N`/`!paid me, +N`. `+N` expands wherever it appears in a comma
-list, so `!in Alice, +2` adds the literal name "Alice" plus 2 of your own
-unnamed guests (still not you, unless you also say `me`); if you DO want
-to name the friends individually just list them normally instead (e.g.
-`!in Grace, Alice, Bob`). `me` on its own (`!in me`) is just another way
-to write a bare `!in`.
+**Bringing friends:** there's no shorthand for unnamed guests - name each
+one individually, same as any other multi-name list, e.g. `!in Alice,
+Alice+1, Alice+2` for yourself plus two unnamed guests (the `+1`/`+2`
+suffix is just a naming convention to keep each guest's entry distinct -
+the bot treats it as a completely literal name, nothing special). `me` on
+its own (`!in me`) is just another way to write a bare `!in`.
 
 **Regular players:** save a group's regulars once with `!regulars Alice, Bob,
 Carla` (admins only to change the whole list this way; anyone can run bare

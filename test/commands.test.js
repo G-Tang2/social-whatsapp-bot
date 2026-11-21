@@ -85,15 +85,6 @@ test('handleIn: "!in luke and peter" adds both, same as the comma-separated form
   assert.deepEqual(event.entries.map((e) => e.name), ['luke', 'peter']);
 });
 
-test('handleIn: "!in me and +2" combines "me" with "+N" the same way the comma form "me, +2" does', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({});
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'alex@s.whatsapp.net', senderName: 'Preston', argText: 'me and +2' });
-  await listCommands.handleIn(ctx);
-  const event = store.getCurrentEvent(groupId);
-  assert.deepEqual(event.entries.map((e) => e.name), ['Preston', 'Preston+1', 'Preston+2']);
-});
-
 test('handleIn: already-on-the-list bare !in replies instead of duplicating', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
@@ -407,120 +398,31 @@ test('handleIn: too many names rejected for non-admins, allowed for admins', asy
   assert.equal(store.getCurrentEvent(groupId).entries.length, 10);
 });
 
-test('handleIn: "!in +2" adds 2 unnamed guest entries WITHOUT the sender', async () => {
+test('handleIn: "!in +2" has no special meaning anymore - adds one literal entry named "+2"', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+2' });
   await listCommands.handleIn(ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.deepEqual(entries.map((e) => e.name), ['Preston+1', 'Preston+2']);
-  assert.ok(entries.every((e) => e.addedBy === 'jordan@s.whatsapp.net'));
-  // Neither guest entry is the sender themselves - bare "+N" never includes
-  // the sender (see PLUS_N_TOKEN's doc comment in lib/helpers.js).
-  assert.ok(entries.every((e) => e.self === false));
-
-  // The sender is NOT on the list yet - a later bare !in should sign them
-  // up fresh, not think they're already on via one of the guest entries.
-  const bareIn = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '' });
-  await listCommands.handleIn(bareIn.ctx);
-  assert.equal(store.getCurrentEvent(groupId).entries.length, 3);
-  assert.equal(store.getCurrentEvent(groupId).entries[2].self, true);
+  assert.deepEqual(entries.map((e) => e.name), ['+2']);
+  assert.equal(entries[0].self, false);
 });
 
-test('handleIn: "!in me, +2" adds the sender plus 2 unnamed guest entries, with only the sender\'s own entry marked self', async () => {
+test('handleIn: "!in me, +2" adds the sender plus one literal entry named "+2" - "+N" is no longer expanded', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: 'me, +2' });
   await listCommands.handleIn(ctx);
 
   const entries = store.getCurrentEvent(groupId).entries;
-  assert.deepEqual(entries.map((e) => e.name), ['Preston', 'Preston+1', 'Preston+2']);
-  assert.ok(entries.every((e) => e.addedBy === 'jordan@s.whatsapp.net'));
-  // Only the bare "Preston" entry is the sender themselves - the two guest
-  // entries are separate people the sender vouched for, same as if they'd
-  // typed "Henry, Henry+1" for someone else (see store.js's addEntry doc
-  // comment for why this distinction matters for later bare-self lookups).
-  assert.equal(entries[0].self, true);
+  // Same as any other "me, <other name>" mixed list (e.g. "me, Henry") -
+  // only a PURE bare-self add ("" or exactly "me") is flagged self; mixed
+  // with anything else, neither entry is, same as before this feature
+  // existed for the non-"+N" case.
+  assert.deepEqual(entries.map((e) => e.name), ['Preston', '+2']);
+  assert.equal(entries[0].self, false);
   assert.equal(entries[1].self, false);
-  assert.equal(entries[2].self, false);
-
-  // A later bare !in should recognize the sender's own entry from this
-  // expansion (not think they're already on as "Preston+1"/"Preston+2" too).
-  const bareIn = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '' });
-  await listCommands.handleIn(bareIn.ctx);
-  assert.match(bareIn.replies[0], /already on the list as "Preston"/);
-});
-
-test('handleIn: "+N, me" (order swapped) works the same as "me, +N"', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({});
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+2, me' });
-  await listCommands.handleIn(ctx);
-
-  // resolveAdditiveGuestNames always puts the self entry first, then the
-  // guest suffixes, regardless of the order "me"/"+N" appeared in argText -
-  // it's not a straight per-token pass-through like parseNames.
-  const entries = store.getCurrentEvent(groupId).entries;
-  assert.deepEqual(entries.map((e) => e.name), ['Preston', 'Preston+1', 'Preston+2']);
-  assert.equal(entries.find((e) => e.name === 'Preston').self, true);
-});
-
-test('handleIn: a repeat "!in +3" ADDS to an existing guest chain instead of colliding with it - "+3" then "+3" again ends up at +6, not restarting at +1', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({});
-  store.setLimit(groupId, null); // remove the default limit of 6 - this test needs 7 entries total
-
-  const first = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+3' });
-  await listCommands.handleIn(first.ctx);
-  assert.deepEqual(
-    store.getCurrentEvent(groupId).entries.map((e) => e.name),
-    ['Preston+1', 'Preston+2', 'Preston+3']
-  );
-
-  const second = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+3' });
-  await listCommands.handleIn(second.ctx);
-  // Continues from +3 -> adds +4, +5, +6 - does NOT re-attempt "Preston+1..3"
-  // (already there, which would just be rejected as duplicates and leave
-  // the sender with only +3 total).
-  assert.equal(second.replies.length, 0, 'expected no "already on the list"/duplicate rejections');
-  const finalNames = store.getCurrentEvent(groupId).entries.map((e) => e.name);
-  assert.deepEqual(finalNames, ['Preston+1', 'Preston+2', 'Preston+3', 'Preston+4', 'Preston+5', 'Preston+6']);
-});
-
-test('handleIn: "+N" continues the guest numbering from the sender\'s EXISTING self-entry name, even if their push name has since changed', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({});
-
-  const first = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: 'me, +2' });
-  await listCommands.handleIn(first.ctx);
-  assert.deepEqual(
-    store.getCurrentEvent(groupId).entries.map((e) => e.name),
-    ['Preston', 'Preston+1', 'Preston+2']
-  );
-
-  // Same WhatsApp account, but a different current push name this time.
-  const second = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston D.', argText: '+1' });
-  await listCommands.handleIn(second.ctx);
-  // Anchored to the EXISTING "Preston" self entry, not a fresh "Preston D."
-  // chain - continues at +3, and does not add a second self entry.
-  const finalNames = store.getCurrentEvent(groupId).entries.map((e) => e.name);
-  assert.deepEqual(finalNames, ['Preston', 'Preston+1', 'Preston+2', 'Preston+3']);
-});
-
-test('handleIn: "!in Alice, +2" (mixed with an explicit name) does NOT add or mark the sender', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({});
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: 'Alice, +2' });
-  await listCommands.handleIn(ctx);
-
-  const entries = store.getCurrentEvent(groupId).entries;
-  // "+N" only pulls in the sender when explicitly combined with "me" (see
-  // "me, +N" tests above) - combined with another explicit name instead,
-  // this is treated like any other multi-name list: Alice plus 2 of the
-  // sender's own guest entries, but never the sender themselves.
-  assert.deepEqual(entries.map((e) => e.name), ['Alice', 'Preston+1', 'Preston+2']);
-  assert.ok(entries.every((e) => e.self === false));
 });
 
 // Real bug report: Abby herself sent "@Snoopy add Abby" (writing her own
@@ -625,32 +527,20 @@ test('handleOut: the SAME "which one, though?" question has NO reply nudge when 
   assert.doesNotMatch(replies[0], /reply to this message/i);
 });
 
-test('handleOut: "!out +2" removes only the sender\'s 2 guest entries, not the sender', async () => {
+test('handleOut: "!out Preston+1, Preston+2" removes literally-named guest entries by exact name, "+N" having no special meaning', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
-  const addCtx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: 'me, +2' });
-  await listCommands.handleIn(addCtx.ctx);
-  assert.equal(store.getCurrentEvent(groupId).entries.length, 3);
+  store.addEntry(groupId, 'Preston', 'jordan@s.whatsapp.net', false, true);
+  store.addEntry(groupId, 'Preston+1', 'jordan@s.whatsapp.net', false, false);
+  store.addEntry(groupId, 'Preston+2', 'jordan@s.whatsapp.net', false, false);
 
-  const outCtx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+2' });
+  const outCtx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: 'Preston+1, Preston+2' });
   await listCommands.handleOut(outCtx.ctx);
   const remaining = store.getCurrentEvent(groupId).entries;
   assert.deepEqual(remaining.map((e) => e.name), ['Preston']);
 });
 
-test('handleOut: "!out me, +2" removes the sender and both of their guest entries', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({});
-  const addCtx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: 'me, +2' });
-  await listCommands.handleIn(addCtx.ctx);
-  assert.equal(store.getCurrentEvent(groupId).entries.length, 3);
-
-  const outCtx = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: 'me, +2' });
-  await listCommands.handleOut(outCtx.ctx);
-  assert.equal(store.getCurrentEvent(groupId).entries.length, 0);
-});
-
-test('handlePaid: "!paid +2" marks only the sender\'s 2 guest entries paid, not the sender', async () => {
+test('handlePaid: "!paid Preston+1, Preston+2" marks literally-named guest entries paid by exact name, "+N" having no special meaning', async () => {
   const groupId = freshGroupId();
   const sock = createFakeSock({});
   store.addEntry(groupId, 'Preston', 'jordan@s.whatsapp.net', false, true);
@@ -659,24 +549,10 @@ test('handlePaid: "!paid +2" marks only the sender\'s 2 guest entries paid, not 
   store.newList(groupId, '2026-08-20', {}); // archives all three into duePayments
   assert.equal(store.getCurrentEvent(groupId).duePayments.length, 3);
 
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: '+2' });
+  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: 'Preston+1, Preston+2' });
   await listCommands.handlePaid(ctx);
   const stillDue = store.getCurrentEvent(groupId).duePayments;
   assert.deepEqual(stillDue.map((e) => e.name), ['Preston']);
-});
-
-test('handlePaid: "!paid me, +2" marks the sender and both of their guest entries paid', async () => {
-  const groupId = freshGroupId();
-  const sock = createFakeSock({});
-  store.addEntry(groupId, 'Preston', 'jordan@s.whatsapp.net', false, true);
-  store.addEntry(groupId, 'Preston+1', 'jordan@s.whatsapp.net', false, false);
-  store.addEntry(groupId, 'Preston+2', 'jordan@s.whatsapp.net', false, false);
-  store.newList(groupId, '2026-08-20', {}); // archives all three into duePayments
-  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 3);
-
-  const { ctx } = makeCtx({ sock, groupId, senderId: 'jordan@s.whatsapp.net', senderName: 'Preston', argText: 'me, +2' });
-  await listCommands.handlePaid(ctx);
-  assert.equal(store.getCurrentEvent(groupId).duePayments.length, 0);
 });
 
 // Real bug report: "!paid 7,8" on a posted payment list numbered 1-14
@@ -3922,7 +3798,7 @@ test('handleTips: anyone can view it, and it contains the everyday caveats forme
   const { ctx, replies } = makeCtx({ sock, groupId, senderId: 'anyone@s.whatsapp.net', argText: '' });
   await handleTips(ctx);
   assert.match(replies[0], /Prefer plain English/);
-  assert.match(replies[0], /bringing unnamed friends/i);
+  assert.match(replies[0], /No \[name\] means yourself/i);
 });
 
 test('handleAdminHelp: only an admin can view it, and it points to !admintips for the caveats', async () => {

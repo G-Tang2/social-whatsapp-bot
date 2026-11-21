@@ -48,7 +48,7 @@ const HELP_TEXT = [
   '*Other*',
   `• *@-mention me, or reply to one of my messages* - plain English works too instead of typing a command, e.g. "@Snoopy put me down" (if this group has it turned on - see ${COMMAND_PREFIX}tips for more)`,
   `• *${COMMAND_PREFIX}help* - show this message`,
-  `• *${COMMAND_PREFIX}tips* - tips and caveats for the everyday commands above (comma lists, +N guests, and more)`,
+  `• *${COMMAND_PREFIX}tips* - tips and caveats for the everyday commands above (comma lists, tournament opt-in, and more)`,
   `• *${COMMAND_PREFIX}admin* - show admin-only commands`,
 ].join('\n');
 
@@ -67,8 +67,6 @@ const TIPS_TEXT = [
   '',
   '*Joining and leaving*',
   `_• ${COMMAND_PREFIX}in/${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid accept comma-separated names (or "and" - e.g. Grace and Henry), e.g. ${COMMAND_PREFIX}in Grace, Henry, Henry+1 - up to ${MAX_NAMES_PER_COMMAND} at once (no limit for admins)_`,
-  '',
-  `_• Bringing unnamed friends? ${COMMAND_PREFIX}in +2 adds 2 guests (you+1, you+2) WITHOUT you - add "me, " in front, e.g. ${COMMAND_PREFIX}in me, +2, to add yourself too - same for ${COMMAND_PREFIX}out/${COMMAND_PREFIX}paid_`,
   '',
   '_• No [name] means yourself - matched by your WhatsApp account, not your display name_',
   '',

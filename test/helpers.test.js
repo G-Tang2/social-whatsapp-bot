@@ -56,11 +56,10 @@ test('parseNames splits comma-separated names and trims whitespace', () => {
   assert.deepEqual(parseNames('  Grace  ,, Henry ', 'fallback'), ['Grace', 'Henry']); // drops empty segments
 });
 
-test('parseNames expands a bare "+N" token into N guest entries WITHOUT the sender', () => {
-  assert.deepEqual(parseNames('+2', 'Preston'), ['Preston+1', 'Preston+2']);
-  assert.deepEqual(parseNames('+1', 'Preston'), ['Preston+1']);
-  assert.deepEqual(parseNames('+0', 'Preston'), []); // 0 guests, no sender - nothing at all
-  assert.deepEqual(parseNames('+ 3', 'Preston'), ['Preston+1', 'Preston+2', 'Preston+3']); // tolerates a space after "+"
+test('parseNames has no special "+N" handling anymore - a bare "+N" token passes through as a completely literal name', () => {
+  assert.deepEqual(parseNames('+2', 'Preston'), ['+2']);
+  assert.deepEqual(parseNames('+ 3', 'Preston'), ['+ 3']);
+  assert.deepEqual(parseNames('Alice, +2', 'Preston'), ['Alice', '+2']);
 });
 
 test('parseNames resolves a bare "me" token to fallbackName', () => {
@@ -69,15 +68,9 @@ test('parseNames resolves a bare "me" token to fallbackName', () => {
   assert.deepEqual(parseNames(' me ', 'Preston'), ['Preston']); // tolerates whitespace
 });
 
-test('parseNames combines "me" with "+N" to include the sender alongside N guest entries', () => {
-  assert.deepEqual(parseNames('me, +2', 'Preston'), ['Preston', 'Preston+1', 'Preston+2']);
-  assert.deepEqual(parseNames('+2, me', 'Preston'), ['Preston+1', 'Preston+2', 'Preston']); // order preserved, token-by-token
-});
-
-test('parseNames only expands a token that is ENTIRELY "+N"/"me" - an explicit "Henry+1"/"Amelia" name is left untouched', () => {
+test('parseNames only expands a token that is ENTIRELY "me" - an explicit "Henry+1"/"Amelia" name is left untouched', () => {
   assert.deepEqual(parseNames('Henry+1', 'fallback'), ['Henry+1']);
   assert.deepEqual(parseNames('Amelia', 'fallback'), ['Amelia']); // contains "me" as a substring, not the whole token
-  assert.deepEqual(parseNames('Alice, +2', 'Preston'), ['Alice', 'Preston+1', 'Preston+2']); // "+2" still excludes the sender when mixed with a named other
 });
 
 // Real request: "!in luke and peter" should add both, same as the comma
@@ -98,9 +91,9 @@ test('splitCommaList does NOT split a real name that merely contains "and" as a 
   assert.deepEqual(splitCommaList('Andrew and Sandra'), ['Andrew', 'Sandra']);
 });
 
-test('parseNames accepts "and" the same way splitCommaList does, including alongside "me"/"+N"', () => {
+test('parseNames accepts "and" the same way splitCommaList does, including alongside "me"', () => {
   assert.deepEqual(parseNames('luke and peter', 'fallback'), ['luke', 'peter']);
-  assert.deepEqual(parseNames('me and +2', 'Preston'), ['Preston', 'Preston+1', 'Preston+2']);
+  assert.deepEqual(parseNames('me and Henry', 'Preston'), ['Preston', 'Henry']);
 });
 
 test('stripLeadingPaidKeyword detects a bare leading "paid" and strips it', () => {
